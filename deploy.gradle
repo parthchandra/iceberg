@@ -17,13 +17,29 @@
  * under the License.
  */
 
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 if (project.hasProperty('release') && jdkVersion != '8') {
   throw new GradleException("Releases must be built with Java 8")
 }
 
+buildscript {
+  repositories {
+    gradlePluginPortal()
+  }
+  dependencies {
+    classpath 'com.github.johnrengelman:shadow:8.1.1'
+  }
+}
+
 subprojects {
   apply plugin: 'maven-publish'
-  apply plugin: 'signing'
+  apply plugin: 'com.apple.rio.binary'
+
+  // using custom tasks
+  sourcesJar.enabled = false
+  javadocJar.enabled = false
+
   afterEvaluate {
 
     task sourceJar(type: Jar, dependsOn: classes) {
@@ -32,21 +48,55 @@ subprojects {
       group 'build'
     }
 
-    task javadocJar(type: Jar, dependsOn: javadoc) {
-      archiveClassifier.set('javadoc')
-      from javadoc.destinationDir
-      group 'build'
-    }
-
     task testJar(type: Jar) {
       archiveClassifier.set('tests')
       from sourceSets.test.output
+    }
+
+    task testShadowJar(type: ShadowJar) {
+      zip64 = true
+      archiveClassifier.set('shadow-tests')
+      from sourceSets.main.output, sourceSets.test.output
+      configurations = [project.configurations.testRuntimeClasspath]
+
+      // Note: Relocate dependencies as :iceberg-spark:iceberg-spark-3.4 does.
+      // When we run Iceberg tests in Spark, some tests refer to shaded classes
+      // in Iceberg Spark subproject and cause conflict. We shade same classes
+      // in the shaded test jar to resolve it.
+      relocate 'com.google', 'org.apache.iceberg.shaded.com.google'
+      relocate 'com.fasterxml', 'org.apache.iceberg.shaded.com.fasterxml'
+      relocate 'com.github.benmanes', 'org.apache.iceberg.shaded.com.github.benmanes'
+      relocate 'org.checkerframework', 'org.apache.iceberg.shaded.org.checkerframework'
+      relocate 'org.apache.avro', 'org.apache.iceberg.shaded.org.apache.avro'
+      relocate 'avro.shaded', 'org.apache.iceberg.shaded.org.apache.avro.shaded'
+      relocate 'com.thoughtworks.paranamer', 'org.apache.iceberg.shaded.com.thoughtworks.paranamer'
+      relocate 'org.apache.parquet', 'org.apache.iceberg.shaded.org.apache.parquet'
+      relocate 'shaded.parquet', 'org.apache.iceberg.shaded.org.apache.parquet.shaded'
+      relocate 'org.apache.orc', 'org.apache.iceberg.shaded.org.apache.orc'
+      relocate 'io.airlift', 'org.apache.iceberg.shaded.io.airlift'
+      relocate 'org.apache.httpcomponents.client5', 'org.apache.iceberg.shaded.org.apache.httpcomponents.client5'
+      // relocate Arrow and related deps to shade Iceberg specific version
+      relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
+      relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
+      relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
+      relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
+      relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
+
+      minimize {
+        // We need to exclude jar signatures when shading test-jars. Otherwise
+        // when Java reads that JAR, it verifies the signature and sees it being
+        // not valid.
+        exclude "META-INF/*.SF"
+        exclude "META-INF/*.DSA"
+        exclude "META-INF/*.RSA"
+      }
     }
 
     artifacts {
       archives sourceJar
       archives javadocJar
       archives testJar
+      archives testShadowJar
       testArtifacts testJar
     }
 
@@ -65,6 +115,10 @@ subprojects {
     publishing {
       publications {
         apache(MavenPublication) {
+          if (project.hasProperty('riorelease')) {
+            version = project.version.toString().replace("-SNAPSHOT", "")
+          }
+
           if (tasks.matching({task -> task.name == 'shadowJar'}).isEmpty()) {
             from components.java
           } else {
@@ -74,6 +128,7 @@ subprojects {
           artifact sourceJar
           artifact javadocJar
           artifact testJar
+          artifact testShadowJar
 
           versionMapping {
             allVariants {
@@ -107,28 +162,11 @@ subprojects {
           }
         }
       }
-
-      repositories {
-        maven {
-          credentials {
-            username project.hasProperty('mavenUser') ? "$mavenUser" : ""
-            password project.hasProperty('mavenPassword') ? "$mavenPassword" : ""
-          }
-          // upload to the releases repository using ./gradlew -Prelease publish
-          def apacheSnapshotsRepoUrl = 'https://repository.apache.org/content/repositories/snapshots'
-          def apacheReleasesRepoUrl = 'https://repository.apache.org/service/local/staging/deploy/maven2'
-          def snapshotsRepoUrl = project.hasProperty('mavenSnapshotsRepo') ? "$mavenSnapshotsRepo" : "$apacheSnapshotsRepoUrl"
-          def releasesRepoUrl = project.hasProperty('mavenReleasesRepo') ? "$mavenReleasesRepo" : "$apacheReleasesRepoUrl"
-          url = project.hasProperty('release') ? releasesRepoUrl : snapshotsRepoUrl
-        }
-      }
     }
 
-    if (project.hasProperty('release')) {
-      signing {
-        useGpgCmd()
-        sign publishing.publications.apache
-      }
+    [jar, sourceJar, javadocJar, testJar].each { task ->
+      tasks.generateMetadataFileForApachePublication.dependsOn task
+      tasks.generatePomFileForApachePublication.dependsOn task
     }
   }
 }

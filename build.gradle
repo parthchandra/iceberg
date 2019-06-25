@@ -53,6 +53,8 @@ buildscript {
 
 plugins {
   id 'nebula.dependency-recommender' version '11.0.0'
+  id 'com.apple.rio.group' version '4.1.2'
+  id 'com.apple.rio.binary' version '4.1.2' apply false
 }
 
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
