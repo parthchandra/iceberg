@@ -19,6 +19,11 @@ gradle/
 out
 gradle/wrapper/gradle-wrapper.jar
 
+# rio build
+.out
+*/.out
+*/.dist
+
 # web site build
 site/site
 
