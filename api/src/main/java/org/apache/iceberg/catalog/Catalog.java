@@ -303,4 +303,15 @@ public interface Catalog {
    * @throws NoSuchTableException if the table does not exist
    */
   Table loadTable(TableIdentifier identifier);
+
+  /**
+   * Register a table.
+   *
+   * @param identifier a table identifier
+   * @param metadataFileLocation the location of a metadata file
+   * @return a Table instance
+   */
+  default Table registerTable(TableIdentifier identifier, String metadataFileLocation) {
+    throw new UnsupportedOperationException("Registering tables is not supported");
+  }
 }
