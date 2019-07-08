@@ -23,10 +23,12 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
@@ -168,6 +170,7 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
             baseMetadataLocation, metadataLocation, database, tableName);
       }
 
+      setPdtParameters(metadata.properties(), tbl);
       setParameters(newMetadataLocation, tbl, hiveEngineEnabled);
 
       persistTable(tbl, updateHiveTable);
@@ -241,6 +244,18 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
 
     newTable.getParameters().put("EXTERNAL", "TRUE"); // using the external table type also requires this
     return newTable;
+  }
+
+  private void setPdtParameters(Map<String, String> tableProperties, Table tbl) {
+    // We need to persist `pdt.` and `spark.sql.sources.` properties in HMS for PDT tables
+    Map<String, String> parameters = tbl.getParameters();
+    List<String> existingPdtParams = parameters.keySet().stream()
+        .filter(key -> key.startsWith("pdt.") || key.startsWith("spark.sql.sources."))
+        .collect(Collectors.toList());
+    existingPdtParams.forEach(parameters::remove);
+    tableProperties.entrySet().stream()
+        .filter(entry -> entry.getKey().startsWith("pdt.") || entry.getKey().startsWith("spark.sql.sources."))
+        .forEach(entry -> parameters.put(entry.getKey(), entry.getValue()));
   }
 
   private void setParameters(String newMetadataLocation, Table tbl, boolean hiveEngineEnabled) {
