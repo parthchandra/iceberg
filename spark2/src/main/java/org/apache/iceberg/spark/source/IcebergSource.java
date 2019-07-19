@@ -143,28 +143,28 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
   }
 
-  private SparkSession lazySparkSession() {
+  protected SparkSession lazySparkSession() {
     if (lazySpark == null) {
       this.lazySpark = SparkSession.builder().getOrCreate();
     }
     return lazySpark;
   }
 
-  private JavaSparkContext lazySparkContext() {
+  protected JavaSparkContext lazySparkContext() {
     if (lazySparkContext == null) {
       this.lazySparkContext = new JavaSparkContext(lazySparkSession().sparkContext());
     }
     return lazySparkContext;
   }
 
-  private Configuration lazyBaseConf() {
+  protected Configuration lazyBaseConf() {
     if (lazyConf == null) {
       this.lazyConf = lazySparkSession().sessionState().newHadoopConf();
     }
     return lazyConf;
   }
 
-  private Table getTableAndResolveHadoopConfiguration(
+  protected Table getTableAndResolveHadoopConfiguration(
       DataSourceOptions options, Configuration conf) {
     // Overwrite configurations from the Spark Context with configurations from the options.
     mergeIcebergHadoopConfs(conf, options.asMap());
@@ -176,21 +176,21 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     return table;
   }
 
-  private static void mergeIcebergHadoopConfs(
+  protected static void mergeIcebergHadoopConfs(
       Configuration baseConf, Map<String, String> options) {
     options.keySet().stream()
         .filter(key -> key.startsWith("hadoop."))
         .forEach(key -> baseConf.set(key.replaceFirst("hadoop.", ""), options.get(key)));
   }
 
-  private boolean checkNullability(DataSourceOptions options) {
+  protected boolean checkNullability(DataSourceOptions options) {
     boolean sparkCheckNullability = Boolean.parseBoolean(lazySpark.conf()
         .get("spark.sql.iceberg.check-nullability", "true"));
     boolean dataFrameCheckNullability = options.getBoolean("check-nullability", true);
     return sparkCheckNullability && dataFrameCheckNullability;
   }
 
-  private boolean checkOrdering(DataSourceOptions options) {
+  protected boolean checkOrdering(DataSourceOptions options) {
     boolean sparkCheckOrdering = Boolean.parseBoolean(lazySpark.conf()
             .get("spark.sql.iceberg.check-ordering", "true"));
     boolean dataFrameCheckOrdering = options.getBoolean("check-ordering", true);

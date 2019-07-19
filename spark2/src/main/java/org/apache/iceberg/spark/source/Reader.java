@@ -70,7 +70,7 @@ import org.slf4j.LoggerFactory;
 
 import static org.apache.iceberg.TableProperties.DEFAULT_NAME_MAPPING;
 
-class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPushDownFilters,
+public class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPushDownFilters,
     SupportsPushDownRequiredColumns, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(Reader.class);
 
@@ -101,8 +101,8 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
   private List<CombinedScanTask> tasks = null; // lazy cache of tasks
   private Boolean readUsingBatch = null;
 
-  Reader(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
-      boolean caseSensitive, DataSourceOptions options) {
+  public Reader(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
+                boolean caseSensitive, DataSourceOptions options) {
     this.table = table;
     this.snapshotId = options.get("snapshot-id").map(Long::parseLong).orElse(null);
     this.asOfTimestamp = options.get("as-of-timestamp").map(Long::parseLong).orElse(null);
@@ -388,7 +388,7 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
         table, lazySchema().asStruct(), filterExpressions, caseSensitive, enableBatchRead());
   }
 
-  private static class ReadTask<T> implements Serializable, InputPartition<T> {
+  public static class ReadTask<T> implements Serializable, InputPartition<T> {
     private final CombinedScanTask task;
     private final String tableSchemaString;
     private final String expectedSchemaString;
@@ -403,9 +403,9 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
     private transient Schema expectedSchema = null;
     private transient String[] preferredLocations = null;
 
-    private ReadTask(CombinedScanTask task, String tableSchemaString, String expectedSchemaString,
-                     String nameMappingString, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
-                     boolean caseSensitive, boolean localityPreferred, ReaderFactory<T> readerFactory) {
+    public ReadTask(CombinedScanTask task, String tableSchemaString, String expectedSchemaString,
+                   String nameMappingString, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
+                   boolean caseSensitive, boolean localityPreferred, ReaderFactory<T> readerFactory) {
       this.task = task;
       this.tableSchemaString = tableSchemaString;
       this.expectedSchemaString = expectedSchemaString;
@@ -454,16 +454,20 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
     }
   }
 
-  private interface ReaderFactory<T> extends Serializable {
+  public interface ReaderFactory<T> extends Serializable {
     InputPartitionReader<T> create(CombinedScanTask task, Schema tableSchema, Schema expectedSchema,
                                    String nameMapping, FileIO io,
                                    EncryptionManager encryptionManager, boolean caseSensitive);
   }
 
-  private static class InternalRowReaderFactory implements ReaderFactory<InternalRow> {
+  public static class InternalRowReaderFactory implements ReaderFactory<InternalRow> {
     private static final InternalRowReaderFactory INSTANCE = new InternalRowReaderFactory();
 
     private InternalRowReaderFactory() {
+    }
+
+    public static InternalRowReaderFactory get() {
+      return INSTANCE;
     }
 
     @Override
@@ -474,7 +478,7 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
     }
   }
 
-  private static class BatchReaderFactory implements ReaderFactory<ColumnarBatch> {
+  public static class BatchReaderFactory implements ReaderFactory<ColumnarBatch> {
     private final int batchSize;
 
     BatchReaderFactory(int batchSize) {
