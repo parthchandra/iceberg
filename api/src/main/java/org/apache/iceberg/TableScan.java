@@ -182,6 +182,15 @@ public interface TableScan {
   CloseableIterable<CombinedScanTask> planTasks();
 
   /**
+   * Plan the {@link CombinedScanTask tasks} for specific files.
+   * <p>
+   * Tasks created by this method may read partial input files, multiple input files, or both.
+   *
+   * @return an Iterable of tasks for this scan
+   */
+  CloseableIterable<CombinedScanTask> planTasks(CloseableIterable<FileScanTask> fileScanTasks);
+
+  /**
    * Returns this scan's projection {@link Schema}.
    * <p>
    * If the projection schema was set directly using {@link #project(Schema)}, returns that schema.

@@ -219,7 +219,7 @@ abstract class BaseTableScan implements TableScan {
   }
 
   @Override
-  public CloseableIterable<CombinedScanTask> planTasks() {
+  public CloseableIterable<CombinedScanTask> planTasks(CloseableIterable<FileScanTask> fileScanTasks) {
     Map<String, String> options = context.options();
     long splitSize;
     if (options.containsKey(TableProperties.SPLIT_SIZE)) {
@@ -242,9 +242,14 @@ abstract class BaseTableScan implements TableScan {
           TableProperties.SPLIT_OPEN_FILE_COST, TableProperties.SPLIT_OPEN_FILE_COST_DEFAULT);
     }
 
-    CloseableIterable<FileScanTask> fileScanTasks = planFiles();
     CloseableIterable<FileScanTask> splitFiles = TableScanUtil.splitFiles(fileScanTasks, splitSize);
     return TableScanUtil.planTasks(splitFiles, splitSize, lookback, openFileCost);
+  }
+
+  @Override
+  public CloseableIterable<CombinedScanTask> planTasks() {
+    CloseableIterable<FileScanTask> fileScanTasks = planFiles();
+    return planTasks(fileScanTasks);
   }
 
   @Override
