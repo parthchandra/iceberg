@@ -57,6 +57,7 @@ import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -251,6 +252,10 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
     storageDescriptor.setInputFormat("org.apache.hadoop.mapred.FileInputFormat");
     SerDeInfo serDeInfo = new SerDeInfo();
     serDeInfo.setSerializationLib("org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe");
+    // we need to persist the path in serde params for compatibility with Spark tables
+    Map<String, String> serDeParams = Maps.newHashMap();
+    serDeParams.put("path", metadata.location());
+    serDeInfo.setParameters(serDeParams);
     storageDescriptor.setSerdeInfo(serDeInfo);
     return storageDescriptor;
   }
