@@ -599,6 +599,10 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
       storageDescriptor.setInputFormat("org.apache.hadoop.mapred.FileInputFormat");
       serDeInfo.setSerializationLib("org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe");
     }
+    // we need to persist the path in serde params for compatibility with Spark tables
+    Map<String, String> serDeParams = Maps.newHashMap();
+    serDeParams.put("path", metadata.location());
+    serDeInfo.setParameters(serDeParams);
     storageDescriptor.setSerdeInfo(serDeInfo);
     return storageDescriptor;
   }
