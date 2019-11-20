@@ -46,6 +46,7 @@ import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.hadoop.HadoopInputFile;
+import org.apache.iceberg.metrics.CoreMetricsUtil;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
@@ -386,7 +387,8 @@ public class HiveCatalog extends BaseMetastoreCatalog implements Closeable, Supp
   public TableOperations newTableOps(TableIdentifier tableIdentifier) {
     String dbName = tableIdentifier.namespace().level(0);
     String tableName = tableIdentifier.name();
-    return new HiveTableOperations(conf, clients, name, dbName, tableName);
+    TableOperations tableOps = new HiveTableOperations(conf, clients, name, dbName, tableName);
+    return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, "hive", tableOps);
   }
 
   @Override

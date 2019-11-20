@@ -86,6 +86,7 @@ subprojects {
         force 'com.fasterxml.jackson.module:jackson-module-scala_2.11:2.10.2'
         force 'com.fasterxml.jackson.module:jackson-module-scala_2.12:2.10.2'
         force 'com.fasterxml.jackson.module:jackson-module-paranamer:2.10.2'
+        force 'io.dropwizard.metrics:metrics-core:4.1.1'
       }
     }
 
@@ -192,6 +193,8 @@ project(':iceberg-core') {
     compile "com.fasterxml.jackson.core:jackson-databind"
     compile "com.fasterxml.jackson.core:jackson-core"
     compile "com.github.ben-manes.caffeine:caffeine"
+
+    compileOnly "io.dropwizard.metrics:metrics-core"
     compileOnly("org.apache.hadoop:hadoop-client") {
       exclude group: 'org.apache.avro', module: 'avro'
       exclude group: 'org.slf4j', module: 'slf4j-log4j12'
@@ -205,6 +208,7 @@ project(':iceberg-data') {
   dependencies {
     compile project(':iceberg-api')
     compile project(':iceberg-core')
+
     compileOnly project(':iceberg-parquet')
     compileOnly project(':iceberg-orc')
     compileOnly("org.apache.hadoop:hadoop-common") {
@@ -212,6 +216,7 @@ project(':iceberg-data') {
       exclude group: 'org.apache.avro', module: 'avro'
       exclude group: 'org.slf4j', module: 'slf4j-log4j12'
     }
+    compileOnly "io.dropwizard.metrics:metrics-core"
 
     testCompile("org.apache.hadoop:hadoop-client") {
       exclude group: 'org.apache.avro', module: 'avro'
@@ -265,6 +270,7 @@ project(':iceberg-hive') {
     compile project(':iceberg-core')
 
     compileOnly "org.apache.avro:avro"
+    compileOnly "io.dropwizard.metrics:metrics-core"
 
     compileOnly("org.apache.hive:hive-metastore") {
       exclude group: 'org.apache.avro', module: 'avro'
@@ -339,6 +345,7 @@ project(':iceberg-mr') {
     testCompile project(path: ':iceberg-data', configuration: 'testArtifacts')
     testCompile project(path: ':iceberg-api', configuration: 'testArtifacts')
     testCompile project(path: ':iceberg-core', configuration: 'testArtifacts')
+    testCompile "io.dropwizard.metrics:metrics-core"
   }
 }
 

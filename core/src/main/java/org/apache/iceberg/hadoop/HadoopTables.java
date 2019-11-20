@@ -42,6 +42,7 @@ import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.Tables;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.metrics.CoreMetricsUtil;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 
@@ -152,7 +153,8 @@ public class HadoopTables implements Tables, Configurable {
   }
 
   private TableOperations newTableOps(String location) {
-    return new HadoopTableOperations(new Path(location), conf);
+    TableOperations tableOps = new HadoopTableOperations(new Path(location), conf);
+    return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, "hadoop", tableOps);
   }
 
   @Override

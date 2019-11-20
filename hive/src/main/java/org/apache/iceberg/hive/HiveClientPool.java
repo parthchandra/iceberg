@@ -23,6 +23,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.iceberg.hive.metrics.HiveMetricsUtil;
 import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransportException;
 
@@ -39,9 +40,9 @@ public class HiveClientPool extends ClientPool<HiveMetaStoreClient, TException> 
   }
 
   @Override
-  protected HiveMetaStoreClient newClient()  {
+  protected HiveMetaStoreClient newClient() {
     try {
-      return new HiveMetaStoreClient(hiveConf);
+      return HiveMetricsUtil.newMetaStoreClientWithMeterIfConfigured(hiveConf);
     } catch (MetaException e) {
       throw new RuntimeMetaException(e, "Failed to connect to Hive Metastore");
     } catch (Throwable t) {
