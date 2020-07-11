@@ -131,7 +131,7 @@ class SparkOrcValueReaders {
 
     protected StructReader(List<OrcValueReader<?>> readers, Types.StructType struct, Map<Integer, ?> idToConstant) {
       super(readers, struct, idToConstant);
-      this.numFields = readers.size();
+      this.numFields = struct.fields().size();
     }
 
     @Override
