@@ -43,16 +43,15 @@ import org.apache.spark.sql.catalyst.util.MapData;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.UTF8String;
 
-
-class SparkOrcValueReaders {
+public class SparkOrcValueReaders {
   private SparkOrcValueReaders() {
   }
 
-  static OrcValueReader<UTF8String> utf8String() {
+  public static OrcValueReader<UTF8String> utf8String() {
     return StringReader.INSTANCE;
   }
 
-  static OrcValueReader<?> timestampTzs() {
+  public static OrcValueReader<Long> timestampTzs() {
     return TimestampTzReader.INSTANCE;
   }
 
@@ -176,6 +175,7 @@ class SparkOrcValueReaders {
   }
 
   private static class Decimal18Reader implements OrcValueReader<Decimal> {
+    //TODO: these are being unused. check for bug
     private final int precision;
     private final int scale;
 
@@ -199,7 +199,7 @@ class SparkOrcValueReaders {
     }
   }
 
-  static class Decimal38Reader implements OrcValueReader<Decimal> {
+  private static class Decimal38Reader implements OrcValueReader<Decimal> {
     private final int precision;
     private final int scale;
 
