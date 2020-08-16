@@ -22,11 +22,9 @@ package org.apache.iceberg.spark.source;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
-import org.apache.iceberg.AppendFiles;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
-import org.apache.iceberg.ReplacePartitions;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SerializableTable;
 import org.apache.iceberg.SnapshotSummary;
@@ -39,6 +37,8 @@ import org.apache.iceberg.io.UnpartitionedWriter;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.spark.SparkWriteConf;
+import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
+import org.apache.iceberg.spark.source.CommitOperations.DynamicPartitionOverwrite;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.Tasks;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -69,7 +69,7 @@ class Writer implements DataSourceWriter {
   private final JavaSparkContext sparkContext;
   private final Table table;
   private final FileFormat format;
-  private final boolean replacePartitions;
+  private final CommitOperation<?> commitOp;
   private final String applicationId;
   private final String wapId;
   private final long targetFileSize;
@@ -78,17 +78,17 @@ class Writer implements DataSourceWriter {
   private final Map<String, String> extraSnapshotMetadata;
   private final boolean partitionedFanoutEnabled;
 
-  Writer(SparkSession spark, Table table, SparkWriteConf writeConf, boolean replacePartitions,
+  Writer(SparkSession spark, Table table, SparkWriteConf writeConf, CommitOperation<?> commitOp,
          String applicationId, Schema writeSchema, StructType dsSchema) {
-    this(spark, table, writeConf, replacePartitions, applicationId, null, writeSchema, dsSchema);
+    this(spark, table, writeConf, commitOp, applicationId, null, writeSchema, dsSchema);
   }
 
-  Writer(SparkSession spark, Table table, SparkWriteConf writeConf, boolean replacePartitions,
+  Writer(SparkSession spark, Table table, SparkWriteConf writeConf, CommitOperation<?> commitOp,
          String applicationId, String wapId, Schema writeSchema, StructType dsSchema) {
     this.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
     this.table = table;
     this.format = writeConf.dataFileFormat();
-    this.replacePartitions = replacePartitions;
+    this.commitOp = commitOp;
     this.applicationId = applicationId;
     this.wapId = wapId;
     this.targetFileSize = writeConf.targetDataFileSize();
@@ -112,15 +112,30 @@ class Writer implements DataSourceWriter {
 
   @Override
   public void commit(WriterCommitMessage[] messages) {
-    if (replacePartitions) {
-      replacePartitions(messages);
-    } else {
-      append(messages);
+    boolean withLocking = commitOp.withLocking();
+    try {
+      if (withLocking) {
+        LockManager.lock(table);
+      }
+
+      Iterable<DataFile> files = files(messages);
+      if (commitOp.equals(DynamicPartitionOverwrite.get()) && !files.iterator().hasNext()) {
+        LOG.info("Dyanmic overwrite is empty, skipping commit");
+        return;
+      }
+
+      SnapshotUpdate<?> update = commitOp.prepareSnapshotUpdate(table, files);
+      String desc = commitOp.description();
+      commitOperation(update, desc);
+    } finally {
+      if (withLocking) {
+        LockManager.unlock(table);
+      }
     }
   }
 
-  protected void commitOperation(SnapshotUpdate<?> operation, int numFiles, String description) {
-    LOG.info("Committing {} with {} files to table {}", description, numFiles, table);
+  protected void commitOperation(SnapshotUpdate<?> operation, String description) {
+    LOG.info("Committing {} to table {}", description, table);
     if (applicationId != null) {
       operation.set("spark.app.id", applicationId);
     }
@@ -140,37 +155,6 @@ class Writer implements DataSourceWriter {
     operation.commit(); // abort is automatically called if this fails
     long duration = System.currentTimeMillis() - start;
     LOG.info("Committed in {} ms", duration);
-  }
-
-  private void append(WriterCommitMessage[] messages) {
-    AppendFiles append = table.newAppend();
-
-    int numFiles = 0;
-    for (DataFile file : files(messages)) {
-      numFiles += 1;
-      append.appendFile(file);
-    }
-
-    commitOperation(append, numFiles, "append");
-  }
-
-  private void replacePartitions(WriterCommitMessage[] messages) {
-    Iterable<DataFile> files = files(messages);
-
-    if (!files.iterator().hasNext()) {
-      LOG.info("Dyanmic overwrite is empty, skipping commit");
-      return;
-    }
-
-    ReplacePartitions dynamicOverwrite = table.newReplacePartitions();
-
-    int numFiles = 0;
-    for (DataFile file : files) {
-      numFiles += 1;
-      dynamicOverwrite.addFile(file);
-    }
-
-    commitOperation(dynamicOverwrite, numFiles, "dynamic partition overwrite");
   }
 
   @Override

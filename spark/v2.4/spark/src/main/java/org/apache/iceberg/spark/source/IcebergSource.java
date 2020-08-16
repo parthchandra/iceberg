@@ -32,6 +32,9 @@ import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.spark.SparkWriteConf;
 import org.apache.iceberg.spark.metrics.MeteredReader;
 import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
+import org.apache.iceberg.spark.source.CommitOperations.Append;
+import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
+import org.apache.iceberg.spark.source.CommitOperations.DynamicPartitionOverwrite;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.SparkSession;
@@ -109,10 +112,10 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     SparkUtil.validatePartitionTransforms(table.spec());
     String appId = lazySparkSession().sparkContext().applicationId();
     String wapId = writeConf.wapId();
-    boolean replacePartitions = mode == SaveMode.Overwrite;
+    CommitOperation<?> commitOp = mode == SaveMode.Overwrite ? DynamicPartitionOverwrite.get() : Append.get();
 
     return Optional.of(new Writer(
-        lazySparkSession(), table, writeConf, replacePartitions, appId, wapId, writeSchema, dsStruct));
+        lazySparkSession(), table, writeConf, commitOp, appId, wapId, writeSchema, dsStruct));
   }
 
   @Override
