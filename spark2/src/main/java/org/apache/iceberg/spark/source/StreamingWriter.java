@@ -51,7 +51,7 @@ public class StreamingWriter extends Writer implements StreamWriter {
   StreamingWriter(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
                   DataSourceOptions options, String queryId, OutputMode mode, String applicationId,
                   Schema writeSchema, StructType dsSchema) {
-    super(table, io, encryptionManager, options, false, applicationId, writeSchema, dsSchema);
+    super(table, io, encryptionManager, options, CommitOperations.Append.get(), applicationId, writeSchema, dsSchema);
     this.queryId = queryId;
     this.mode = mode;
   }
@@ -75,7 +75,8 @@ public class StreamingWriter extends Writer implements StreamWriter {
         overwriteFiles.addFile(file);
         numFiles++;
       }
-      commit(overwriteFiles, epochId, numFiles, "streaming complete overwrite");
+      String desc = String.format("streaming complete overwrite with %d files", numFiles);
+      commit(overwriteFiles, epochId, desc);
     } else {
       AppendFiles append = table().newFastAppend();
       int numFiles = 0;
@@ -83,14 +84,15 @@ public class StreamingWriter extends Writer implements StreamWriter {
         append.appendFile(file);
         numFiles++;
       }
-      commit(append, epochId, numFiles, "streaming append");
+      String desc = String.format("streaming append with %d files", numFiles);
+      commit(append, epochId, desc);
     }
   }
 
-  private <T> void commit(SnapshotUpdate<T> snapshotUpdate, long epochId, int numFiles, String description) {
+  private <T> void commit(SnapshotUpdate<T> snapshotUpdate, long epochId, String description) {
     snapshotUpdate.set(QUERY_ID_PROPERTY, queryId);
     snapshotUpdate.set(EPOCH_ID_PROPERTY, Long.toString(epochId));
-    commitOperation(snapshotUpdate, numFiles, description);
+    commitOperation(snapshotUpdate, description);
   }
 
   @Override

@@ -33,6 +33,9 @@ import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.SparkUtil;
+import org.apache.iceberg.spark.source.CommitOperations.Append;
+import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
+import org.apache.iceberg.spark.source.CommitOperations.DynamicPartitionOverwrite;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
@@ -98,13 +101,13 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     SparkUtil.validatePartitionTransforms(table.spec());
     String appId = lazySparkSession().sparkContext().applicationId();
     String wapId = lazySparkSession().conf().get("spark.wap.id", null);
-    boolean replacePartitions = mode == SaveMode.Overwrite;
+    CommitOperation<?> commitOp = mode == SaveMode.Overwrite ? DynamicPartitionOverwrite.get() : Append.get();
 
     Broadcast<FileIO> io = lazySparkContext().broadcast(SparkUtil.serializableFileIO(table));
     Broadcast<EncryptionManager> encryptionManager = lazySparkContext().broadcast(table.encryption());
 
     return Optional.of(new Writer(
-        table, io, encryptionManager, options, replacePartitions, appId, wapId, writeSchema, dsStruct));
+        table, io, encryptionManager, options, commitOp, appId, wapId, writeSchema, dsStruct));
   }
 
   @Override
