@@ -72,6 +72,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.catalyst.CatalystTypeConverters;
 import org.apache.spark.sql.catalyst.TableIdentifier;
 import org.apache.spark.sql.catalyst.analysis.NoSuchDatabaseException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
@@ -83,6 +84,9 @@ import org.apache.spark.sql.catalyst.expressions.Expression;
 import org.apache.spark.sql.catalyst.expressions.NamedExpression;
 import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
+import org.apache.spark.sql.execution.datasources.FileStatusCache;
+import org.apache.spark.sql.execution.datasources.InMemoryFileIndex;
+import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Function2;
@@ -280,6 +284,52 @@ public class SparkTableUtil {
   public static List<DataFile> listPartition(SparkPartition partition, PartitionSpec spec,
                                              SerializableConfiguration conf, MetricsConfig metricsConfig) {
     return listPartition(partition, spec, conf, metricsConfig, null);
+  }
+
+  /**
+   * Returns all partitions in the table. This is an ADT specific addition.
+   *
+   * @param spark a Spark session
+   * @param rootPath a table identifier
+   * @param format format of the file
+   * @return all table's partitions
+   */
+  public static List<SparkPartition> getPartitions(SparkSession spark, Path rootPath, String format) {
+    FileStatusCache fileStatusCache = FileStatusCache.getOrCreate(spark);
+    Map<String, String> emptyMap = Collections.emptyMap();
+
+    InMemoryFileIndex fileIndex = new InMemoryFileIndex(
+        spark,
+        JavaConverters
+            .collectionAsScalaIterableConverter(ImmutableList.of(rootPath))
+            .asScala()
+            .toSeq(),
+        JavaConverters
+            .mapAsScalaMapConverter(emptyMap)
+            .asScala()
+            .toMap(Predef.<Tuple2<String, String>>conforms()),
+        Option.empty(), fileStatusCache);
+
+    org.apache.spark.sql.execution.datasources.PartitionSpec spec = fileIndex.partitionSpec();
+    StructType schema = spec.partitionColumns();
+    if (spec.partitions().isEmpty()) {
+      return ImmutableList.of(new SparkPartition(Collections.emptyMap(), rootPath.toString(), format));
+    }
+
+    return JavaConverters
+        .seqAsJavaListConverter(spec.partitions())
+        .asJava()
+        .stream()
+        .map(partition -> {
+          Map<String, String> values = Maps.newHashMap();
+          JavaConverters.asJavaIterableConverter(schema).asJava().forEach(field -> {
+            int fieldIndex = schema.fieldIndex(field.name());
+            Object catalystValue = partition.values().get(fieldIndex, field.dataType());
+            Object value = CatalystTypeConverters.convertToScala(catalystValue, field.dataType());
+            values.put(field.name(), value.toString());
+          });
+          return new SparkPartition(values, partition.path().toString(), format);
+        }).collect(Collectors.toList());
   }
 
   /**
