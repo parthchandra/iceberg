@@ -130,7 +130,8 @@ public class Reader implements DataSourceReader, SupportsScanColumnarBatch, Supp
     this.splitLookback = options.get("lookback").map(Integer::parseInt).orElse(null);
     this.splitOpenFileCost = options.get("file-open-cost").map(Long::parseLong).orElse(null);
 
-    if (io.getValue() instanceof HadoopFileIO) {
+    boolean localityOption = options.get("locality").map(Boolean::parseBoolean).orElse(false);
+    if (localityOption && io.getValue() instanceof HadoopFileIO) {
       String scheme = "no_exist";
       try {
         Configuration conf = SparkSession.active().sessionState().newHadoopConf();
@@ -143,8 +144,7 @@ public class Reader implements DataSourceReader, SupportsScanColumnarBatch, Supp
       } catch (IOException ioe) {
         LOG.warn("Failed to get Hadoop Filesystem", ioe);
       }
-      this.localityPreferred = options.get("locality").map(Boolean::parseBoolean)
-          .orElse(LOCALITY_WHITELIST_FS.contains(scheme));
+      this.localityPreferred = LOCALITY_WHITELIST_FS.contains(scheme);
     } else {
       this.localityPreferred = false;
     }
