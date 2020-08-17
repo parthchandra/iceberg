@@ -103,6 +103,7 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
   private List<CombinedScanTask> tasks = null; // lazy cache of tasks
   private Boolean readUsingBatch = null;
 
+  @SuppressWarnings("checkstyle:CyclomaticComplexity")
   Reader(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
       boolean caseSensitive, DataSourceOptions options) {
     this.table = table;
@@ -132,8 +133,9 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
     this.splitLookback = options.get("lookback").map(Integer::parseInt).orElse(null);
     this.splitOpenFileCost = options.get("file-open-cost").map(Long::parseLong).orElse(null);
 
-    if (io.getValue() instanceof HadoopFileIO) {
-      String fsscheme = "no_exist";
+    boolean localityOption = options.get("locality").map(Boolean::parseBoolean).orElse(false);
+    if (localityOption && io.getValue() instanceof HadoopFileIO) {
+      String scheme = "no_exist";
       try {
         Configuration conf = SparkSession.active().sessionState().newHadoopConf();
         // merge hadoop config set on table
@@ -141,13 +143,11 @@ class Reader implements DataSourceReader, SupportsScanColumnarBatch, SupportsPus
         // merge hadoop config passed as options and overwrite the one on table
         mergeIcebergHadoopConfs(conf, options.asMap());
         FileSystem fs = new Path(table.location()).getFileSystem(conf);
-        fsscheme = fs.getScheme().toLowerCase(Locale.ENGLISH);
+        scheme = fs.getScheme().toLowerCase(Locale.ENGLISH);
       } catch (IOException ioe) {
         LOG.warn("Failed to get Hadoop Filesystem", ioe);
       }
-      String scheme = fsscheme; // Makes an effectively final version of scheme
-      this.localityPreferred = options.get("locality").map(Boolean::parseBoolean)
-          .orElseGet(() -> LOCALITY_WHITELIST_FS.contains(scheme));
+      this.localityPreferred = LOCALITY_WHITELIST_FS.contains(scheme);
     } else {
       this.localityPreferred = false;
     }
