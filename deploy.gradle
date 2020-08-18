@@ -62,6 +62,11 @@ subprojects {
     }
   }
 
+  //To prevent the Rio build configurations from actually getting run
+  afterEvaluate {
+    tasks.findAll {it.name.toLowerCase().contains("rio")}.forEach{it.enabled(false)}
+  }
+
   publishing {
     publications {
       apache(MavenPublication) {
