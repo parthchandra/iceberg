@@ -72,6 +72,7 @@ class SparkAppenderFactory {
           return ORC.write(file)
               .createWriterFunc(SparkOrcWriter::new)
               .setAll(properties)
+              .metricsConfig(metricsConfig)
               .schema(writeSchema)
               .overwrite()
               .build();
