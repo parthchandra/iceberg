@@ -277,6 +277,11 @@ public class Reader implements DataSourceReader, SupportsScanColumnarBatch, Supp
 
   @Override
   public Statistics estimateStatistics() {
+    // its a fresh table, no data
+    if (table.currentSnapshot() == null) {
+      return new Stats(0L, 0L);
+    }
+
     if (filterExpressions == null || filterExpressions == Expressions.alwaysTrue()) {
       long totalRecords = PropertyUtil.propertyAsLong(table.currentSnapshot().summary(),
           SnapshotSummary.TOTAL_RECORDS_PROP, Long.MAX_VALUE);
