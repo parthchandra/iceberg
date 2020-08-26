@@ -61,7 +61,8 @@ public class CoreMetricsUtil {
 
   public enum TableOperationsMetricType {
     HIVE("hive"),
-    HADOOP("hadoop");
+    HADOOP("hadoop"),
+    STATIC("static");
 
     private final String prefix;
 

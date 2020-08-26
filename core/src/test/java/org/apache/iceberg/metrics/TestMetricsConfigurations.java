@@ -68,4 +68,12 @@ public class TestMetricsConfigurations {
         meteredTableOps instanceof Metered);
   }
 
+  @Test
+  public void testEnableMetricsStaticTableOperations() {
+    conf.set("iceberg.dropwizard.enable-metrics-collection", "true");
+
+    TableOperations meteredTableOps = CoreMetricsUtil.wrapWithMeterIfConfigured(conf, "static", mockTableOps);
+
+    Assert.assertTrue("TableOperations should be an instance of Metered", meteredTableOps instanceof Metered);
+  }
 }
