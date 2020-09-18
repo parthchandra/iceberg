@@ -44,6 +44,7 @@ import org.apache.iceberg.Tables;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.metrics.CoreMetricsUtil;
+import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.util.Pair;
@@ -166,7 +167,8 @@ public class HadoopTables implements Tables, Configurable {
     return new BaseTable(ops, location);
   }
 
-  private TableOperations newTableOps(String location) {
+  @VisibleForTesting
+  TableOperations newTableOps(String location) {
     if (location.contains(METADATA_JSON)) {
       TableOperations tableOps = new StaticTableOperations(location, new HadoopFileIO(conf));
       return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, "static", tableOps);
