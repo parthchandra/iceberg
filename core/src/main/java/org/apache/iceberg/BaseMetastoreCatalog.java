@@ -158,7 +158,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
       TableIdentifier baseTableIdentifier = TableIdentifier.of(identifier.namespace().levels());
       TableOperations ops = newTableOps(baseTableIdentifier);
       if (ops.current() == null) {
-        throw new NoSuchTableException("Table does not exist: " + baseTableIdentifier);
+        throw new NoSuchTableException("Table does not exist: %s", baseTableIdentifier);
       }
 
       Table baseTable = new BaseTable(ops, fullTableName(name(), baseTableIdentifier));
@@ -187,7 +187,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
       }
 
     } else {
-      throw new NoSuchTableException("Table does not exist: " + identifier);
+      throw new NoSuchTableException("Table does not exist: %s", identifier);
     }
   }
 
@@ -285,7 +285,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
               }
             }
           } catch (IOException e) {
-            throw new RuntimeIOException(e, "Failed to read manifest file: " + manifest.path());
+            throw new RuntimeIOException(e, "Failed to read manifest file: %s", manifest.path());
           }
         });
   }

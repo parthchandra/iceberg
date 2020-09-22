@@ -59,9 +59,8 @@ public class Files {
 
       if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs()) {
         throw new RuntimeIOException(
-            String.format(
                 "Failed to create the file's directory at %s.",
-                file.getParentFile().getAbsolutePath()));
+                file.getParentFile().getAbsolutePath());
       }
 
       try {
@@ -75,7 +74,7 @@ public class Files {
     public PositionOutputStream createOrOverwrite() {
       if (file.exists()) {
         if (!file.delete()) {
-          throw new RuntimeIOException("Failed to delete: " + file);
+          throw new RuntimeIOException("Failed to delete: %s", file);
         }
       }
       return create();
