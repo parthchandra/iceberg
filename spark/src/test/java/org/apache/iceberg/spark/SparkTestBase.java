@@ -63,7 +63,9 @@ public class SparkTestBase {
 
   @AfterClass
   public static void stopMetastoreAndSpark() {
-    catalog.close();
+    if (catalog != null) {
+      catalog.close();
+    }
     SparkTestBase.catalog = null;
     metastore.stop();
     SparkTestBase.metastore = null;
