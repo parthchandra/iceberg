@@ -275,6 +275,11 @@ public class InclusiveMetricsEvaluator implements Serializable {
 
       Collection<T> literals = literalSet;
 
+      if (literals.size() > 200) {
+        // skip evaluating the predicate if the number of values is too big
+        return ROWS_MIGHT_MATCH;
+      }
+
       if (lowerBounds != null && lowerBounds.containsKey(id)) {
         T lower = Conversions.fromByteBuffer(ref.type(), lowerBounds.get(id));
         literals = literals.stream().filter(v -> ref.comparator().compare(lower, v) <= 0).collect(Collectors.toList());

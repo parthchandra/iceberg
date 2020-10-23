@@ -252,6 +252,11 @@ public class ManifestEvaluator {
 
       Collection<T> literals = literalSet;
 
+      if (literals.size() > 200) {
+        // skip evaluating the predicate if the number of values is too big
+        return ROWS_MIGHT_MATCH;
+      }
+
       T lower = Conversions.fromByteBuffer(ref.type(), fieldStats.lowerBound());
       literals = literals.stream().filter(v -> ref.comparator().compare(lower, v) <= 0).collect(Collectors.toList());
       if (literals.isEmpty()) { // if all values are less than lower bound, rows cannot match.
