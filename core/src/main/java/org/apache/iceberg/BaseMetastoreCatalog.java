@@ -54,7 +54,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
 
     TableOperations ops = newTableOps(identifier);
     if (ops.current() != null) {
-      throw new AlreadyExistsException("Table already exists: " + identifier);
+      throw new AlreadyExistsException("Table already exists: %s", identifier);
     }
 
     String baseLocation;
@@ -70,7 +70,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
     try {
       ops.commit(null, metadata);
     } catch (CommitFailedException ignored) {
-      throw new AlreadyExistsException("Table was created concurrently: " + identifier);
+      throw new AlreadyExistsException("Table was created concurrently: %s", identifier);
     }
 
     return new BaseTable(ops, fullTableName(name(), identifier));
@@ -87,7 +87,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
 
     TableOperations ops = newTableOps(identifier);
     if (ops.current() != null) {
-      throw new AlreadyExistsException("Table already exists: " + identifier);
+      throw new AlreadyExistsException("Table already exists: %s", identifier);
     }
 
     String baseLocation = location != null ? location : defaultWarehouseLocation(identifier);
@@ -107,7 +107,7 @@ public abstract class BaseMetastoreCatalog implements Catalog {
 
     TableOperations ops = newTableOps(identifier);
     if (!orCreate && ops.current() == null) {
-      throw new NoSuchTableException("No such table: " + identifier);
+      throw new NoSuchTableException("No such table: %s", identifier);
     }
 
     Map<String, String> tableProperties = properties != null ? properties : Maps.newHashMap();

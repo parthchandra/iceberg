@@ -59,7 +59,7 @@ final class TableResolver {
         throw new UnsupportedOperationException(InputFormatConfig.HIVE_CATALOG + " is not supported yet");
 
       default:
-        throw new NoSuchNamespaceException("Catalog " + catalogName + " not supported.");
+        throw new NoSuchNamespaceException("Catalog %s not supported", catalogName);
     }
   }
 

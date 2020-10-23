@@ -135,7 +135,7 @@ public class HadoopTables implements Tables, Configurable {
       case ALL_ENTRIES:
         return new AllEntriesTable(ops, baseTable);
       default:
-        throw new NoSuchTableException(String.format("Unknown metadata table type: %s for %s", type, location));
+        throw new NoSuchTableException("Unknown metadata table type: %s for %s", type, location);
     }
   }
 
