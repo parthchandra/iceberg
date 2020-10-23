@@ -66,11 +66,9 @@ subprojects {
           '-XepExcludedPaths:.*/(test|generated-src)/.*',
           // specific to Palantir
           '-Xep:ConsistentLoggerName:OFF',  // Uses name `log` but we use name `LOG`
-          '-Xep:FinalClass:OFF',
           '-Xep:PreferSafeLoggingPreconditions:OFF',
           '-Xep:PreferSafeLoggableExceptions:OFF',
           '-Xep:Slf4jLogsafeArgs:OFF',
-          '-Xep:RawTypes:OFF',
           // subclasses are not equal
           '-Xep:EqualsGetClass:OFF',
           // patterns that are allowed
