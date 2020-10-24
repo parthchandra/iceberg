@@ -55,4 +55,8 @@ public class Actions {
   public ExpireSnapshotsAction expireSnapshots() {
     return new ExpireSnapshotsAction(spark, table);
   }
+
+  public PlanScanAction planScan() {
+    return new PlanScanAction(spark, table);
+  }
 }

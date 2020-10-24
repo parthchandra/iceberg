@@ -76,7 +76,8 @@ public interface DataFile extends ContentFile<DataFile> {
         LOWER_BOUNDS,
         UPPER_BOUNDS,
         KEY_METADATA,
-        SPLIT_OFFSETS
+        SPLIT_OFFSETS,
+        ManifestFile.SPEC_ID.asOptional()
     );
   }
 
