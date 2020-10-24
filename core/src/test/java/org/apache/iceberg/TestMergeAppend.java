@@ -37,11 +37,12 @@ import static org.apache.iceberg.relocated.com.google.common.collect.Iterators.c
 
 @RunWith(Parameterized.class)
 public class TestMergeAppend extends TableTestBase {
+
   @Parameterized.Parameters
   public static Object[][] parameters() {
     return new Object[][] {
-        new Object[] { 1 },
-        new Object[] { 2 },
+        new Object[] {1},
+        new Object[] {2},
     };
   }
 
@@ -713,10 +714,15 @@ public class TestMergeAppend extends TableTestBase {
         .appendFile(FILE_A)
         .commit();
 
+    Snapshot snap = table.currentSnapshot();
+    long commitId = snap.snapshotId();
+    validateSnapshot(null, snap, 1, FILE_A);
     TableMetadata base = readMetadata();
+
     Assert.assertEquals("Should create 1 manifest for initial write",
         1, base.currentSnapshot().allManifests().size());
     ManifestFile initialManifest = base.currentSnapshot().allManifests().get(0);
+    validateManifest(initialManifest, seqs(1), ids(commitId), files(FILE_A), statuses(Status.ADDED));
 
     // build the new spec using the table's schema, which uses fresh IDs
     PartitionSpec newSpec = PartitionSpec.builderFor(base.schema())
@@ -726,26 +732,41 @@ public class TestMergeAppend extends TableTestBase {
 
     // commit the new partition spec to the table manually
     table.ops().commit(base, base.updatePartitionSpec(newSpec));
+    V2Assert.assertEquals("Last sequence number should be 1", 1, readMetadata().lastSequenceNumber());
+    V1Assert.assertEquals("Table should end with last-sequence-number 0", 0, readMetadata().lastSequenceNumber());
 
+    // create a new with the table's current spec
     DataFile newFile = DataFiles.builder(table.spec())
-        .copy(FILE_B)
+        .withPath("/path/to/data-x.parquet")
+        .withFileSizeInBytes(10)
+        .withPartitionPath("id_bucket=1/data_bucket=1")
+        .withRecordCount(1)
         .build();
 
-    Snapshot pending = table.newAppend()
+    table.newAppend()
         .appendFile(newFile)
-        .apply();
+        .commit();
+    Snapshot committedSnapshot = table.currentSnapshot();
+
+    V2Assert.assertEquals("Snapshot sequence number should be 2", 2, committedSnapshot.sequenceNumber());
+    V2Assert.assertEquals("Last sequence number should be 2", 2, readMetadata().lastSequenceNumber());
+    V1Assert.assertEquals("Table should end with last-sequence-number 0", 0, readMetadata().lastSequenceNumber());
 
     Assert.assertEquals("Should use 2 manifest files",
-        2, pending.allManifests().size());
+        2, committedSnapshot.allManifests().size());
 
     // new manifest comes first
-    validateManifest(pending.allManifests().get(0), ids(pending.snapshotId()), files(newFile));
+    validateManifest(committedSnapshot.allManifests().get(0),
+        seqs(2),
+        ids(committedSnapshot.snapshotId()), files(newFile),
+        statuses(Status.ADDED)
+    );
 
     Assert.assertEquals("Second manifest should be the initial manifest with the old spec",
-        initialManifest, pending.allManifests().get(1));
+        initialManifest, committedSnapshot.allManifests().get(1));
 
     // field ids of manifest entries in two manifests with different specs of the same source field should be different
-    ManifestEntry<DataFile> entry = ManifestFiles.read(pending.allManifests().get(0), FILE_IO)
+    ManifestEntry<DataFile> entry = ManifestFiles.read(committedSnapshot.allManifests().get(0), FILE_IO)
         .entries().iterator().next();
     Types.NestedField field = ((PartitionData) entry.file().partition()).getPartitionType().fields().get(0);
     Assert.assertEquals(1000, field.fieldId());
@@ -754,7 +775,7 @@ public class TestMergeAppend extends TableTestBase {
     Assert.assertEquals(1001, field.fieldId());
     Assert.assertEquals("data_bucket", field.name());
 
-    entry = ManifestFiles.read(pending.allManifests().get(1), FILE_IO).entries().iterator().next();
+    entry = ManifestFiles.read(committedSnapshot.allManifests().get(1), FILE_IO).entries().iterator().next();
     field = ((PartitionData) entry.file().partition()).getPartitionType().fields().get(0);
     Assert.assertEquals(1000, field.fieldId());
     Assert.assertEquals("data_bucket", field.name());
