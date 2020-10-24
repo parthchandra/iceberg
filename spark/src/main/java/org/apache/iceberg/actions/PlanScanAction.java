@@ -40,6 +40,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScanContext;
@@ -76,9 +77,9 @@ public class PlanScanAction extends BaseAction<CloseableIterable<CombinedScanTas
     DISTRIBUTED
   }
 
-  public static final String ICEBERG_PLAN_MODE = "iceberg.plan_mode";
+  public static final String ICEBERG_PLAN_MODE = "plan-mode";
 
-  public static final PlanMode parsePlanMode(String mode) {
+  public static PlanMode parsePlanMode(String mode) {
     try {
       return PlanMode.valueOf(mode.toUpperCase(Locale.ROOT));
     } catch (IllegalArgumentException ex) {
@@ -94,6 +95,7 @@ public class PlanScanAction extends BaseAction<CloseableIterable<CombinedScanTas
   private final Schema schema;
 
   private TableScanContext context;
+  private Snapshot lazySnapshot;
 
   public PlanScanAction(SparkSession spark, Table table) {
     this.table = table;
@@ -155,9 +157,13 @@ public class PlanScanAction extends BaseAction<CloseableIterable<CombinedScanTas
   }
 
   private Snapshot snapshot() {
-    return context.snapshotId() != null ?
-        ops.current().snapshot(context.snapshotId()) :
-        ops.current().currentSnapshot();
+    if (lazySnapshot == null) {
+      TableMetadata metadata = ops.current();
+      Long snapshotId = context.snapshotId();
+      lazySnapshot = snapshotId != null ? metadata.snapshot(snapshotId) : metadata.currentSnapshot();
+    }
+
+    return lazySnapshot;
   }
 
   public CloseableIterable<FileScanTask> planFiles() {
