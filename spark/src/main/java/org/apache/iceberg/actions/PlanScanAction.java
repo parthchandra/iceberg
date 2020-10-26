@@ -200,7 +200,7 @@ public class PlanScanAction extends BaseAction<CloseableIterable<CombinedScanTas
 
     // Evaluate all files based on their partition info and collect the rows back locally
     Dataset<Row> scanTaskDataset = dataFileEntries
-        .select(dataFileEntries.col("data_file.*"))
+        .select("data_file.*")
         .mapPartitions(
             (MapPartitionsFunction<Row, Row>) it -> {
               SparkDataFile container = new SparkDataFile(partitionStruct, dataFileSchema);
@@ -210,14 +210,13 @@ public class PlanScanAction extends BaseAction<CloseableIterable<CombinedScanTas
                     return broadcastPartitionEvaluators.getValue().get(file.specId()).eval(file.partition()) &&
                         broadcastMetricsEvaluator.getValue().eval(file);
                   }).iterator();
-            }, RowEncoder.apply(dataFileEntries.schema()));
+            }, RowEncoder.apply(dataFileSchema));
 
     LoadingCache<Integer, SpecCacheEntry> specCache = buildSpecCache();
 
     SparkDataFile container = new SparkDataFile(partitionStruct, dataFileSchema);
     List<FileScanTask> tasks = scanTaskDataset.collectAsList().stream().map(row -> {
-      Row dataFile = row.getAs("data_file");
-      SparkDataFile file = container.wrap(dataFile);
+      SparkDataFile file = container.wrap(row);
       SpecCacheEntry cached = specCache.get(file.specId());
       return (FileScanTask) ScanTasks
           .createBaseFileScanTask(file.copy(), cached.schemaString, cached.specString, cached.residuals);
