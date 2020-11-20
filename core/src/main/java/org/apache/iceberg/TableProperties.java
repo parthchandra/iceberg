@@ -21,7 +21,8 @@ package org.apache.iceberg;
 
 public class TableProperties {
 
-  private TableProperties() {}
+  private TableProperties() {
+  }
 
   public static final String COMMIT_NUM_RETRIES = "commit.retry.num-retries";
   public static final int COMMIT_NUM_RETRIES_DEFAULT = 4;
@@ -125,4 +126,7 @@ public class TableProperties {
 
   public static final String SNAPSHOT_ID_INHERITANCE_ENABLED = "compatibility.snapshot-id-inheritance.enabled";
   public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = false;
+
+  public static final String GC_ENABLED = "gc.enabled";
+  public static final boolean GC_ENABLED_DEFAULT = true;
 }

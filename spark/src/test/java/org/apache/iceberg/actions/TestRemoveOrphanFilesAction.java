@@ -31,6 +31,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
@@ -38,6 +39,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.hadoop.HiddenPathFilter;
@@ -914,5 +916,31 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
 
     Assert.assertEquals(expectedOrphanFiles.stream().map(row -> row.get(0).toString())
             .collect(Collectors.toList()), orphanFiles);
+  }
+
+  @Test
+  public void testGarbageCollectionDisabled() {
+    Table table = TABLES.create(SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), tableLocation);
+
+    List<ThreeColumnRecord> records = Lists.newArrayList(
+        new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA")
+    );
+
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(tableLocation);
+
+    table.updateProperties()
+        .set(TableProperties.GC_ENABLED, "false")
+        .commit();
+
+    Actions actions = Actions.forTable(table);
+    AssertHelpers.assertThrows("Should complain about removing orphan files",
+        ValidationException.class, "Cannot remove orphan files: GC is disabled",
+        actions::removeOrphanFiles);
   }
 }
