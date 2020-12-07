@@ -27,7 +27,7 @@ buildscript {
     maven { url "https://artifacts.apple.com/plugins-release" }
   }
   dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:3.0.0"
+    classpath "com.apple.cie.rio:gradle-build-plugin:3.+"
   }
 }
 
