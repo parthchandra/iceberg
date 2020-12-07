@@ -36,7 +36,7 @@ apply plugin: com.apple.cie.rio.group.RioGroupPlugin
 subprojects {
   apply plugin: 'maven'
   apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
+  apply plugin: com.apple.cie.rio.binary.RioBinaryPlugin
 
   task sourceJar(type: Jar, dependsOn: classes) {
     classifier = 'sources'
@@ -54,17 +54,6 @@ subprojects {
     archives javadocJar
     archives testJar
     testArtifacts testJar
-  }
-
-  rio {
-    library {
-      isPublic = true
-    }
-  }
-
-  //To prevent the Rio build configurations from actually getting run
-  afterEvaluate {
-    tasks.findAll {it.name.toLowerCase().contains("rio")}.forEach{it.enabled(false)}
   }
 
   publishing {
