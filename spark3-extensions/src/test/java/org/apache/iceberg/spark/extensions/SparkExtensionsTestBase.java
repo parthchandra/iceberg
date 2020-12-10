@@ -46,7 +46,6 @@ public abstract class SparkExtensionsTestBase extends SparkCatalogTestBase {
         .master("local[2]")
         .config("spark.testing", "true")
         .config(SQLConf.PARTITION_OVERWRITE_MODE().key(), "dynamic")
-        .config("spark.sql.extensions", IcebergSparkSessionExtensions.class.getName())
         .config("spark.hadoop." + METASTOREURIS.varname, hiveConf.get(METASTOREURIS.varname))
         .config("spark.sql.shuffle.partitions", "4")
         .enableHiveSupport()

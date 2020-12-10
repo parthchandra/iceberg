@@ -25,10 +25,10 @@ import org.apache.arrow.util.Preconditions;
 import org.apache.iceberg.IsolationLevel;
 import org.apache.iceberg.Table;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.connector.iceberg.write.MergeBuilder;
 import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.connector.read.ScanBuilder;
 import org.apache.spark.sql.connector.write.LogicalWriteInfo;
+import org.apache.spark.sql.connector.write.MergeBuilder;
 import org.apache.spark.sql.connector.write.WriteBuilder;
 
 import static org.apache.iceberg.TableProperties.DELETE_ISOLATION_LEVEL;

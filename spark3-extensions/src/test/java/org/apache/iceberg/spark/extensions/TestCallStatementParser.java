@@ -56,7 +56,6 @@ public class TestCallStatementParser {
   public static void startSpark() {
     TestCallStatementParser.spark = SparkSession.builder()
         .master("local[2]")
-        .config("spark.sql.extensions", IcebergSparkSessionExtensions.class.getName())
         .config("spark.extra.prop", "value")
         .getOrCreate();
     TestCallStatementParser.parser = spark.sessionState().sqlParser();

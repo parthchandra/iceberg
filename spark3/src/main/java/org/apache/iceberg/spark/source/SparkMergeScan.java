@@ -43,8 +43,8 @@ import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.TableScanUtil;
 import org.apache.spark.broadcast.Broadcast;
-import org.apache.spark.sql.connector.iceberg.read.SupportsFileFilter;
 import org.apache.spark.sql.connector.read.Statistics;
+import org.apache.spark.sql.connector.read.SupportsFileFilter;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 import static org.apache.iceberg.TableProperties.SPLIT_LOOKBACK;

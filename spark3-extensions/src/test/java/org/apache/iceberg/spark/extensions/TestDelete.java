@@ -309,7 +309,7 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
     validateSnapshot(currentSnapshot, "delete", "1", "1", null);
   }
 
-  @Ignore // TODO: fails due to SPARK-33267
+  @Test
   public void testDeleteWithInAndNotInConditions() {
     createAndInitUnpartitionedTable();
 
@@ -327,7 +327,7 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
 
     sql("DELETE FROM %s WHERE id NOT IN (1, 10)", tableName);
     assertEquals("Should have expected rows",
-        ImmutableList.of(),
+        ImmutableList.of(row(null, "hr")),
         sql("SELECT * FROM %s ORDER BY id ASC NULLS LAST", tableName));
   }
 
@@ -425,7 +425,7 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
         sql("SELECT * FROM %s ORDER BY id ASC NULLS LAST", tableName));
   }
 
-  @Ignore // TODO: not supported since SPARK-25154 fix is not yet available
+  @Test
   public void testDeleteWithNotInSubquery() throws NoSuchTableException {
     createAndInitUnpartitionedTable();
 
@@ -454,19 +454,6 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
     assertEquals("Should have expected rows",
         ImmutableList.of(row(2, "hardware")),
         sql("SELECT * FROM %s ORDER BY id ASC NULLS LAST", tableName));
-  }
-
-  @Test
-  public void testDeleteWithNotInSubqueryNotSupported() throws NoSuchTableException {
-    createAndInitUnpartitionedTable();
-
-    append(new Employee(1, "hr"), new Employee(2, "hardware"));
-
-    createOrReplaceView("deleted_id", Arrays.asList(-1, -2, null), Encoders.INT());
-
-    AssertHelpers.assertThrows("Should complain about NOT IN subquery",
-        AnalysisException.class, "Null-aware predicate sub-queries are not currently supported",
-        () -> sql("DELETE FROM %s WHERE id NOT IN (SELECT * FROM deleted_id)", tableName));
   }
 
   @Test
@@ -529,7 +516,8 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
         sql("SELECT * FROM %s ORDER BY id ASC NULLS LAST", tableName));
   }
 
-  @Test
+  // ignore temporarily until we implement sorting
+  @Ignore
   public void testDeleteThatRequiresGroupingBeforeWrite() throws NoSuchTableException {
     createAndInitPartitionedTable();
 
