@@ -1,5 +1,5 @@
 schemaVersion: 2.0
-timeout: 30
+timeout: 60
 
 notify:
   pullRequestComment:
