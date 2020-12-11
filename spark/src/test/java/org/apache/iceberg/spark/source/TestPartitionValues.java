@@ -291,6 +291,7 @@ public abstract class TestPartitionValues {
       sourceDF.write()
           .format("iceberg")
           .mode("append")
+          .option("ignore-required-distribution-and-ordering", "true")
           .save(location.toString());
 
       List<Row> actual = spark.read()
@@ -359,6 +360,7 @@ public abstract class TestPartitionValues {
       sourceDF.write()
           .format("iceberg")
           .mode("append")
+          .option("ignore-required-distribution-and-ordering", "true")
           .save(location.toString());
 
       List<Row> actual = spark.read()

@@ -555,6 +555,7 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
         .write()
         .format("iceberg")
         .mode("append")
+        .option("ignore-required-distribution-and-ordering", "true")
         .save(tableLocation);
 
     // sleep for 1 second to unsure files will be old enough
@@ -590,6 +591,7 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
         .write()
         .format("iceberg")
         .mode("append")
+        .option("ignore-required-distribution-and-ordering", "true")
         .save(tableLocation);
 
     // sleep for 1 second to unsure files will be old enough

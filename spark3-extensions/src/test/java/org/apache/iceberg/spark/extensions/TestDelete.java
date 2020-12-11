@@ -49,7 +49,6 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT;
@@ -516,8 +515,7 @@ public abstract class TestDelete extends SparkRowLevelOperationsTestBase {
         sql("SELECT * FROM %s ORDER BY id ASC NULLS LAST", tableName));
   }
 
-  // ignore temporarily until we implement sorting
-  @Ignore
+  @Test
   public void testDeleteThatRequiresGroupingBeforeWrite() throws NoSuchTableException {
     createAndInitPartitionedTable();
 

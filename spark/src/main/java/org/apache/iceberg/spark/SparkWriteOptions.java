@@ -29,4 +29,6 @@ public class SparkWriteOptions {
 
   // Overrides table property write.spark.fanout.enabled(default: false)
   public static final String FANOUT_ENABLED = "fanout-enabled";
+
+  public static final String IGNORE_REQUIRED_DISTRIBUTION_AND_ORDERING = "ignore-required-distribution-and-ordering";
 }

@@ -27,6 +27,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CachingCatalog;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.ReplaceSortOrder;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.Transaction;
@@ -59,6 +60,7 @@ import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
 import org.apache.spark.sql.connector.catalog.TableChange.ColumnChange;
 import org.apache.spark.sql.connector.catalog.TableChange.RemoveProperty;
+import org.apache.spark.sql.connector.catalog.TableChange.SetDistributionAndOrder;
 import org.apache.spark.sql.connector.catalog.TableChange.SetProperty;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.types.StructType;
@@ -211,6 +213,7 @@ public class SparkCatalog extends BaseCatalog {
     SetProperty setLocation = null;
     SetProperty setSnapshotId = null;
     SetProperty pickSnapshotId = null;
+    SetDistributionAndOrder setDistributionAndOrder = null;
     List<TableChange> propertyChanges = Lists.newArrayList();
     List<TableChange> schemaChanges = Lists.newArrayList();
 
@@ -230,6 +233,8 @@ public class SparkCatalog extends BaseCatalog {
         propertyChanges.add(change);
       } else if (change instanceof ColumnChange) {
         schemaChanges.add(change);
+      } else if (change instanceof SetDistributionAndOrder) {
+        setDistributionAndOrder = (SetDistributionAndOrder) change;
       } else {
         throw new UnsupportedOperationException("Cannot apply unknown table change: " + change);
       }
@@ -237,7 +242,9 @@ public class SparkCatalog extends BaseCatalog {
 
     try {
       Table table = load(ident);
-      commitChanges(table, setLocation, setSnapshotId, pickSnapshotId, propertyChanges, schemaChanges);
+      commitChanges(
+          table, setLocation, setSnapshotId, pickSnapshotId,
+          propertyChanges, schemaChanges, setDistributionAndOrder);
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
     }
@@ -423,7 +430,8 @@ public class SparkCatalog extends BaseCatalog {
 
   private static void commitChanges(Table table, SetProperty setLocation, SetProperty setSnapshotId,
                                     SetProperty pickSnapshotId, List<TableChange> propertyChanges,
-                                    List<TableChange> schemaChanges) {
+                                    List<TableChange> schemaChanges,
+                                    SetDistributionAndOrder setDistributionAndOrder) {
     // don't allow setting the snapshot and picking a commit at the same time because order is ambiguous and choosing
     // one order leads to different results
     Preconditions.checkArgument(setSnapshotId == null || pickSnapshotId == null,
@@ -446,6 +454,13 @@ public class SparkCatalog extends BaseCatalog {
       transaction.updateLocation()
           .setLocation(setLocation.value())
           .commit();
+    }
+
+    if (setDistributionAndOrder != null) {
+      // Spark supports only a global sort right now so this is safe
+      ReplaceSortOrder replaceBuilder = transaction.replaceSortOrder();
+      Spark3Util.rebuildSortOrder(replaceBuilder, setDistributionAndOrder.sortOrder());
+      replaceBuilder.commit();
     }
 
     if (!propertyChanges.isEmpty()) {
