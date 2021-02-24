@@ -385,8 +385,13 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
     long duration = 0;
     boolean timeout = false;
 
-    if (state.get().equals(LockState.WAITING)) {
-      try {
+    try {
+      if (state.get().equals(LockState.WAITING)) {
+        // Retry count is the typical "upper bound of retries" for Tasks.run() function. In fact, the maximum number of
+        // attempts the Tasks.run() would try is `retries + 1`. Here, for checking locks, we use timeout as the
+        // upper bound of retries. So it is just reasonable to set a large retry count. However, if we set
+        // Integer.MAX_VALUE, the above logic of `retries + 1` would overflow into Integer.MIN_VALUE. Hence,
+        // the retry is set conservatively as `Integer.MAX_VALUE - 100` so it doesn't hit any boundary issues.
         Tasks.foreach(lockId)
             .retry(Integer.MAX_VALUE - 100) // Endless retries bound by timeouts. Tasks.retry adds 1 for "first try".
             .exponentialBackoff(
@@ -404,21 +409,18 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
                 if (newState.equals(LockState.WAITING)) {
                   throw WAITING_FOR_LOCK_EXCEPTION;
                 }
-              } catch (InterruptedException | TException e) {
-                throw new Tasks.UnrecoverableException(e);
+              } catch (InterruptedException e) {
+                Thread.interrupted(); // Clear the interrupt status flag
+                LOG.warn("Interrupted while waiting for lock.", e);
               }
-            });
-      } catch (WaitingForLockException waitingForLockException) {
-        timeout = true;
-        duration = System.currentTimeMillis() - start;
-      } catch (Tasks.UnrecoverableException wrappedException) {
-        if (wrappedException.getCause() instanceof TException) {
-          throw (TException) wrappedException.getCause();
-        } else if (wrappedException.getCause() instanceof InterruptedException) {
-          throw (InterruptedException) wrappedException.getCause();
-        } else {
-          throw wrappedException;
-        }
+            }, TException.class);
+      }
+    } catch (WaitingForLockException waitingForLockException) {
+      timeout = true;
+      duration = System.currentTimeMillis() - start;
+    } finally {
+      if (!state.get().equals(LockState.ACQUIRED)) {
+        unlock(Optional.of(lockId));
       }
     }
 
