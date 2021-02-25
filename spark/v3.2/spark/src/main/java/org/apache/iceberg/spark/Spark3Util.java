@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.MetadataTableType;
 import org.apache.iceberg.MetadataTableUtils;
 import org.apache.iceberg.NullOrder;
@@ -74,10 +75,12 @@ import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
+import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.Literal;
 import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.execution.datasources.FileStatusCache;
 import org.apache.spark.sql.execution.datasources.InMemoryFileIndex;
@@ -244,6 +247,27 @@ public class Spark3Util {
     Preconditions.checkArgument(table instanceof SparkTable, "Table %s is not an Iceberg table", table);
     SparkTable sparkTable = (SparkTable) table;
     return sparkTable.table();
+  }
+
+  // used by Apple Spark rules
+  public static Distribution buildRequiredDistribution(DistributionMode distributionMode,
+                                                       Schema schema,
+                                                       PartitionSpec spec,
+                                                       org.apache.iceberg.SortOrder sortOrder) {
+    return SparkDistributionAndOrderingUtil.buildRequiredDistribution(schema, spec, distributionMode, sortOrder);
+  }
+
+  // used by Apple Spark rules
+  public static SortOrder[] buildRequiredOrdering(Distribution distribution,
+                                                  Schema schema,
+                                                  PartitionSpec spec,
+                                                  org.apache.iceberg.SortOrder sortOrder) {
+    return SparkDistributionAndOrderingUtil.buildRequiredOrdering(schema, spec, distribution, sortOrder);
+  }
+
+  // used by Apple Spark rules
+  public static org.apache.iceberg.SortOrder toSortOrder(Schema schema, SortOrder[] ordering) {
+    return SparkDistributionAndOrderingUtil.toSortOrder(schema, ordering);
   }
 
   /**
