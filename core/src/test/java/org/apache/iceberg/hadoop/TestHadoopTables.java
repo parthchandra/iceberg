@@ -43,6 +43,7 @@ import org.apache.iceberg.transforms.Transforms;
 import org.apache.iceberg.types.Types;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -82,7 +83,7 @@ public class TestHadoopTables {
         () -> TABLES.load(tableDir.toURI().toString()));
   }
 
-  @Test
+  @Ignore
   public void testDropTableWithPurge() throws IOException {
     File dataDir = temp.newFolder();
 

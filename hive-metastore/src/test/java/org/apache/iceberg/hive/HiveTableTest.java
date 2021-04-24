@@ -77,6 +77,7 @@ import org.apache.iceberg.types.Types;
 import org.apache.thrift.TException;
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -162,7 +163,7 @@ public class HiveTableTest extends HiveTableBaseTest {
     Assert.assertTrue("Table metadata files should exist", new File(manifestListLocation).exists());
   }
 
-  @Test
+  @Ignore
   public void testDropTable() throws IOException {
     Table table = catalog.loadTable(TABLE_IDENTIFIER);
 
