@@ -1024,6 +1024,7 @@ project(':iceberg-spark3-runtime') {
     compile(project(':iceberg-nessie')) {
       exclude group: 'com.google.code.findbugs', module: 'jsr305'
     }
+    compile "org.apache.parquet:parquet-kms-apple"
   }
 
   shadowJar {
