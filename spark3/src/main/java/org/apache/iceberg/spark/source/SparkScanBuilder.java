@@ -159,8 +159,8 @@ public class SparkScanBuilder implements ScanBuilder, SupportsPushDownFilters, S
 
   @Override
   public Scan build() {
-    return new SparkBatchQueryScan(
-        spark, table, caseSensitive, schemaWithMetadataColumns(), filterExpressions, options);
+    return SparkBatchQueryScan.create(spark, table, caseSensitive, schemaWithMetadataColumns(), filterExpressions,
+        options);
   }
 
   public Scan buildMergeScan() {
@@ -168,4 +168,5 @@ public class SparkScanBuilder implements ScanBuilder, SupportsPushDownFilters, S
         spark, table, caseSensitive, ignoreResiduals,
         schemaWithMetadataColumns(), filterExpressions, options);
   }
+
 }
