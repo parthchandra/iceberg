@@ -212,7 +212,7 @@ public abstract class TestDataSourceOptions {
 
     Dataset<Row> resultDf = spark.read()
         .format("iceberg")
-        .option("split-size", String.valueOf(611)) // 611 bytes is the size of SimpleRecord(1,"a")
+        .option("split-size", String.valueOf(626)) // 626 bytes is the size of SimpleRecord(1,"a")
         .option(PlanScanAction.ICEBERG_PLAN_MODE, planMode.name())
         .load(tableLocation);
 
