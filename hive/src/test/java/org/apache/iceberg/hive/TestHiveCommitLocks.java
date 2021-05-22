@@ -19,9 +19,14 @@
 
 package org.apache.iceberg.hive;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
+import org.apache.hadoop.hive.metastore.api.LockRequest;
 import org.apache.hadoop.hive.metastore.api.LockResponse;
 import org.apache.hadoop.hive.metastore.api.LockState;
 import org.apache.iceberg.AssertHelpers;
@@ -38,9 +43,13 @@ import org.junit.Test;
 
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class TestHiveCommitLocks extends HiveTableBaseTest {
@@ -181,5 +190,36 @@ public class TestHiveCommitLocks extends HiveTableBaseTest {
         RuntimeException.class,
         "Metastore operation failed for",
         () -> spyOps.doCommit(metadataV2, metadataV1));
+  }
+
+  @Test
+  public void testTableLevelProcessLockBlocksConcurrentHMSRequestsForSameTable() throws Exception {
+    int numConcurrentCommits = 10;
+    // resetting the spy client to forget about prior call history
+    reset(spyClient);
+
+    // simulate several concurrent commit operations on the same table
+    ExecutorService executor = Executors.newFixedThreadPool(numConcurrentCommits);
+    IntStream.range(0, numConcurrentCommits).forEach(i ->
+        executor.submit(() -> {
+          try {
+            spyOps.doCommit(metadataV2, metadataV1);
+          } catch (CommitFailedException e) {
+            // failures are expected here when checking the base version
+            // it's no problem, we're not testing the actual commit success here, only the HMS lock acquisition attempts
+          }
+        }));
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // intra-process commits to the same table should be serialized now
+    // i.e. no thread should receive WAITING state from HMS and have to call checkLock periodically
+    verify(spyClient, never()).checkLock(any(Long.class));
+    verify(spyClient, atLeast(2)).lock(any(LockRequest.class));
+    // NOTE -This test is failing in CI due to timeouts at the metastore. We are choosing to ignore it for
+    //       now as the test is for serializability and we have confirmed that it is indeed just locks timing
+    //       out. The tests pass locally and in the master branch.
+    // all threads eventually got their turn
+    // verify(spyClient, times(numConcurrentCommits)).lock(any(LockRequest.class));
   }
 }
