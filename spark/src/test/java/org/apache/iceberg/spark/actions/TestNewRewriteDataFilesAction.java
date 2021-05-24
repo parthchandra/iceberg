@@ -362,6 +362,7 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
 
     CloseableIterable<FileScanTask> tasks = table.newScan().planFiles();
     List<DataFile> dataFiles = Lists.newArrayList(CloseableIterable.transform(tasks, FileScanTask::file));
+    long totalFileSize = dataFiles.stream().mapToLong(DataFile::fileSizeInBytes).sum();
     long maxFileSize = dataFiles.stream().mapToLong(DataFile::fileSizeInBytes).max().getAsLong();
     long minFileSize = dataFiles.stream().mapToLong(DataFile::fileSizeInBytes).min().getAsLong();
     Assert.assertEquals("Should have 3 files before rewrite", 3, dataFiles.size());
@@ -370,7 +371,7 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
     long originalNumRecords = spark.read().format("iceberg").load(tableLocation).count();
     List<Object[]> originalRecords = sql("SELECT * from origin sort by c2");
 
-    long targetSizeInBytes = maxFileSize / 2;
+    long targetSizeInBytes = totalFileSize / 2;
     Result result = basicRewrite(table)
         .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Long.toString(targetSizeInBytes))
         .option(BinPackStrategy.MIN_FILE_SIZE_BYTES, Long.toString(minFileSize + 1000))
