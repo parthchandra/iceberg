@@ -175,7 +175,13 @@ abstract class BaseRewriteDataFilesSparkAction
 
     try {
       Map<StructLike, List<FileScanTask>> filesByPartition = Streams.stream(fileScanTasks)
-          .collect(Collectors.groupingBy(task -> task.file().partition()));
+          .collect(Collectors.groupingBy(task -> {
+            if (task.file().specId() == table.spec().specId()) {
+              return task.file().partition();
+            } else {
+              return EmptyStruct.instance();
+            }
+          }));
 
       Map<StructLike, List<List<FileScanTask>>> fileGroupsByPartition = Maps.newHashMap();
 
@@ -578,6 +584,33 @@ abstract class BaseRewriteDataFilesSparkAction
 
     public int totalGroupCount() {
       return totalGroupCount;
+    }
+  }
+
+  static class EmptyStruct implements StructLike {
+
+    private static EmptyStruct instance;
+
+    static EmptyStruct instance() {
+      if (instance == null) {
+        instance = new EmptyStruct();
+      }
+      return instance;
+    }
+
+    @Override
+    public int size() {
+      return 0;
+    }
+
+    @Override
+    public <T> T get(int pos, Class<T> javaClass) {
+      return null;
+    }
+
+    @Override
+    public <T> void set(int pos, T value) {
+
     }
   }
 }

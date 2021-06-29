@@ -28,12 +28,15 @@ import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.AssertHelpers;
+import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SortOrder;
+import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.actions.ActionsProvider;
@@ -262,6 +265,34 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
 
     List<Object[]> actualRecords = currentData();
     assertEquals("Rows must match", expectedRecords, actualRecords);
+  }
+
+  @Test
+  public void testBinpackAfterPartitionChange() {
+    Table table = createTable(20);
+    shouldHaveFiles(table, 20);
+    table.updateSpec().addField(Expressions.bucket("c1", 4)).commit();
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .option(SortStrategy.MIN_INPUT_FILES, "1")
+            .option(SortStrategy.MIN_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table) - 10))
+            .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 1 fileGroup because all files were not correctly partitioned",
+        result.resultMap().keySet().size(), 1);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveMultipleFiles(table);
   }
 
   @Test
@@ -653,6 +684,68 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testSortBucketed() {
+    Table table = createTableBucketPartitioned(4, 5);
+    shouldHaveFiles(table, 20);
+    table.replaceSortOrder().asc("c2").commit();
+    shouldHaveLastCommitUnsorted(table, "c2");
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort()
+            .option(SortStrategy.MIN_INPUT_FILES, "1")
+            .option(SortStrategy.MIN_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table) - 10))
+            .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 4 fileGroups", result.resultMap().keySet().size(), 4);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveMultipleFiles(table);
+    shouldHaveLastCommitSorted(table, "c2");
+  }
+
+  @Test
+  public void testSortAfterPartitionChange() {
+    Table table = createTable(20);
+    shouldHaveFiles(table, 20);
+    table.updateSpec().addField(Expressions.bucket("c1", 4)).commit();
+    table.replaceSortOrder().asc("c2").commit();
+    shouldHaveLastCommitUnsorted(table, "c2");
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort()
+            .option(SortStrategy.MIN_INPUT_FILES, "1")
+            .option(SortStrategy.MIN_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table) - 10))
+            .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 1 fileGroup because all files were not correctly partitioned",
+        result.resultMap().keySet().size(), 1);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveMultipleFiles(table);
+    shouldHaveLastCommitSorted(table, "c2");
+  }
+
+  @Test
   public void testSortCustomSortOrder() {
     Table table = createTable(20);
     shouldHaveLastCommitUnsorted(table, "c2");
@@ -829,32 +922,40 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
     NestedField field = table.schema().caseInsensitiveFindField(column);
     int columnId = field.fieldId();
     Class<T> javaClass = (Class<T>) field.type().typeId().javaClass();
-    List<Pair<T, T>> columnBounds =
-        Streams.stream(table.currentSnapshot().addedFiles())
-            .map(file -> Pair.of(
-                javaClass.cast(Conversions.fromByteBuffer(field.type(), file.lowerBounds().get(columnId))),
-                javaClass.cast(Conversions.fromByteBuffer(field.type(), file.upperBounds().get(columnId)))))
-            .collect(Collectors.toList());
+    Map<StructLike, List<DataFile>> filesByPartition = Streams.stream(table.currentSnapshot().addedFiles())
+        .collect(Collectors.groupingBy(DataFile::partition));
 
-    Comparator<T> comparator = Comparators.forType(field.type().asPrimitiveType());
+    Stream<Pair<Pair<T, T>, Pair<T, T>>> overlaps =
+        filesByPartition.entrySet().stream().flatMap(entry -> {
+          List<Pair<T, T>> columnBounds =
+              entry.getValue().stream()
+                  .map(file -> Pair.of(
+                      javaClass.cast(Conversions.fromByteBuffer(field.type(), file.lowerBounds().get(columnId))),
+                      javaClass.cast(Conversions.fromByteBuffer(field.type(), file.upperBounds().get(columnId)))))
+                  .collect(Collectors.toList());
 
-    List<Pair<Pair<T, T>, Pair<T, T>>> overlappingFiles = columnBounds.stream()
-        .flatMap(left -> columnBounds.stream().map(right -> Pair.of(left, right)))
-        .filter(filePair -> {
-          Pair<T, T> left = filePair.first();
-          T leftLower = left.first();
-          T leftUpper = left.second();
-          Pair<T, T> right = filePair.second();
-          T rightLower = right.first();
-          T rightUpper = right.second();
-          boolean boundsOverlap =
-              (comparator.compare(leftUpper, rightLower) > 0 && comparator.compare(leftUpper, rightUpper) < 0) ||
-                  (comparator.compare(leftLower, rightLower) > 0 && comparator.compare(leftLower, rightUpper) < 0);
+          Comparator<T> comparator = Comparators.forType(field.type().asPrimitiveType());
 
-          return (left != right) && boundsOverlap;
-        })
-        .collect(Collectors.toList());
-    return overlappingFiles;
+          List<Pair<Pair<T, T>, Pair<T, T>>> overlappingFiles = columnBounds.stream()
+              .flatMap(left -> columnBounds.stream().map(right -> Pair.of(left, right)))
+              .filter(filePair -> {
+                Pair<T, T> left = filePair.first();
+                T lLower = left.first();
+                T lUpper = left.second();
+                Pair<T, T> right = filePair.second();
+                T rLower = right.first();
+                T rUpper = right.second();
+                boolean boundsOverlap =
+                    (comparator.compare(lUpper, rLower) > 0 && comparator.compare(lUpper, rUpper) < 0) ||
+                        (comparator.compare(lLower, rLower) > 0 && comparator.compare(lLower, rUpper) < 0);
+
+                return (left != right) && boundsOverlap;
+              })
+              .collect(Collectors.toList());
+          return overlappingFiles.stream();
+        });
+
+    return overlaps.collect(Collectors.toList());
   }
 
   /**
@@ -884,6 +985,18 @@ public abstract class TestNewRewriteDataFilesAction extends SparkTestBase {
     Assert.assertNull("Table must be empty", table.currentSnapshot());
 
     writeRecords(files, 2000, partitions);
+    return table;
+  }
+
+  protected Table createTableBucketPartitioned(int partitions, int files) {
+    PartitionSpec spec = PartitionSpec.builderFor(SCHEMA)
+        .bucket("c1", partitions, "bucket")
+        .build();
+    Map<String, String> options = Maps.newHashMap();
+    Table table = TABLES.create(SCHEMA, spec, options, tableLocation);
+    Assert.assertNull("Table must be empty", table.currentSnapshot());
+
+    writeRecords(files, 2000);
     return table;
   }
 

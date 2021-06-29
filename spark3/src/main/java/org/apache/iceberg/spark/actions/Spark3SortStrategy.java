@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.RewriteDataFiles;
@@ -113,8 +114,16 @@ public class Spark3SortStrategy extends SortStrategy {
 
   @Override
   public Set<DataFile> rewriteFiles(String groupID, List<FileScanTask> filesToRewrite) {
-    SortOrder[] ordering = Spark3Util.convert(sortOrder());
-    Distribution distribution = Distributions.ordered(ordering);
+    boolean requiresRepartition = !filesToRewrite.get(0).spec().equals(table.spec());
+    SortOrder[] ordering;
+    Distribution distribution;
+    ordering = Spark3Util.convert(sortOrder());
+    if (requiresRepartition) {
+      distribution = Spark3Util.buildRequiredDistribution(DistributionMode.RANGE, table);
+      ordering = Spark3Util.buildRequiredOrdering(distribution, table().schema(), table.spec(), sortOrder());
+    } else {
+      distribution = Distributions.ordered(ordering);
+    }
 
     manager.stageTasks(table, groupID, filesToRewrite);
 
