@@ -21,6 +21,7 @@ package org.apache.iceberg;
 
 import java.util.Map;
 import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
@@ -38,11 +39,12 @@ public abstract class BaseMetastoreCatalog implements Catalog {
   public Table loadTable(TableIdentifier identifier) {
     Table result;
     if (isValidIdentifier(identifier)) {
-      TableOperations ops = newTableOps(identifier);
+      TableIdentifier sparkCompatibleIdentifier = convertSparkCompatibleIdentifier(identifier);
+      TableOperations ops = newTableOps(sparkCompatibleIdentifier);
       if (ops.current() == null) {
         // the identifier may be valid for both tables and metadata tables
-        if (isValidMetadataIdentifier(identifier)) {
-          result = loadMetadataTable(identifier);
+        if (isValidMetadataIdentifier(sparkCompatibleIdentifier)) {
+          result = loadMetadataTable(sparkCompatibleIdentifier);
 
         } else {
           throw new NoSuchTableException("Table does not exist: %s", identifier);
@@ -61,6 +63,36 @@ public abstract class BaseMetastoreCatalog implements Catalog {
 
     LOG.info("Table loaded by catalog: {}", result);
     return result;
+  }
+
+  /**
+   * Since Spark 2.4 does not support TableIdentifiers with more than 2 parts, we will put in a workaround to
+   * support metadata tables by splitting table names with either a # or . in them. The names will still need to
+   * be escaped with backticks like `name#metadataTable` or `name.metadataTable`
+   */
+  private TableIdentifier convertSparkCompatibleIdentifier(TableIdentifier identifier) {
+    boolean containsOctothorpe = identifier.name().contains("#");
+    boolean containsDot = identifier.name().contains(".");
+
+    if ((containsDot || containsOctothorpe) && !identifier.namespace().isEmpty()) {
+      String[] inputNamespace = identifier.namespace().levels();
+      String[] namespace = new String[inputNamespace.length + 1];
+      for (int i = 0; i < inputNamespace.length; i++) {
+        namespace[i] = inputNamespace[i];
+      }
+
+      String[] splitName;
+      if (containsDot) {
+        splitName = identifier.name().split("\\.", 2);
+      } else {
+        splitName = identifier.name().split("#", 2);
+      }
+
+      namespace[namespace.length - 1] = splitName[0];
+      String metadataType = splitName[1];
+      return TableIdentifier.of(Namespace.of(namespace), metadataType);
+    }
+    return identifier;
   }
 
   @Override

@@ -118,13 +118,17 @@ public class TestSelect extends SparkCatalogTestBase {
 
   @Test
   public void testMetadataTables() {
-    Assume.assumeFalse(
-        "Spark session catalog does not support metadata tables",
-        "spark_catalog".equals(catalogName));
-
-    assertEquals("Snapshot metadata table",
-        ImmutableList.of(row(ANY, ANY, null, "append", ANY, ANY)),
-        sql("SELECT * FROM %s.snapshots", tableName));
+    if ("spark_catalog".equals(catalogName)) {
+      assertEquals(
+          "Snapshot metadata table",
+          ImmutableList.of(row(ANY, ANY, null, "append", ANY, ANY)),
+          sql("SELECT * FROM default.`table.snapshots`", "default", "table"));
+    } else {
+      assertEquals(
+          "Snapshot metadata table",
+          ImmutableList.of(row(ANY, ANY, null, "append", ANY, ANY)),
+          sql("SELECT * FROM %s.snapshots", tableName));
+    }
   }
 
   @Test
