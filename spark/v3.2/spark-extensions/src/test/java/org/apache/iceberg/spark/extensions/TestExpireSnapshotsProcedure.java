@@ -224,4 +224,17 @@ public class TestExpireSnapshotsProcedure extends SparkExtensionsTestBase {
             catalogName, tableIdent, -1));
 
   }
+
+  @Test
+  public void testExpireSnapshotsOnAutoManagedTables() {
+    sql("CREATE TABLE %s (id bigint NOT NULL, data string) USING iceberg", tableName);
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    table.updateProperties()
+        .set("auto-management.enabled", "true")
+        .commit();
+    AssertHelpers.assertThrows("Should not expire snapshots when auto management is enabled",
+        ValidationException.class, "Cannot expire snapshots manually in the table opted into auto management",
+        () -> sql("CALL %s.system.expire_snapshots('%s')", catalogName, tableIdent));
+  }
 }
