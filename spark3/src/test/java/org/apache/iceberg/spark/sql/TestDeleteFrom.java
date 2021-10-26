@@ -56,4 +56,23 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
 
     Assert.assertEquals("Delete should not produce a new snapshot", 1, Iterables.size(table.snapshots()));
   }
+
+  @Test
+  public void testTruncate() {
+    sql("CREATE TABLE %s (id bigint NOT NULL, data string) USING iceberg", tableName);
+    sql("INSERT INTO TABLE %s VALUES (1, 'a'), (2, 'b'), (3, 'c')", tableName);
+
+    assertEquals("Should have expected rows",
+        ImmutableList.of(row(1L, "a"), row(2L, "b"), row(3L, "c")),
+        sql("SELECT * FROM %s ORDER BY id", tableName));
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    Assert.assertEquals("Should have 1 snapshot", 1, Iterables.size(table.snapshots()));
+
+    sql("TRUNCATE TABLE %s", tableName);
+
+    assertEquals("Should have expected rows",
+        ImmutableList.of(),
+        sql("SELECT * FROM %s ORDER BY id", tableName));
+  }
 }
