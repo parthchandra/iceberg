@@ -49,10 +49,12 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
+import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkFilters;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
+import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.util.TableScanUtil;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.expressions.NamedReference;
@@ -74,7 +76,7 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
   private final long splitSize;
   private final int splitLookback;
   private final long splitOpenFileCost;
-  private final List<Expression> evaluatedRuntimeFilterExprs;
+  private final List<Expression> runtimeFilterExpressions;
 
   private Set<Integer> specIds = null; // lazy cache of scanned spec IDs
   private List<FileScanTask> files = null; // lazy cache of files
@@ -108,7 +110,7 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
     this.splitSize = table instanceof BaseMetadataTable ? readConf.metadataSplitSize() : readConf.splitSize();
     this.splitLookback = readConf.splitLookback();
     this.splitOpenFileCost = readConf.splitOpenFileCost();
-    this.evaluatedRuntimeFilterExprs = Lists.newArrayList();
+    this.runtimeFilterExpressions = Lists.newArrayList();
   }
 
   private Set<Integer> specIds() {
@@ -125,42 +127,46 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
 
   private List<FileScanTask> files() {
     if (files == null) {
-      TableScan scan = table()
-          .newScan()
-          .option(TableProperties.SPLIT_SIZE, String.valueOf(splitSize))
-          .option(TableProperties.SPLIT_LOOKBACK, String.valueOf(splitLookback))
-          .option(TableProperties.SPLIT_OPEN_FILE_COST, String.valueOf(splitOpenFileCost))
-          .caseSensitive(caseSensitive())
-          .project(expectedSchema());
-
-      if (snapshotId != null) {
-        scan = scan.useSnapshot(snapshotId);
-      }
-
-      if (asOfTimestamp != null) {
-        scan = scan.asOfTime(asOfTimestamp);
-      }
-
-      if (startSnapshotId != null) {
-        if (endSnapshotId != null) {
-          scan = scan.appendsBetween(startSnapshotId, endSnapshotId);
-        } else {
-          scan = scan.appendsAfter(startSnapshotId);
-        }
-      }
-
-      for (Expression filter : filterExpressions()) {
-        scan = scan.filter(filter);
-      }
-
-      try (CloseableIterable<FileScanTask> filesIterable = scan.planFiles()) {
-        this.files = Lists.newArrayList(filesIterable);
-      } catch (IOException e) {
-        throw new UncheckedIOException("Failed to close table scan: " + scan, e);
-      }
+      this.files = planFiles();
     }
 
     return files;
+  }
+
+  private List<FileScanTask> planFiles() {
+    TableScan scan = table()
+        .newScan()
+        .option(TableProperties.SPLIT_SIZE, String.valueOf(splitSize))
+        .option(TableProperties.SPLIT_LOOKBACK, String.valueOf(splitLookback))
+        .option(TableProperties.SPLIT_OPEN_FILE_COST, String.valueOf(splitOpenFileCost))
+        .caseSensitive(caseSensitive())
+        .project(expectedSchema());
+
+    if (snapshotId != null) {
+      scan = scan.useSnapshot(snapshotId);
+    }
+
+    if (asOfTimestamp != null) {
+      scan = scan.asOfTime(asOfTimestamp);
+    }
+
+    if (startSnapshotId != null) {
+      if (endSnapshotId != null) {
+        scan = scan.appendsBetween(startSnapshotId, endSnapshotId);
+      } else {
+        scan = scan.appendsAfter(startSnapshotId);
+      }
+    }
+
+    for (Expression filter : filterExpressions()) {
+      scan = scan.filter(filter);
+    }
+
+    try (CloseableIterable<FileScanTask> filesIterable = scan.planFiles()) {
+      return Lists.newArrayList(filesIterable);
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to close table scan: " + scan, e);
+    }
   }
 
   @Override
@@ -189,39 +195,27 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
       }
     }
 
-    // TODO: support source field names with dots
+    Map<Integer, String> quotedNameById = TypeUtil.indexQuotedNameById(
+        expectedSchema().asStruct(),
+        name -> String.format("`%s`", name.replace("`", "``")));
 
     return partitionFieldSourceIds.stream()
-        .map(fieldId -> expectedSchema().findColumnName(fieldId))
-        .filter(Objects::nonNull)
-        .map(org.apache.spark.sql.connector.expressions.Expressions::column)
+        .filter(fieldId -> expectedSchema().findField(fieldId) != null)
+        .map(fieldId -> Spark3Util.toNamedReference(quotedNameById.get(fieldId)))
         .toArray(NamedReference[]::new);
   }
 
   @Override
   public void filter(Filter[] filters) {
-    Expression runtimeFilterExpr = Expressions.alwaysTrue();
-
-    for (Filter filter : filters) {
-      Expression expr = SparkFilters.convert(filter);
-      if (expr != null) {
-        try {
-          Binder.bind(expectedSchema().asStruct(), expr, caseSensitive());
-          runtimeFilterExpr = Expressions.and(runtimeFilterExpr, expr);
-        } catch (ValidationException e) {
-          LOG.error("Failed to bind {} to expected schema, skipping runtime filter", expr, e);
-        }
-      } else {
-        LOG.warn("Unsupported runtime filter {}", filter);
-      }
-    }
+    Expression runtimeFilterExpr = convertRuntimeFilters(filters);
 
     if (runtimeFilterExpr != Expressions.alwaysTrue()) {
       Map<Integer, Evaluator> evaluatorsBySpecId = Maps.newHashMap();
 
       for (Integer specId : specIds()) {
-        Expression inclusiveExpr = Projections.inclusive(table().spec()).project(runtimeFilterExpr);
-        Evaluator inclusive = new Evaluator(table().spec().partitionType(), inclusiveExpr);
+        PartitionSpec spec = table().specs().get(specId);
+        Expression inclusiveExpr = Projections.inclusive(spec).project(runtimeFilterExpr);
+        Evaluator inclusive = new Evaluator(spec.partitionType(), inclusiveExpr);
         evaluatorsBySpecId.put(specId, inclusive);
       }
 
@@ -234,16 +228,37 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
           })
           .collect(Collectors.toList());
 
-      LOG.info("{} files matched runtime filter {}", filteredFiles.size(), runtimeFilterExpr);
+      LOG.info("{}/{} files matched runtime filter {}", filteredFiles.size(), files().size(), runtimeFilterExpr);
 
+      // don't invalidate tasks if the runtime filter had no effect to avoid planning splits again
       if (filteredFiles.size() < files().size()) {
         this.specIds = null;
         this.files = filteredFiles;
         this.tasks = null;
       }
 
-      evaluatedRuntimeFilterExprs.add(runtimeFilterExpr);
+      runtimeFilterExpressions.add(runtimeFilterExpr);
     }
+  }
+
+  private Expression convertRuntimeFilters(Filter[] filters) {
+    Expression runtimeFilterExpr = Expressions.alwaysTrue();
+
+    for (Filter filter : filters) {
+      Expression expr = SparkFilters.convert(filter);
+      if (expr != null) {
+        try {
+          Binder.bind(expectedSchema().asStruct(), expr, caseSensitive());
+          runtimeFilterExpr = Expressions.and(runtimeFilterExpr, expr);
+        } catch (ValidationException e) {
+          LOG.warn("Failed to bind {} to expected schema, skipping runtime filter", expr, e);
+        }
+      } else {
+        LOG.warn("Unsupported runtime filter {}", filter);
+      }
+    }
+
+    return runtimeFilterExpr;
   }
 
   @Override
@@ -260,7 +275,7 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
     return table().name().equals(that.table().name()) &&
         readSchema().equals(that.readSchema()) && // compare Spark schemas to ignore field ids
         filterExpressions().toString().equals(that.filterExpressions().toString()) &&
-        evaluatedRuntimeFilterExprs.toString().equals(that.evaluatedRuntimeFilterExprs.toString()) &&
+        runtimeFilterExpressions.toString().equals(that.runtimeFilterExpressions.toString()) &&
         Objects.equals(snapshotId, that.snapshotId) &&
         Objects.equals(startSnapshotId, that.startSnapshotId) &&
         Objects.equals(endSnapshotId, that.endSnapshotId) &&
@@ -270,7 +285,7 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
   @Override
   public int hashCode() {
     return Objects.hash(
-        table().name(), readSchema(), filterExpressions().toString(), evaluatedRuntimeFilterExprs.toString(),
+        table().name(), readSchema(), filterExpressions().toString(), runtimeFilterExpressions.toString(),
         snapshotId, startSnapshotId, endSnapshotId, asOfTimestamp);
   }
 
@@ -278,7 +293,7 @@ class SparkBatchQueryScan extends SparkBatchScan implements SupportsRuntimeFilte
   public String toString() {
     return String.format(
         "IcebergScan(table=%s, type=%s, filters=%s, runtimeFilters=%s, caseSensitive=%s)",
-        table(), expectedSchema().asStruct(), filterExpressions(), evaluatedRuntimeFilterExprs, caseSensitive());
+        table(), expectedSchema().asStruct(), filterExpressions(), runtimeFilterExpressions, caseSensitive());
   }
 
   @SuppressWarnings("checkstyle:RegexpSingleline")

@@ -534,6 +534,10 @@ public class Spark3Util {
     return builder.build();
   }
 
+  public static NamedReference toNamedReference(String name) {
+    return Expressions.column(name);
+  }
+
   /**
    * Converts Spark transforms into a {@link PartitionSpec}.
    *
