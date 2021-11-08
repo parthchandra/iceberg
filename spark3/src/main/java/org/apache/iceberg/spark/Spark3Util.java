@@ -470,6 +470,10 @@ public class Spark3Util {
     });
   }
 
+  public static NamedReference toNamedReference(String name) {
+    return Expressions.column(name);
+  }
+
   public static Term convert(Expression expr) {
     if (expr instanceof Transform) {
       Transform transform = (Transform) expr;
@@ -532,10 +536,6 @@ public class Spark3Util {
     org.apache.iceberg.SortOrder.Builder builder = org.apache.iceberg.SortOrder.builderFor(schema);
     Spark3Util.rebuildSortOrder(builder, ordering);
     return builder.build();
-  }
-
-  public static NamedReference toNamedReference(String name) {
-    return Expressions.column(name);
   }
 
   /**

@@ -130,6 +130,12 @@ public class SparkReadConf {
         .parse();
   }
 
+  public Long splitSizeOption() {
+    return confParser.longConf()
+        .option(SparkReadOptions.SPLIT_SIZE)
+        .parseOptional();
+  }
+
   public long splitSize() {
     return confParser.longConf()
         .option(SparkReadOptions.SPLIT_SIZE)
@@ -146,12 +152,24 @@ public class SparkReadConf {
         .parse();
   }
 
+  public Integer splitLookbackOption() {
+    return confParser.intConf()
+        .option(SparkReadOptions.LOOKBACK)
+        .parseOptional();
+  }
+
   public int splitLookback() {
     return confParser.intConf()
         .option(SparkReadOptions.LOOKBACK)
         .tableProperty(TableProperties.SPLIT_LOOKBACK)
         .defaultValue(TableProperties.SPLIT_LOOKBACK_DEFAULT)
         .parse();
+  }
+
+  public Long splitOpenFileCostOption() {
+    return confParser.longConf()
+        .option(SparkReadOptions.FILE_OPEN_COST)
+        .parseOptional();
   }
 
   public long splitOpenFileCost() {
