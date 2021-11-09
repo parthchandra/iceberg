@@ -36,6 +36,7 @@ import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.data.avro.DataReader;
 import org.apache.iceberg.data.parquet.GenericParquetReaders;
 import org.apache.iceberg.deletes.Deletes;
+import org.apache.iceberg.deletes.PositionDeleteIndex;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.InputFile;
@@ -67,6 +68,8 @@ public abstract class DeleteFilter<T> {
   private final Schema requiredSchema;
   private final Accessor<StructLike> posAccessor;
 
+  private PositionDeleteIndex deleteRowPositions = null;
+
   protected DeleteFilter(FileScanTask task, Schema tableSchema, Schema requestedSchema) {
     this.setFilterThreshold = DEFAULT_SET_FILTER_THRESHOLD;
     this.dataFile = task.file();
@@ -94,6 +97,10 @@ public abstract class DeleteFilter<T> {
 
   public Schema requiredSchema() {
     return requiredSchema;
+  }
+
+  public boolean hasPosDeletes() {
+    return !posDeletes.isEmpty();
   }
 
   Accessor<StructLike> posAccessor() {
@@ -181,6 +188,18 @@ public abstract class DeleteFilter<T> {
     };
 
     return remainingRowsFilter.filter(records);
+  }
+
+  public PositionDeleteIndex deletedRowPositions() {
+    if (posDeletes.isEmpty()) {
+      return null;
+    }
+
+    if (deleteRowPositions == null) {
+      List<CloseableIterable<Record>> deletes = Lists.transform(posDeletes, this::openPosDeletes);
+      deleteRowPositions = Deletes.toPositionBitmap(dataFile.path(), deletes);
+    }
+    return deleteRowPositions;
   }
 
   private CloseableIterable<T> applyPosDeletes(CloseableIterable<T> records) {

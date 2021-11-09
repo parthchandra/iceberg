@@ -17,10 +17,29 @@
  * under the License.
  */
 
-package org.apache.iceberg.spark.source;
+package org.apache.iceberg.deletes;
 
-public class TestSparkReaderDeletes24 extends TestSparkReaderDeletes {
-  public TestSparkReaderDeletes24(boolean vectorized) {
-    super(vectorized);
+import org.roaringbitmap.longlong.Roaring64Bitmap;
+
+class BitmapPositionDeleteIndex implements PositionDeleteIndex {
+  private final Roaring64Bitmap roaring64Bitmap;
+
+  BitmapPositionDeleteIndex() {
+    roaring64Bitmap = new Roaring64Bitmap();
+  }
+
+  @Override
+  public void delete(long position) {
+    roaring64Bitmap.add(position);
+  }
+
+  @Override
+  public void delete(long posStart, long posEnd) {
+    roaring64Bitmap.add(posStart, posEnd);
+  }
+
+  @Override
+  public boolean deleted(long position) {
+    return roaring64Bitmap.contains(position);
   }
 }

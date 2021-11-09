@@ -220,6 +220,7 @@ project(':iceberg-core') {
     implementation "com.fasterxml.jackson.core:jackson-databind"
     implementation "com.fasterxml.jackson.core:jackson-core"
     implementation "com.github.ben-manes.caffeine:caffeine"
+    implementation "org.roaringbitmap:RoaringBitmap"
 
     compileOnly "io.dropwizard.metrics:metrics-core"
     compileOnly("org.apache.hadoop:hadoop-client") {
@@ -1037,6 +1038,7 @@ if (jdkVersion == '8') {
       compileOnly "org.apache.avro:avro"
       compileOnly("org.apache.spark:spark-hive_2.11") {
         exclude group: 'org.apache.avro', module: 'avro'
+        exclude group: 'org.roaringbitmap'
       }
 
       testImplementation project(path: ':iceberg-spark', configuration: 'testArtifacts')
@@ -1118,6 +1120,7 @@ if (jdkVersion == '8') {
       relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
       relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
       relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
+      relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
 
       classifier null
     }
@@ -1146,6 +1149,7 @@ project(':iceberg-spark3') {
       exclude group: 'org.apache.avro', module: 'avro'
       exclude group: 'org.apache.arrow'
       exclude group: 'org.apache.iceberg'
+      exclude group: 'org.roaringbitmap'
       // to make sure io.netty.buffer only comes from project(':iceberg-arrow')
       exclude group: 'io.netty', module: 'netty-buffer'
     }
@@ -1215,6 +1219,7 @@ project(":iceberg-spark3-extensions") {
       exclude group: 'org.apache.avro', module: 'avro'
       exclude group: 'org.apache.arrow'
       exclude group: 'org.apache.iceberg'
+      exclude group: 'org.roaringbitmap'
       // to make sure io.netty.buffer only comes from project(':iceberg-arrow')
       exclude group: 'io.netty', module: 'netty-buffer'
     }
@@ -1311,6 +1316,7 @@ project(':iceberg-spark3-runtime') {
     relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
     // relocate Antlr runtime and related deps to shade Iceberg specific version
     relocate 'org.antlr.v4', 'org.apache.iceberg.shaded.org.antlr.v4'
+    relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
 
     classifier null
   }

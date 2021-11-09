@@ -17,10 +17,26 @@
  * under the License.
  */
 
-package org.apache.iceberg.spark.source;
+package org.apache.iceberg.deletes;
 
-public class TestSparkReaderDeletes24 extends TestSparkReaderDeletes {
-  public TestSparkReaderDeletes24(boolean vectorized) {
-    super(vectorized);
-  }
+public interface PositionDeleteIndex {
+  /**
+   * Set a deleted row position.
+   * @param position the deleted row position
+   */
+  void delete(long position);
+
+  /**
+   * Set a range of deleted row positions.
+   * @param posStart inclusive beginning of position range
+   * @param posEnd exclusive ending of position range
+   */
+  void delete(long posStart, long posEnd);
+
+  /**
+   * Checks whether a row at the position is deleted.
+   * @param position deleted row position
+   * @return whether the position is deleted
+   */
+  boolean deleted(long position);
 }
