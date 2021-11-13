@@ -398,32 +398,4 @@ public class SparkTable implements org.apache.spark.sql.connector.catalog.Table,
         .filter(convertFilters(filters))
         .options(options);
   }
-
-  private static class SparkMetadataColumn implements MetadataColumn {
-
-    private final String name;
-    private final DataType dataType;
-    private final boolean isNullable;
-
-    private SparkMetadataColumn(String name, DataType dataType, boolean isNullable) {
-      this.name = name;
-      this.dataType = dataType;
-      this.isNullable = isNullable;
-    }
-
-    @Override
-    public String name() {
-      return name;
-    }
-
-    @Override
-    public DataType dataType() {
-      return dataType;
-    }
-
-    @Override
-    public boolean isNullable() {
-      return isNullable;
-    }
-  }
 }
