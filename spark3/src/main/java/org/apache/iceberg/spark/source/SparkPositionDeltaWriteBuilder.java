@@ -25,7 +25,7 @@ import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkDistributionAndOrderingUtil;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.spark.SparkWriteConf;
@@ -71,7 +71,7 @@ class SparkPositionDeltaWriteBuilder implements DeltaWriteBuilder {
     this.handleTimestampWithoutZone = writeConf.handleTimestampWithoutZone();
     this.checkNullability = writeConf.checkNullability();
     this.checkOrdering = writeConf.checkOrdering();
-    this.distributionMode = Spark3Util.distributionModeFor(table, info.options());
+    this.distributionMode = writeConf.distributionMode();
   }
 
   @Override
@@ -94,8 +94,10 @@ class SparkPositionDeltaWriteBuilder implements DeltaWriteBuilder {
 
     SparkUtil.validatePartitionTransforms(table.spec());
 
-    Distribution distribution = Spark3Util.buildPositionDeltaDistribution(distributionMode, command, table);
-    SortOrder[] ordering = Spark3Util.buildPositionDeltaRequiredOrdering(distribution, command, table);
+    Distribution distribution = SparkDistributionAndOrderingUtil.buildPositionDeltaDistribution(
+        table, command, distributionMode);
+    SortOrder[] ordering = SparkDistributionAndOrderingUtil.buildPositionDeltaRequiredOrdering(
+        table, command, distribution);
 
     return new SparkPositionDeltaWrite(
         spark, table, command, scan, isolationLevel, writeConf,

@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.MetadataTableType;
@@ -51,7 +50,6 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
-import org.apache.iceberg.relocated.com.google.common.collect.ObjectArrays;
 import org.apache.iceberg.spark.SparkTableUtil.SparkPartition;
 import org.apache.iceberg.spark.source.SparkTable;
 import org.apache.iceberg.transforms.PartitionSpecVisitor;
@@ -60,7 +58,6 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.Pair;
-import org.apache.iceberg.util.SortOrderUtil;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
@@ -74,20 +71,13 @@ import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
-import org.apache.spark.sql.connector.distributions.ClusteredDistribution;
 import org.apache.spark.sql.connector.distributions.Distribution;
-import org.apache.spark.sql.connector.distributions.Distributions;
-import org.apache.spark.sql.connector.distributions.OrderedDistribution;
-import org.apache.spark.sql.connector.distributions.UnspecifiedDistribution;
 import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.Literal;
 import org.apache.spark.sql.connector.expressions.NamedReference;
-import org.apache.spark.sql.connector.expressions.NullOrdering;
-import org.apache.spark.sql.connector.expressions.SortDirection;
 import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
-import org.apache.spark.sql.connector.write.RowLevelOperation.Command;
 import org.apache.spark.sql.execution.datasources.FileStatusCache;
 import org.apache.spark.sql.execution.datasources.InMemoryFileIndex;
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation;
@@ -100,14 +90,6 @@ import scala.Predef;
 import scala.Some;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
-
-import static org.apache.iceberg.MetadataColumns.FILE_PATH;
-import static org.apache.iceberg.MetadataColumns.PARTITION_COLUMN_NAME;
-import static org.apache.iceberg.MetadataColumns.ROW_POSITION;
-import static org.apache.iceberg.MetadataColumns.SPEC_ID;
-import static org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE;
-import static org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE_DEFAULT;
-import static org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE_RANGE;
 
 public class Spark3Util {
 
@@ -314,167 +296,11 @@ public class Spark3Util {
     return transforms.stream().filter(Objects::nonNull).toArray(Transform[]::new);
   }
 
-  // TODO: support command specific distributions
-  public static Distribution buildPositionDeltaDistribution(DistributionMode distributionMode,
-                                                            Command command,
-                                                            org.apache.iceberg.Table table) {
-    if (distributionMode == DistributionMode.NONE) {
-      return Distributions.unspecified();
-    }
-
-    if (command == Command.DELETE && !table.spec().isUnpartitioned()) {
-      // cluster deletes by spec and partition,
-      // assuming all deletes for a single partition will fit into one Spark write task
-      NamedReference specId = Expressions.column(SPEC_ID.name());
-      NamedReference partition = Expressions.column(PARTITION_COLUMN_NAME);
-      Expression[] clustering = new Expression[]{specId, partition};
-      return Distributions.clustered(clustering);
-    }
-
-    // append spec ID and partition metadata columns to data distribution for UPDATE and MERGE commands
-    // these metadata columns will be null for new records that have to be inserted
-    Distribution dataDistribution = buildRequiredDistribution(distributionMode, table);
-
-    if (dataDistribution instanceof ClusteredDistribution) {
-      NamedReference specId = Expressions.column(SPEC_ID.name());
-      NamedReference partition = Expressions.column(PARTITION_COLUMN_NAME);
-      Expression[] deleteClustering = new Expression[]{specId, partition};
-      Expression[] dataClustering = ((ClusteredDistribution) dataDistribution).clustering();
-      Expression[] clustering = ObjectArrays.concat(deleteClustering, dataClustering, Expression.class);
-      return Distributions.clustered(clustering);
-
-    } else if (dataDistribution instanceof OrderedDistribution) {
-      SortOrder specId = Expressions.sort(Expressions.column(SPEC_ID.name()), SortDirection.ASCENDING);
-      SortOrder partition = Expressions.sort(Expressions.column(PARTITION_COLUMN_NAME), SortDirection.ASCENDING);
-      SortOrder file = Expressions.sort(Expressions.column(FILE_PATH.name()), SortDirection.ASCENDING);
-      SortOrder[] deleteOrdering = new SortOrder[]{specId, partition, file};
-      SortOrder[] dataOrdering = ((OrderedDistribution) dataDistribution).ordering();
-      SortOrder[] ordering = ObjectArrays.concat(deleteOrdering, dataOrdering, SortOrder.class);
-      return Distributions.ordered(ordering);
-
-    } else if (dataDistribution instanceof UnspecifiedDistribution) {
-      return Distributions.unspecified();
-
-    } else {
-      throw new IllegalArgumentException("Unexpected data distribution type: " + dataDistribution);
-    }
-  }
-
-  public static SortOrder[] buildPositionDeltaRequiredOrdering(Distribution distribution,
-                                                               Command command,
-                                                               org.apache.iceberg.Table table) {
-    // the spec requires position delete files to be sorted by file and pos
-    SortOrder specId = Expressions.sort(Expressions.column(SPEC_ID.name()), SortDirection.ASCENDING);
-    SortOrder file = Expressions.sort(Expressions.column(FILE_PATH.name()), SortDirection.ASCENDING);
-    SortOrder pos = Expressions.sort(Expressions.column(ROW_POSITION.name()), SortDirection.ASCENDING);
-    SortOrder[] deleteOrdering = new SortOrder[]{specId, file, pos};
-
-    if (command == Command.DELETE) {
-      return deleteOrdering;
-    } else {
-      // all metadata columns like spec, file, pos will be null for new data records
-      SortOrder[] dataOrdering = buildRequiredOrdering(distribution, table);
-      return ObjectArrays.concat(deleteOrdering, dataOrdering, SortOrder.class);
-    }
-  }
-
-  public static Distribution buildCopyOnWriteRequiredDistribution(DistributionMode distributionMode,
-                                                                  Command command,
-                                                                  org.apache.iceberg.Table table) {
-    if (distributionMode == DistributionMode.NONE) {
-      return Distributions.unspecified();
-    } else if (command == Command.DELETE) {
-      NamedReference file = Expressions.column(FILE_PATH.name());
-      Expression[] clustering = new Expression[]{file};
-      return Distributions.clustered(clustering);
-    } else {
-      return buildRequiredDistribution(distributionMode, table);
-    }
-  }
-
-  public static SortOrder[] buildCopyOnWriteRequiredOrdering(Distribution distribution,
-                                                             Command command,
-                                                             org.apache.iceberg.Table table) {
-    if (command == Command.DELETE) {
-      SortOrder file = Expressions.sort(Expressions.column(FILE_PATH.name()), SortDirection.ASCENDING);
-      SortOrder pos = Expressions.sort(Expressions.column(ROW_POSITION.name()), SortDirection.ASCENDING);
-      return new SortOrder[]{file, pos};
-    } else {
-      return buildRequiredOrdering(distribution, table);
-    }
-  }
-
-  public static Distribution buildRequiredDistribution(org.apache.iceberg.Table table) {
-    DistributionMode distributionMode = distributionModeFor(table);
-    return buildRequiredDistribution(distributionMode, table.schema(), table.spec(), table.sortOrder());
-  }
-
-  public static Distribution buildRequiredDistribution(DistributionMode distributionMode,
-                                                       org.apache.iceberg.Table table) {
-    return buildRequiredDistribution(distributionMode, table.schema(), table.spec(), table.sortOrder());
-  }
-
-  public static Distribution buildRequiredDistribution(DistributionMode distributionMode,
-                                                       Schema schema,
-                                                       PartitionSpec spec,
-                                                       org.apache.iceberg.SortOrder sortOrder) {
-    switch (distributionMode) {
-      case NONE:
-        return Distributions.unspecified();
-      case HASH:
-        if (spec.isUnpartitioned()) {
-          return Distributions.unspecified();
-        } else {
-          return Distributions.clustered(toTransforms(spec));
-        }
-      case RANGE:
-        if (spec.isUnpartitioned() && sortOrder.isUnsorted()) {
-          return Distributions.unspecified();
-        } else {
-          org.apache.iceberg.SortOrder requiredSortOrder = SortOrderUtil.buildSortOrder(schema, spec, sortOrder);
-          return Distributions.ordered(convert(requiredSortOrder));
-        }
-      default:
-        throw new IllegalArgumentException("Unsupported distribution mode: " + distributionMode);
-    }
-  }
-
-  public static SortOrder[] buildRequiredOrdering(Distribution distribution, org.apache.iceberg.Table table) {
-    return buildRequiredOrdering(distribution, table.schema(), table.spec(), table.sortOrder());
-  }
-
-  public static SortOrder[] buildRequiredOrdering(Distribution distribution,
-                                                  Schema schema,
-                                                  PartitionSpec spec,
-                                                  org.apache.iceberg.SortOrder sortOrder) {
-    if (distribution instanceof OrderedDistribution) {
-      OrderedDistribution orderedDistribution = (OrderedDistribution) distribution;
-      return orderedDistribution.ordering();
-    } else {
-      org.apache.iceberg.SortOrder requiredSortOrder = SortOrderUtil.buildSortOrder(schema, spec, sortOrder);
-      return convert(requiredSortOrder);
-    }
-  }
-
-  public static void rebuildSortOrder(org.apache.iceberg.SortOrderBuilder<?> builder,
-                                      SortOrder[] orderFields) {
-    Stream.of(orderFields).forEach(field -> {
-      Term term = convert(field.expression());
-      NullOrder nullOrder = field.nullOrdering() == NullOrdering.NULLS_FIRST ?
-          NullOrder.NULLS_FIRST : NullOrder.NULLS_LAST;
-      if (field.direction() == SortDirection.ASCENDING) {
-        builder.asc(term, nullOrder);
-      } else {
-        builder.desc(term, nullOrder);
-      }
-    });
-  }
-
   public static NamedReference toNamedReference(String name) {
     return Expressions.column(name);
   }
 
-  public static Term convert(Expression expr) {
+  public static Term toIcebergTerm(Expression expr) {
     if (expr instanceof Transform) {
       Transform transform = (Transform) expr;
       Preconditions.checkArgument(transform.references().length == 1,
@@ -506,36 +332,26 @@ public class Spark3Util {
       return org.apache.iceberg.expressions.Expressions.ref(DOT.join(ref.fieldNames()));
 
     } else {
-      throw new UnsupportedOperationException(String.format("Cannot convert unknown expression: %s", expr));
+      throw new UnsupportedOperationException("Cannot convert unknown expression: " + expr);
     }
   }
 
-  public static DistributionMode distributionModeFor(org.apache.iceberg.Table table,
-                                                     CaseInsensitiveStringMap writeOptions) {
-    if (writeOptions.containsKey(SparkWriteOptions.DISTRIBUTION_MODE)) {
-      String distributionModeName = writeOptions.get(SparkWriteOptions.DISTRIBUTION_MODE);
-      return DistributionMode.fromName(distributionModeName);
-    } else {
-      return Spark3Util.distributionModeFor(table);
-    }
+  public static Distribution buildRequiredDistribution(DistributionMode distributionMode,
+                                                       Schema schema,
+                                                       PartitionSpec spec,
+                                                       org.apache.iceberg.SortOrder sortOrder) {
+    return SparkDistributionAndOrderingUtil.buildRequiredDistribution(schema, spec, distributionMode, sortOrder);
   }
 
-  public static DistributionMode distributionModeFor(org.apache.iceberg.Table table) {
-    boolean isSortedTable = !table.sortOrder().isUnsorted();
-    String defaultModeName = isSortedTable ? WRITE_DISTRIBUTION_MODE_RANGE : WRITE_DISTRIBUTION_MODE_DEFAULT;
-    String modeName = table.properties().getOrDefault(WRITE_DISTRIBUTION_MODE, defaultModeName);
-    return DistributionMode.fromName(modeName);
-  }
-
-  public static SortOrder[] convert(org.apache.iceberg.SortOrder sortOrder) {
-    List<OrderField> converted = SortOrderVisitor.visit(sortOrder, new SortOrderToSpark());
-    return converted.toArray(new OrderField[0]);
+  public static SortOrder[] buildRequiredOrdering(Distribution distribution,
+                                                  Schema schema,
+                                                  PartitionSpec spec,
+                                                  org.apache.iceberg.SortOrder sortOrder) {
+    return SparkDistributionAndOrderingUtil.buildRequiredOrdering(schema, spec, distribution, sortOrder);
   }
 
   public static org.apache.iceberg.SortOrder toSortOrder(Schema schema, SortOrder[] ordering) {
-    org.apache.iceberg.SortOrder.Builder builder = org.apache.iceberg.SortOrder.builderFor(schema);
-    Spark3Util.rebuildSortOrder(builder, ordering);
-    return builder.build();
+    return SparkDistributionAndOrderingUtil.toSortOrder(schema, ordering);
   }
 
   /**

@@ -24,22 +24,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.actions.RewriteDataFiles;
 import org.apache.iceberg.actions.RewriteStrategy;
 import org.apache.iceberg.actions.SortStrategy;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.spark.FileRewriteCoordinator;
 import org.apache.iceberg.spark.FileScanTaskSetManager;
-import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkDistributionAndOrderingUtil;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.SparkWriteOptions;
 import org.apache.iceberg.util.BinPacking;
 import org.apache.iceberg.util.PropertyUtil;
+import org.apache.iceberg.util.SortOrderUtil;
 import org.apache.spark.Partition;
 import org.apache.spark.rdd.PartitionCoalescer;
 import org.apache.spark.rdd.PartitionGroup;
@@ -127,17 +126,16 @@ public class Spark3SortStrategy extends SortStrategy {
   public Set<DataFile> rewriteFiles(List<FileScanTask> filesToRewrite) {
     String groupID = UUID.randomUUID().toString();
     boolean requiresRepartition = !filesToRewrite.get(0).spec().equals(table.spec());
-    SortOrder[] ordering = Spark3Util.convert(sortOrder());
-    Distribution distribution;
 
+    SortOrder[] ordering;
     if (requiresRepartition) {
-      distribution = Spark3Util.buildRequiredDistribution(table);
-      ordering = Stream.concat(
-          Arrays.stream(Spark3Util.buildRequiredOrdering(distribution, table())),
-          Arrays.stream(ordering)).toArray(SortOrder[]::new);
+      // Build in the requirement for Partition Sorting into our sort order
+      ordering = SparkDistributionAndOrderingUtil.convert(SortOrderUtil.buildSortOrder(table, sortOrder()));
     } else {
-      distribution = Distributions.ordered(ordering);
+      ordering = SparkDistributionAndOrderingUtil.convert(sortOrder());
     }
+
+    Distribution distribution = Distributions.ordered(ordering);
 
     try {
       manager.stageTasks(table, groupID, filesToRewrite);
@@ -163,7 +161,8 @@ public class Spark3SortStrategy extends SortStrategy {
       sortedDf.write()
           .format("iceberg")
           .option(SparkWriteOptions.REWRITTEN_FILE_SCAN_TASK_SET_ID, groupID)
-          .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, writeMaxFileSize())
+          .option(SparkWriteOptions.TARGET_FILE_SIZE_BYTES, writeMaxFileSize())
+          .option(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING, "false")
           .mode("append") // This will only write files without modifying the table, see SparkWrite.RewriteFiles
           .save(table.name());
 

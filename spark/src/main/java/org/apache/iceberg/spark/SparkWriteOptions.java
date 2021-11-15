@@ -52,10 +52,6 @@ public class SparkWriteOptions {
   // Checks if input schema and table schema are same(default: true)
   public static final String CHECK_ORDERING = "check-ordering";
 
-  public static final String DISTRIBUTION_MODE = "distribution-mode";
-
-  public static final String IGNORE_SORT_ORDER = "ignore-sort-order";
-
   // File scan task set ID that indicates which files must be replaced
   public static final String REWRITTEN_FILE_SCAN_TASK_SET_ID = "rewritten-file-scan-task-set-id";
 
@@ -63,4 +59,14 @@ public class SparkWriteOptions {
   public static final String HANDLE_TIMESTAMP_WITHOUT_TIMEZONE = "handle-timestamp-without-timezone";
 
   public static final String OVERWRITE_MODE = "overwrite-mode";
+
+  // Overrides the default distribution mode for a write operation
+  public static final String DISTRIBUTION_MODE = "distribution-mode";
+
+  // An internal legacy property for disabling sorts during a write operation
+  public static final String IGNORE_SORT_ORDER = "ignore-sort-order";
+
+  // Controls whether to take into account the table distribution and sort order during a write operation
+  public static final String USE_TABLE_DISTRIBUTION_AND_ORDERING = "use-table-distribution-and-ordering";
+  public static final boolean USE_TABLE_DISTRIBUTION_AND_ORDERING_DEFAULT = true;
 }

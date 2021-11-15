@@ -26,7 +26,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkDistributionAndOrderingUtil;
 import org.apache.iceberg.spark.SparkFilters;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.SparkUtil;
@@ -35,6 +35,7 @@ import org.apache.iceberg.spark.SparkWriteOptions;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.distributions.Distribution;
+import org.apache.spark.sql.connector.distributions.Distributions;
 import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.connector.write.BatchWrite;
@@ -47,9 +48,12 @@ import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite;
 import org.apache.spark.sql.sources.Filter;
 import org.apache.spark.sql.types.StructType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, SupportsOverwrite {
-  private static final SortOrder[] EMPTY_ORDERING = new SortOrder[0];
+  private static final Logger LOG = LoggerFactory.getLogger(SparkWriteBuilder.class);
+  private static final SortOrder[] NO_ORDERING = new SortOrder[0];
 
   private final SparkSession spark;
   private final Table table;
@@ -57,9 +61,9 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
   private final LogicalWriteInfo writeInfo;
   private final StructType dsSchema;
   private final String overwriteMode;
+  private final String rewrittenFileSetId;
   private final boolean handleTimestampWithoutZone;
-  private final String rewrittenFileSetID;
-  private final DistributionMode distributionMode;
+  private final boolean useTableDistributionAndOrdering;
   private final boolean ignoreSortOrder;
   private boolean overwriteDynamic = false;
   private boolean overwriteByFilter = false;
@@ -76,9 +80,9 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     this.writeInfo = info;
     this.dsSchema = info.schema();
     this.overwriteMode = writeConf.overwriteMode();
-    this.rewrittenFileSetID = info.options().get(SparkWriteOptions.REWRITTEN_FILE_SCAN_TASK_SET_ID);
+    this.rewrittenFileSetId = writeConf.rewrittenFileSetId();
     this.handleTimestampWithoutZone = writeConf.handleTimestampWithoutZone();
-    this.distributionMode = Spark3Util.distributionModeFor(table, info.options());
+    this.useTableDistributionAndOrdering = writeConf.useTableDistributionAndOrdering();
     this.ignoreSortOrder = info.options().getBoolean(SparkWriteOptions.IGNORE_SORT_ORDER, false);
   }
 
@@ -86,7 +90,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     Preconditions.checkArgument(scan instanceof SparkCopyOnWriteScan, "%s is not a row-level scan", scan);
     Preconditions.checkState(!overwriteByFilter, "Cannot overwrite individual files and by filter");
     Preconditions.checkState(!overwriteDynamic, "Cannot overwrite individual files and dynamically");
-    Preconditions.checkState(rewrittenFileSetID == null, "Cannot overwrite individual files and rewrite");
+    Preconditions.checkState(rewrittenFileSetId == null, "Cannot overwrite individual files and rewrite");
 
     this.overwriteFiles = true;
     this.copyOnWriteScan = (SparkCopyOnWriteScan) scan;
@@ -99,7 +103,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
   public WriteBuilder overwriteDynamicPartitions() {
     Preconditions.checkState(!overwriteByFilter, "Cannot overwrite dynamically and by filter: %s", overwriteExpr);
     Preconditions.checkState(!overwriteFiles, "Cannot overwrite individual files and dynamically");
-    Preconditions.checkState(rewrittenFileSetID == null, "Cannot overwrite dynamically and rewrite");
+    Preconditions.checkState(rewrittenFileSetId == null, "Cannot overwrite dynamically and rewrite");
 
     this.overwriteDynamic = true;
     return this;
@@ -108,7 +112,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
   @Override
   public WriteBuilder overwrite(Filter[] filters) {
     Preconditions.checkState(!overwriteFiles, "Cannot overwrite individual files and using filters");
-    Preconditions.checkState(rewrittenFileSetID == null, "Cannot overwrite and rewrite");
+    Preconditions.checkState(rewrittenFileSetId == null, "Cannot overwrite and rewrite");
 
     this.overwriteExpr = SparkFilters.convert(filters);
     if (overwriteExpr == Expressions.alwaysTrue() && "dynamic".equals(overwriteMode)) {
@@ -133,15 +137,24 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     // Get application id
     String appId = spark.sparkContext().applicationId();
 
-    Distribution distribution = buildRequiredDistribution();
-    SortOrder[] ordering = buildRequiredOrdering(distribution);
+    Distribution distribution;
+    SortOrder[] ordering;
+
+    if (useTableDistributionAndOrdering) {
+      distribution = buildRequiredDistribution();
+      ordering = buildRequiredOrdering(distribution);
+    } else {
+      LOG.info("Skipping distribution/ordering: disabled per job configuration");
+      distribution = Distributions.unspecified();
+      ordering = NO_ORDERING;
+    }
 
     return new SparkWrite(spark, table, writeConf, writeInfo, appId, writeSchema, dsSchema, distribution, ordering) {
 
       @Override
       public BatchWrite toBatch() {
-        if (rewrittenFileSetID != null) {
-          return asRewrite(rewrittenFileSetID);
+        if (rewrittenFileSetId != null) {
+          return asRewrite(rewrittenFileSetId);
         } else if (overwriteByFilter) {
           return asOverwriteByFilter(overwriteExpr);
         } else if (overwriteDynamic) {
@@ -159,7 +172,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
             "Unsupported streaming operation: dynamic partition overwrite");
         Preconditions.checkState(!overwriteByFilter || overwriteExpr == Expressions.alwaysTrue(),
             "Unsupported streaming operation: overwrite by filter: %s", overwriteExpr);
-        Preconditions.checkState(rewrittenFileSetID == null,
+        Preconditions.checkState(rewrittenFileSetId == null,
             "Unsupported streaming operation: rewrite");
 
         if (overwriteByFilter) {
@@ -172,20 +185,23 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
   }
 
   private Distribution buildRequiredDistribution() {
+    DistributionMode distributionMode = writeConf.distributionMode();
     if (overwriteFiles) {
-      return Spark3Util.buildCopyOnWriteRequiredDistribution(distributionMode, rowLevelCommand, table);
+      return SparkDistributionAndOrderingUtil.buildCopyOnWriteRequiredDistribution(
+          table, rowLevelCommand, distributionMode);
     } else {
-      return Spark3Util.buildRequiredDistribution(distributionMode, table);
+      return SparkDistributionAndOrderingUtil.buildRequiredDistribution(table, distributionMode);
     }
   }
 
   private SortOrder[] buildRequiredOrdering(Distribution requiredDistribution) {
     if (ignoreSortOrder) {
-      return EMPTY_ORDERING;
+      return NO_ORDERING;
     } else if (overwriteFiles) {
-      return Spark3Util.buildCopyOnWriteRequiredOrdering(requiredDistribution, rowLevelCommand, table);
+      return SparkDistributionAndOrderingUtil.buildCopyOnWriteRequiredOrdering(
+          table, rowLevelCommand, requiredDistribution);
     } else {
-      return Spark3Util.buildRequiredOrdering(requiredDistribution, table);
+      return SparkDistributionAndOrderingUtil.buildRequiredOrdering(table, requiredDistribution);
     }
   }
 }

@@ -175,7 +175,7 @@ public class SparkCatalog extends BaseCatalog {
           .withLocation(properties.get("location"))
           .withProperties(Spark3Util.rebuildCreateProperties(properties))
           .withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName())
-          .withSortOrder(Spark3Util.toSortOrder(icebergSchema, ordering))
+          .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering))
           .create();
       return new SparkTable(icebergTable, !cacheEnabled);
     } catch (AlreadyExistsException e) {
@@ -204,7 +204,7 @@ public class SparkCatalog extends BaseCatalog {
           .withLocation(properties.get("location"))
           .withProperties(Spark3Util.rebuildCreateProperties(properties))
           .withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName())
-          .withSortOrder(Spark3Util.toSortOrder(icebergSchema, ordering))
+          .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering))
           .createTransaction();
       return new StagedSparkTable(transaction);
     } catch (AlreadyExistsException e) {
@@ -233,7 +233,7 @@ public class SparkCatalog extends BaseCatalog {
           .withLocation(properties.get("location"))
           .withProperties(Spark3Util.rebuildCreateProperties(properties))
           .withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName())
-          .withSortOrder(Spark3Util.toSortOrder(icebergSchema, ordering))
+          .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering))
           .replaceTransaction();
       return new StagedSparkTable(transaction);
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
@@ -261,7 +261,7 @@ public class SparkCatalog extends BaseCatalog {
         .withLocation(properties.get("location"))
         .withProperties(Spark3Util.rebuildCreateProperties(properties))
         .withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName())
-        .withSortOrder(Spark3Util.toSortOrder(icebergSchema, ordering))
+        .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering))
         .createOrReplaceTransaction();
     return new StagedSparkTable(transaction);
   }
@@ -565,7 +565,7 @@ public class SparkCatalog extends BaseCatalog {
 
     if (setWriteDistributionAndOrdering != null) {
       ReplaceSortOrder replaceSortOrder = transaction.replaceSortOrder();
-      Spark3Util.rebuildSortOrder(replaceSortOrder, setWriteDistributionAndOrdering.ordering());
+      SparkDistributionAndOrderingUtil.rebuildSortOrder(replaceSortOrder, setWriteDistributionAndOrdering.ordering());
       replaceSortOrder.commit();
 
       String distributionModeName = setWriteDistributionAndOrdering.distributionMode();
@@ -577,13 +577,13 @@ public class SparkCatalog extends BaseCatalog {
 
     if (addPartitionField != null) {
       transaction.updateSpec()
-          .addField(addPartitionField.name(), Spark3Util.convert(addPartitionField.transform()))
+          .addField(addPartitionField.name(), Spark3Util.toIcebergTerm(addPartitionField.transform()))
           .commit();
     }
 
     if (dropPartitionField != null) {
       Schema schema = transaction.table().schema();
-      Term term = Spark3Util.convert(dropPartitionField.transform());
+      Term term = Spark3Util.toIcebergTerm(dropPartitionField.transform());
       if (term instanceof NamedReference && schema.findField(((NamedReference<?>) term).name()) == null) {
         // the name is not present in the Iceberg schema, so it must be a partition field name, not a column name
         transaction.updateSpec()
@@ -600,9 +600,9 @@ public class SparkCatalog extends BaseCatalog {
     if (replacePartitionField != null) {
       Schema schema = transaction.table().schema();
       Transform removedTransform = replacePartitionField.removedTransform();
-      Term removedTerm = Spark3Util.convert(removedTransform);
+      Term removedTerm = Spark3Util.toIcebergTerm(removedTransform);
       Transform addedTransform = replacePartitionField.addedTransform();
-      Term addedTerm = Spark3Util.convert(addedTransform);
+      Term addedTerm = Spark3Util.toIcebergTerm(addedTransform);
 
       if (removedTerm instanceof NamedReference && schema.findField(((NamedReference<?>) removedTerm).name()) == null) {
         // the name is not present in the Iceberg schema, so it must be a partition field name, not a column name
@@ -613,7 +613,7 @@ public class SparkCatalog extends BaseCatalog {
 
       } else {
         transaction.updateSpec()
-            .removeField(Spark3Util.convert(removedTransform))
+            .removeField(Spark3Util.toIcebergTerm(removedTransform))
             .addField(replacePartitionField.name(), addedTerm)
             .commit();
       }
@@ -621,7 +621,7 @@ public class SparkCatalog extends BaseCatalog {
 
     if (setIdentifierFields != null) {
       List<String> fieldNames = Arrays.stream(setIdentifierFields.fieldReferences())
-          .map(Spark3Util::convert)
+          .map(Spark3Util::toIcebergTerm)
           .map(term -> ((NamedReference<?>) term).name())
           .collect(Collectors.toList());
       transaction.updateSchema()
@@ -634,7 +634,7 @@ public class SparkCatalog extends BaseCatalog {
       Set<String> identifierFieldNames = Sets.newHashSet(schema.identifierFieldNames());
 
       Arrays.stream(dropIdentifierFields.fieldNames())
-          .map(Spark3Util::convert)
+          .map(Spark3Util::toIcebergTerm)
           .forEach(term -> {
             String name = ((NamedReference<?>) term).name();
             Preconditions.checkArgument(schema.findField(name) != null,

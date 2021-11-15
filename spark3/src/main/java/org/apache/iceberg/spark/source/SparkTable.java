@@ -39,6 +39,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkDistributionAndOrderingUtil;
 import org.apache.iceberg.spark.SparkFilters;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
@@ -329,7 +330,7 @@ public class SparkTable implements org.apache.spark.sql.connector.catalog.Table,
           .execute();
     } else {
       result = baseRewrite(filters, options)
-          .sort(Spark3Util.toSortOrder(table().schema(), requestedOrdering))
+          .sort(SparkDistributionAndOrderingUtil.toSortOrder(table().schema(), requestedOrdering))
           .execute();
     }
 
