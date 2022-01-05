@@ -20,8 +20,11 @@
 package org.apache.iceberg.actions;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
+import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableProperties;
@@ -29,12 +32,80 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.actions.SparkActions;
+import org.apache.spark.sql.Encoders;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class TestCopyTableAction3 extends TestCopyTableAction {
   @Override
   protected ActionsProvider actions() {
     return SparkActions.get();
+  }
+
+  @Test
+  public void testDataFileLocationChange() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Table sourceTable = createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "tbl1", 1);
+    String metadataFilePath = currentMetadata(sourceTable).metadataFileLocation();
+
+    String newMetadataDir = "new-data-dir";
+    sourceTable.updateProperties()
+        .set(TableProperties.OBJECT_STORE_PATH, sourceTableLocation + newMetadataDir)
+        .set(TableProperties.OBJECT_STORE_ENABLED, "true")
+        .commit();
+
+    spark.sql("insert into hive.default.tbl1 values (1, 'AAAAAAAAAA', 'AAAA')");
+    sourceTable.refresh();
+
+    // copy table
+    CopyTable.Result result = actions().copyTable(sourceTable)
+        .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+        .execute();
+
+    checkMetadataFileNum(4, 2, 2, result);
+    checkDataFileNum(2, result);
+
+    // pick up a version with the data file in the old data directory as the end version
+    String targetTableLocation = newTableLocation();
+    CopyTable.Result result1 = actions().copyTable(sourceTable)
+        .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+        .endVersion(fileName(metadataFilePath))
+        .execute();
+
+    checkMetadataFileNum(2, 1, 1, result1);
+    checkDataFileNum(1, result1);
+    List<String> filesToMove1 =
+        spark.read().format("text").load(result1.dataFileListLocation()).as(Encoders.STRING()).collectAsList();
+    Assert.assertTrue("The data file should be in the old data directory.",
+        filesToMove1.stream().findFirst().get().startsWith(sourceTableLocation + "data"));
+
+    // pick up a version with the data file in the new data directory as the last copied version
+    CopyTable.Result result2 = actions().copyTable(sourceTable)
+        .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+        .lastCopiedVersion(fileName(metadataFilePath))
+        .execute();
+
+    checkMetadataFileNum(2, 1, 1, result2);
+    checkDataFileNum(1, result2);
+    List<String> filesToMove2 =
+        spark.read().format("text").load(result2.dataFileListLocation()).as(Encoders.STRING()).collectAsList();
+    Assert.assertTrue(
+        "The data file should be in the new data directory.",
+        filesToMove2.stream().findFirst().get().startsWith(sourceTableLocation + newMetadataDir));
+
+    // check if table properties have been modified
+    List<String> metadataFilesToMove =
+        spark.read().format("text").load(result2.metadataFileListLocation()).as(Encoders.STRING()).collectAsList();
+    metadataFilesToMove.stream().filter(f -> f.endsWith(".metadata.json")).forEach(
+        metadataFile -> {
+          StaticTableOperations ops = new StaticTableOperations(metadataFile, sourceTable.io());
+          Table targetStaticTable = new BaseTable(ops, metadataFile);
+          if (targetStaticTable.properties().containsKey(TableProperties.OBJECT_STORE_PATH)) {
+            Assert.assertTrue("The write.object-storage.path should be modified with the target table location.",
+                targetStaticTable.properties().get(TableProperties.OBJECT_STORE_PATH).startsWith(targetTableLocation));
+          }
+        }
+    );
   }
 
   @Test
@@ -116,6 +187,7 @@ public class TestCopyTableAction3 extends TestCopyTableAction {
     spark.conf().set("spark.sql.catalog.hive", SparkCatalog.class.getName());
     spark.conf().set("spark.sql.catalog.hive.type", "hive");
     spark.conf().set("spark.sql.catalog.hive.default-namespace", "default");
+    spark.conf().set("spark.sql.catalog.hive.cache-enabled", "false");
 
     StringBuilder propertiesStr = new StringBuilder();
     properties.forEach((k, v) -> propertiesStr.append("'" + k + "'='" + v + "',"));

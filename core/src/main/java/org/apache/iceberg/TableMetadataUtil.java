@@ -20,9 +20,11 @@
 package org.apache.iceberg;
 
 import java.util.List;
+import java.util.Map;
 import org.apache.iceberg.TableMetadata.MetadataLogEntry;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 
 public class TableMetadataUtil {
   private TableMetadataUtil() {
@@ -36,13 +38,32 @@ public class TableMetadataUtil {
     List<Snapshot> newSnapshots = updatePathInSnapshots(metadata, sourcePrefix, targetPrefix, io);
     List<MetadataLogEntry> metadataLogEntries = updatePathInMetadataLogs(metadata, sourcePrefix, targetPrefix);
     long snapshotId = metadata.currentSnapshot() == null ? -1 : metadata.currentSnapshot().snapshotId();
+    Map<String, String> properties = updateProperties(metadata.properties(), sourcePrefix, targetPrefix);
 
     return new TableMetadata(null, metadata.formatVersion(), metadata.uuid(),
         newLocation, metadata.lastSequenceNumber(), metadata.lastUpdatedMillis(), metadata.lastColumnId(),
         metadata.currentSchemaId(), metadata.schemas(), metadata.defaultSpecId(), metadata.specs(),
         metadata.lastAssignedPartitionId(), metadata.defaultSortOrderId(), metadata.sortOrders(),
-        metadata.properties(), snapshotId, newSnapshots, metadata.snapshotLog(),
-        metadataLogEntries);
+        properties, snapshotId, newSnapshots, metadata.snapshotLog(), metadataLogEntries);
+  }
+
+  private static Map<String, String> updateProperties(Map<String, String> tableProperties,
+                                                      String sourcePrefix,
+                                                      String targetPrefix) {
+    Map properties = Maps.newHashMap(tableProperties);
+    updatePathInProperty(properties, sourcePrefix, targetPrefix, TableProperties.OBJECT_STORE_PATH);
+    updatePathInProperty(properties, sourcePrefix, targetPrefix, TableProperties.WRITE_FOLDER_STORAGE_LOCATION);
+    updatePathInProperty(properties, sourcePrefix, targetPrefix, TableProperties.WRITE_DATA_LOCATION);
+    updatePathInProperty(properties, sourcePrefix, targetPrefix, TableProperties.WRITE_METADATA_LOCATION);
+
+    return properties;
+  }
+
+  private static void updatePathInProperty(Map<String, String> properties, String sourcePrefix, String targetPrefix,
+                                           String propertyName) {
+    if (properties.containsKey(propertyName)) {
+      properties.put(propertyName, newPath(properties.get(propertyName), sourcePrefix, targetPrefix));
+    }
   }
 
   private static List<MetadataLogEntry> updatePathInMetadataLogs(TableMetadata metadata,

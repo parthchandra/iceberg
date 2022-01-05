@@ -172,6 +172,31 @@ public class TestOptimizeCommand extends SparkCatalogTestBase {
   }
 
   @Test
+  public void testOptimizeZOrderPartitionedTable() {
+    createBucketedTable();
+
+    List<Object[]> rows = sql("OPTIMIZE TABLE %s ZOrder BY (c3, c1) %s", tableName, defaultSortOptions());
+
+    rows.sort(Comparator.comparing(l -> (String) l[0]));
+    ImmutableList<Object[]> expected = ImmutableList.of(
+        row("ALL", 40, 8),
+        row("PartitionData{c3_bucket=0}", 10, 2),
+        row("PartitionData{c3_bucket=1}", 10, 2),
+        row("PartitionData{c3_bucket=2}", 10, 2),
+        row("PartitionData{c3_bucket=3}", 10, 2)
+    );
+    assertEquals("Should have correct results", expected, rows);
+  }
+
+  @Test
+  public void testOptimizeZOrderTable() {
+    createTable();
+    List<Object[]> rows = sql("OPTIMIZE %s ZORDER BY (c1, c2) %s ", tableName, defaultSortOptions());
+    ImmutableList<Object[]> expected = ImmutableList.of(row("ALL", 20, 4));
+    assertEquals("Should have correct results", expected, rows);
+  }
+
+  @Test
   public void testInvalidOptions() {
     createTable();
 

@@ -337,6 +337,15 @@ public class SparkTable implements org.apache.spark.sql.connector.catalog.Table,
     return toOutputRows(result);
   }
 
+  @Override
+  public InternalRow[] zOrder(Filter[] filters, String[] colNames, CaseInsensitiveStringMap options) {
+    RewriteDataFiles.Result result = baseRewrite(filters, options)
+        .zOrder(colNames)
+        .execute();
+
+    return toOutputRows(result);
+  }
+
   private InternalRow[] toOutputRows(RewriteDataFiles.Result result) {
     Map<StructLike, List<RewriteDataFiles.FileGroupRewriteResult>> resultsByPartition = Maps.newHashMap();
 
