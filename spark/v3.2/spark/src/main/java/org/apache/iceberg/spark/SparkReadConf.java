@@ -65,15 +65,17 @@ public class SparkReadConf {
   }
 
   public boolean localityEnabled() {
-    InputFile file = table.io().newInputFile(table.location());
+    boolean localityEnabled = confParser.booleanConf()
+        .option(SparkReadOptions.LOCALITY)
+        .defaultValue(false)
+        .parse();
 
-    if (file instanceof HadoopInputFile) {
-      String scheme = ((HadoopInputFile) file).getFileSystem().getScheme();
-      boolean defaultValue = LOCALITY_WHITELIST_FS.contains(scheme);
-      return PropertyUtil.propertyAsBoolean(
-          readOptions,
-          SparkReadOptions.LOCALITY,
-          defaultValue);
+    if (localityEnabled) {
+      InputFile in = table.io().newInputFile(table.location());
+      if (in instanceof HadoopInputFile) {
+        String scheme = ((HadoopInputFile) in).getFileSystem().getScheme();
+        return LOCALITY_WHITELIST_FS.contains(scheme);
+      }
     }
 
     return false;
