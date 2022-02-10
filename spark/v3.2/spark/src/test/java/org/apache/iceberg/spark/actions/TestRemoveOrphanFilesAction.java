@@ -55,6 +55,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.SparkTestBase;
 import org.apache.iceberg.spark.actions.DeleteOrphanFilesSparkAction.StringToFileURI;
 import org.apache.iceberg.spark.source.FilePathLastModifiedRecord;
@@ -64,6 +65,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.catalyst.encoders.RowEncoder;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructType;
 import org.junit.Assert;
@@ -388,6 +390,108 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testOlderThanTimestampWithPartitionWithSpace() throws Exception {
+    String partitionCol1 = "c2 with space";
+    String partitionCol2 = "c3 with space";
+    String spacedTableName = "whitespacetable_with_space";
+
+    List<Row> record1 = Lists.newArrayList(RowFactory.create(1, "AA AA", "BB BB"));
+    List<Row> record2 = Lists.newArrayList(RowFactory.create(2, "CC CC", "DD DD"));
+
+    Dataset<Row> df1 = spark.createDataFrame(record1, SparkSchemaUtil.convert(SCHEMA));
+    Dataset<Row> df2 = spark.createDataFrame(record2, SparkSchemaUtil.convert(SCHEMA));
+
+    df1.withColumnRenamed("c2", partitionCol1)
+        .withColumnRenamed("c3", partitionCol2)
+        .write()
+        .mode("overwrite")
+        .partitionBy(partitionCol1, partitionCol2)
+        .format("parquet")
+        .saveAsTable(spacedTableName);
+
+    File icebergLocation = temp.newFolder("partitioned_table_with_space");
+
+    HadoopTables tables = new HadoopTables(spark.sessionState().newHadoopConf());
+    Table table =
+        tables.create(
+            SparkSchemaUtil.schemaForTable(spark, spacedTableName),
+            SparkSchemaUtil.specForTable(spark, spacedTableName),
+            ImmutableMap.of(),
+            icebergLocation.getCanonicalPath());
+
+    df1.withColumnRenamed("c2", partitionCol1)
+        .withColumnRenamed("c3", partitionCol2)
+        .write()
+        .mode("overwrite")
+        .partitionBy(partitionCol1, partitionCol2)
+        .format("parquet")
+        .save(icebergLocation.getCanonicalPath() + "/data");
+
+    df2.withColumnRenamed("c2", partitionCol1)
+        .withColumnRenamed("c3", partitionCol2)
+        .write()
+        .mode("overwrite")
+        .partitionBy(partitionCol1, partitionCol2)
+        .format("parquet")
+        .save(icebergLocation.getCanonicalPath() + "/data");
+
+    df2.withColumnRenamed("c2", partitionCol1)
+        .withColumnRenamed("c3", partitionCol2)
+        .write()
+        .mode("overwrite")
+        .partitionBy("`" + partitionCol1 + "`", "`" + partitionCol2 + "`")
+        .format("iceberg")
+        .save(icebergLocation.getCanonicalPath());
+
+    List<Row> initialResult =
+        spark
+            .read()
+            .format("iceberg")
+            .load(icebergLocation.getCanonicalPath())
+            .withColumnRenamed(partitionCol1, "c2")
+            .withColumnRenamed(partitionCol2, "c3")
+            .as(RowEncoder.apply(SparkSchemaUtil.convert(SCHEMA)))
+            .collectAsList();
+
+    Assert.assertEquals("should match only 1 record after insert", initialResult, record2);
+
+    Thread.sleep(1000);
+
+    long timestamp = System.currentTimeMillis();
+
+    Thread.sleep(1000);
+
+    // add another orphan file, as now there are 3 files, but 2 should be removed.
+    df2.withColumnRenamed("c2", partitionCol1)
+        .withColumnRenamed("c3", partitionCol2)
+        .write()
+        .mode("append")
+        .partitionBy(partitionCol1, partitionCol2)
+        .format("parquet")
+        .save(icebergLocation.getCanonicalPath() + "/data");
+
+    SparkActions actions = SparkActions.get();
+
+    DeleteOrphanFiles.Result result =
+        actions.deleteOrphanFiles(table).olderThan(timestamp).execute();
+    Iterable<String> orphanFileLocations = result.orphanFileLocations();
+
+    Assert.assertEquals("Should delete only 2 files", 2, Iterables.size(orphanFileLocations));
+
+    List<Row> resultsAfterRemove =
+        spark
+            .read()
+            .format("iceberg")
+            .load(icebergLocation.toString())
+            .withColumnRenamed(partitionCol1, "c2")
+            .withColumnRenamed(partitionCol2, "c3")
+            .as(RowEncoder.apply(SparkSchemaUtil.convert(SCHEMA)))
+            .collectAsList();
+
+    Assert.assertEquals("should match records after remove", initialResult, resultsAfterRemove);
+  }
+
+  @Test
   public void testRemoveUnreachableMetadataVersionFiles() throws InterruptedException {
     Map<String, String> props = Maps.newHashMap();
     props.put(TableProperties.WRITE_DATA_LOCATION, tableLocation);
@@ -654,6 +758,71 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
             .execute();
     Assert.assertEquals("Action should find 1 file", invalidFiles, result.orphanFileLocations());
     Assert.assertTrue("Invalid file should be present", fs.exists(new Path(invalidFiles.get(0))));
+  }
+
+  @Test
+  public void testRemoveOrphanFilesWithSpecialCharsFilePath()
+      throws IOException, InterruptedException {
+    File whiteSpaceDir = new File(temp.newFolder() + "/white space");
+    whiteSpaceDir.mkdirs();
+
+    Table table =
+        TABLES.create(
+            SCHEMA,
+            PartitionSpec.unpartitioned(),
+            Maps.newHashMap(),
+            whiteSpaceDir.getAbsolutePath());
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(whiteSpaceDir.getAbsolutePath());
+
+    List<String> validFiles =
+        spark
+            .read()
+            .format("iceberg")
+            .load(whiteSpaceDir + "#files")
+            .select("file_path")
+            .as(Encoders.STRING())
+            .collectAsList();
+    Assert.assertEquals("Should be 1 valid files", 1, validFiles.size());
+    String validFile = validFiles.get(0);
+
+    df.write().mode("append").parquet(whiteSpaceDir + "/data");
+
+    Path dataPath = new Path(whiteSpaceDir + "/data");
+    FileSystem fs = dataPath.getFileSystem(spark.sessionState().newHadoopConf());
+    List<String> allFiles =
+        Arrays.stream(fs.listStatus(dataPath, HiddenPathFilter.get()))
+            .filter(FileStatus::isFile)
+            .map(file -> file.getPath().toString())
+            .collect(Collectors.toList());
+    Assert.assertEquals("Should be 2 files", 2, allFiles.size());
+
+    List<String> invalidFiles = Lists.newArrayList(allFiles);
+    invalidFiles.removeIf(file -> file.contains(validFile));
+    Assert.assertEquals("Should be 1 invalid file", 1, invalidFiles.size());
+
+    // sleep for 1 second to unsure files will be old enough
+    Thread.sleep(1000);
+
+    SparkActions actions = SparkActions.get();
+    DeleteOrphanFiles.Result result =
+        actions.deleteOrphanFiles(table).olderThan(System.currentTimeMillis()).execute();
+    Iterable<String> orphanFileLocations = result.orphanFileLocations();
+
+    Assert.assertEquals("Action should find 1 file", invalidFiles, orphanFileLocations);
+    Assert.assertTrue("Invalid file should be present", !fs.exists(new Path(invalidFiles.get(0))));
+    Assert.assertTrue(
+        "Invalid file should match",
+        Iterables.get(orphanFileLocations, 0).equals(invalidFiles.get(0)));
   }
 
   @Test
