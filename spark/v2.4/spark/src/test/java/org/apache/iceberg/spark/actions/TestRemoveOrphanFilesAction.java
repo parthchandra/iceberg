@@ -611,6 +611,65 @@ public class TestRemoveOrphanFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testRemoveOrphanFilesWithSpecialCharsFilePath() throws IOException, InterruptedException {
+    File whiteSpaceDir =  new File(temp.newFolder() + "/white space");
+    whiteSpaceDir.mkdirs();
+
+    Table table = TABLES.create(
+        SCHEMA,
+        PartitionSpec.unpartitioned(),
+        Maps.newHashMap(),
+        whiteSpaceDir.getAbsolutePath());
+
+    List<ThreeColumnRecord> records = Lists.newArrayList(
+        new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA")
+    );
+
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(whiteSpaceDir.getAbsolutePath());
+
+    List<String> validFiles = spark.read().format("iceberg")
+        .load(whiteSpaceDir + "#files")
+        .select("file_path")
+        .as(Encoders.STRING())
+        .collectAsList();
+    Assert.assertEquals("Should be 1 valid files", 1, validFiles.size());
+    String validFile = validFiles.get(0);
+
+    df.write().mode("append").parquet(whiteSpaceDir + "/data");
+
+    Path dataPath = new Path(whiteSpaceDir + "/data");
+    FileSystem fs = dataPath.getFileSystem(spark.sessionState().newHadoopConf());
+    List<String> allFiles = Arrays.stream(fs.listStatus(dataPath, HiddenPathFilter.get()))
+        .filter(FileStatus::isFile)
+        .map(file -> file.getPath().toString())
+        .collect(Collectors.toList());
+    Assert.assertEquals("Should be 2 files", 2, allFiles.size());
+
+    List<String> invalidFiles = Lists.newArrayList(allFiles);
+    invalidFiles.removeIf(file -> file.contains(validFile));
+    Assert.assertEquals("Should be 1 invalid file", 1, invalidFiles.size());
+
+    // sleep for 1 second to unsure files will be old enough
+    Thread.sleep(1000);
+
+    SparkActions actions = SparkActions.get();
+    DeleteOrphanFiles.Result result = actions.deleteOrphanFiles(table)
+        .olderThan(System.currentTimeMillis())
+        .execute();
+    Iterable<String> orphanFileLocations = result.orphanFileLocations();
+
+    Assert.assertEquals("Action should find 1 file", invalidFiles, orphanFileLocations);
+    Assert.assertTrue("Invalid file should be present", !fs.exists(new Path(invalidFiles.get(0))));
+    Assert.assertTrue("Invalid file should match", Iterables.get(orphanFileLocations, 0).equals(invalidFiles.get(0)));
+  }
+
+  @Test
   public void testRemoveOrphanFilesWithHadoopCatalog() throws InterruptedException {
     HadoopCatalog catalog = new HadoopCatalog(new Configuration(), tableLocation);
     String namespaceName = "testDb";
@@ -702,5 +761,162 @@ public class TestRemoveOrphanFilesAction extends SparkTestBase {
     AssertHelpers.assertThrows("Should complain about removing orphan files",
         ValidationException.class, "Cannot remove orphan files: GC is disabled",
         () -> SparkActions.get().deleteOrphanFiles(table).execute());
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSameAuthority() throws Exception {
+    executeTest(HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 3,
+        HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 3,
+        HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithValidFileHasNoAuthority() throws Exception {
+    executeTest(HDFS_USER_LOG_DATA_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithDifferentAuthority() throws Exception {
+    executeTest(HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME1_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME1_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithValidFilesHasThreeForwardSlashes() throws URISyntaxException {
+    executeTest(HDFS_THREE_FWD_SLASHES_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithActualFilesHasThreeForwardSlashes() throws URISyntaxException {
+    executeTest(HDFS_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_THREE_FWD_SLASHES_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_THREE_FWD_SLASHES_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithActualFilesHasHostPort() throws URISyntaxException {
+    executeTest(HDFS_USER_LOG_DATA_DUMMY_FILE, 4, HDFS_HOST_PORT_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_HOST_PORT_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithValiFilesHasAuthoritydAndActualFilesHasHostPort() throws URISyntaxException {
+    executeTest(HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_HOST_PORT_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_HOST_PORT_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithValidFilesHasNoScheme() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSimilarFiles() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSimilarFilesAndActualFilesHasAuthority() throws URISyntaxException {
+    executeTest(HDFS_USER_LOG_DATA_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        null, 0);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSimilarFilesAndValidFilesHasNoScheme() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE, 4,
+        null, 0);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSimilarFilesAndPathHasSpaceChars() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_SPACE_DUMMY_FILE, 4, HDFS_SERVICENAME_USER_LOG_DATA_SPACE_DUMMY_FILE, 4,
+        null, 0);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithPathHasSpaceChars() throws URISyntaxException, IOException {
+    executeTest(USER_LOG_DATA_SPACE_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_SPACE_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_SPACE_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithSimilarFilesAndPathHasSpecialChars() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_ORPHAN_FILE, 4);
+  }
+
+  @Test
+  public void testFindOrphanFilesWithPathHasSpecialChars() throws URISyntaxException {
+    executeTest(USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4,
+        HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4, null, 0);
+  }
+
+  private List<String> snapshotFiles(long snapshotId) {
+    return spark.read().format("iceberg")
+        .option("snapshot-id", snapshotId)
+        .load(tableLocation + "#files")
+        .select("file_path")
+        .as(Encoders.STRING())
+        .collectAsList();
+  }
+
+  private static StructType constructStructureWithString() {
+    StructType customStructType = new StructType();
+    customStructType = customStructType.add("file_path", DataTypes.StringType, true);
+    return customStructType;
+  }
+
+  private List<Row> getRowsWithFilePath(String completeFilePath, int numOfRows) throws URISyntaxException {
+    Row fileRow = null;
+    List<Row> rowFiles = Lists.newArrayList();
+    for (int i = 0; i < numOfRows; i++) {
+      fileRow = RowFactory.create(completeFilePath + i);
+      rowFiles.add(fileRow);
+    }
+
+    return rowFiles;
+  }
+
+  private void executeTest(
+      String validFilePathPrefix,
+      int numberOfValidFiles,
+      String actualFilePrefix,
+      int numberOfActualFiles,
+      String orphanFilesPrefix,
+      int numberOfOrphanFiles) throws URISyntaxException {
+
+    List<Row> validFilesData = getRowsWithFilePath(validFilePathPrefix, numberOfValidFiles);
+
+    Dataset<Row> validFileDS = BaseDeleteOrphanFilesSparkAction
+        .addFilePathOnlyColumn(
+            spark.createDataset(validFilesData, RowEncoder.apply(constructStructureWithString())));
+
+    List<Row> actualFilesData = Lists.newArrayList();
+    List<Row> expectedOrphanFiles = Lists.newArrayList();
+
+    actualFilesData.addAll(getRowsWithFilePath(actualFilePrefix, numberOfActualFiles));
+
+    if (orphanFilesPrefix != null) {
+      expectedOrphanFiles.addAll(getRowsWithFilePath(orphanFilesPrefix, numberOfOrphanFiles));
+      actualFilesData.addAll(expectedOrphanFiles);
+    }
+
+    Dataset<Row> actualFileDS = BaseDeleteOrphanFilesSparkAction
+        .addFilePathOnlyColumn(
+            spark.createDataset(actualFilesData, RowEncoder.apply(constructStructureWithString())));
+
+    List<String> orphanFiles = BaseDeleteOrphanFilesSparkAction.findOrphanFiles(validFileDS, actualFileDS);
+
+    Assert.assertEquals(expectedOrphanFiles.stream().map(row -> row.get(0).toString())
+        .collect(Collectors.toList()), orphanFiles);
   }
 }
