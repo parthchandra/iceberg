@@ -25,7 +25,7 @@ def sparkProjects = [
 
 configure(sparkProjects) {
   project.ext {
-    sparkVersion = '3.2.0'
+    sparkVersion = '3.2.0.23-apple-SNAPSHOT'
   }
 
   configurations {

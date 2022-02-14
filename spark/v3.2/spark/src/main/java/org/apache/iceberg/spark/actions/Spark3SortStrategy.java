@@ -41,10 +41,10 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
-import org.apache.spark.sql.catalyst.utils.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.distributions.Distributions;
 import org.apache.spark.sql.connector.expressions.SortOrder;
+import org.apache.spark.sql.execution.datasources.v2.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.internal.SQLConf;
 
 public class Spark3SortStrategy extends SortStrategy {

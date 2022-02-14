@@ -65,23 +65,23 @@ import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.expressions.SortOrder;
-import org.apache.spark.sql.connector.iceberg.write.DeltaBatchWrite;
-import org.apache.spark.sql.connector.iceberg.write.DeltaWrite;
-import org.apache.spark.sql.connector.iceberg.write.DeltaWriter;
-import org.apache.spark.sql.connector.iceberg.write.DeltaWriterFactory;
-import org.apache.spark.sql.connector.iceberg.write.ExtendedLogicalWriteInfo;
-import org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command;
+import org.apache.spark.sql.connector.write.DeltaBatchWrite;
+import org.apache.spark.sql.connector.write.DeltaWrite;
+import org.apache.spark.sql.connector.write.DeltaWriter;
+import org.apache.spark.sql.connector.write.DeltaWriterFactory;
+import org.apache.spark.sql.connector.write.LogicalWriteInfo;
 import org.apache.spark.sql.connector.write.PhysicalWriteInfo;
 import org.apache.spark.sql.connector.write.RequiresDistributionAndOrdering;
+import org.apache.spark.sql.connector.write.RowLevelOperation.Command;
 import org.apache.spark.sql.connector.write.WriterCommitMessage;
 import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.iceberg.IsolationLevel.SERIALIZABLE;
-import static org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command.DELETE;
-import static org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command.MERGE;
-import static org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command.UPDATE;
+import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.DELETE;
+import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.MERGE;
+import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.UPDATE;
 
 class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrdering {
 
@@ -102,7 +102,7 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
 
   SparkPositionDeltaWrite(SparkSession spark, Table table, Command command, SparkBatchQueryScan scan,
                           IsolationLevel isolationLevel, SparkWriteConf writeConf,
-                          ExtendedLogicalWriteInfo info, Schema dataSchema,
+                          LogicalWriteInfo info, Schema dataSchema,
                           Distribution requiredDistribution, SortOrder[] requiredOrdering) {
     this.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
     this.table = table;
@@ -602,7 +602,7 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
     private final long targetDeleteFileSize;
     private final boolean fanoutWriterEnabled;
 
-    Context(Schema dataSchema, SparkWriteConf writeConf, ExtendedLogicalWriteInfo info) {
+    Context(Schema dataSchema, SparkWriteConf writeConf, LogicalWriteInfo info) {
       this.dataSchema = dataSchema;
       this.dataSparkType = info.schema();
       this.dataFileFormat = writeConf.dataFileFormat();

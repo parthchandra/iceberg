@@ -1702,7 +1702,7 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
     createOrReplaceView("source", "{ \"id\": 1, \"value\": 11 }");
 
     AssertHelpers.assertThrows("Should complain about the target column",
-        AnalysisException.class, "Cannot resolve [c2]",
+        AnalysisException.class, "cannot resolve 'c2'",
         () -> {
           sql("MERGE INTO %s t USING source s " +
               "ON t.id == s.id " +

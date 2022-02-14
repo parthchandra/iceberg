@@ -34,11 +34,11 @@ import org.apache.iceberg.types.Types.NestedField;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.expressions.SortOrder;
-import org.apache.spark.sql.connector.iceberg.write.DeltaWrite;
-import org.apache.spark.sql.connector.iceberg.write.DeltaWriteBuilder;
-import org.apache.spark.sql.connector.iceberg.write.ExtendedLogicalWriteInfo;
-import org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command;
 import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.write.DeltaWrite;
+import org.apache.spark.sql.connector.write.DeltaWriteBuilder;
+import org.apache.spark.sql.connector.write.LogicalWriteInfo;
+import org.apache.spark.sql.connector.write.RowLevelOperation.Command;
 import org.apache.spark.sql.types.StructType;
 
 class SparkPositionDeltaWriteBuilder implements DeltaWriteBuilder {
@@ -54,13 +54,13 @@ class SparkPositionDeltaWriteBuilder implements DeltaWriteBuilder {
   private final SparkBatchQueryScan scan;
   private final IsolationLevel isolationLevel;
   private final SparkWriteConf writeConf;
-  private final ExtendedLogicalWriteInfo info;
+  private final LogicalWriteInfo info;
   private final boolean handleTimestampWithoutZone;
   private final boolean checkNullability;
   private final boolean checkOrdering;
 
   SparkPositionDeltaWriteBuilder(SparkSession spark, Table table, Command command, Scan scan,
-                                 IsolationLevel isolationLevel, ExtendedLogicalWriteInfo info) {
+                                 IsolationLevel isolationLevel, LogicalWriteInfo info) {
     this.spark = spark;
     this.table = table;
     this.command = command;

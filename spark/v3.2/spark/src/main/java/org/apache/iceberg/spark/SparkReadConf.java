@@ -26,7 +26,6 @@ import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
-import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.sql.SparkSession;
 
 /**
@@ -50,13 +49,11 @@ public class SparkReadConf {
 
   private final SparkSession spark;
   private final Table table;
-  private final Map<String, String> readOptions;
   private final SparkConfParser confParser;
 
   public SparkReadConf(SparkSession spark, Table table, Map<String, String> readOptions) {
     this.spark = spark;
     this.table = table;
-    this.readOptions = readOptions;
     this.confParser = new SparkConfParser(spark, table, readOptions);
   }
 
