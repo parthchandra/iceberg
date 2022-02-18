@@ -28,7 +28,6 @@ import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.SparkCatalogTestBase;
 import org.apache.iceberg.spark.source.SimpleRecord;
-import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
@@ -44,33 +43,6 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
   @After
   public void removeTables() {
     sql("DROP TABLE IF EXISTS %s", tableName);
-  }
-
-  @Test
-  public void testDeleteFromUnpartitionedTable() throws NoSuchTableException {
-    sql("CREATE TABLE %s (id bigint, data string) USING iceberg", tableName);
-
-    List<SimpleRecord> records = Lists.newArrayList(
-        new SimpleRecord(1, "a"),
-        new SimpleRecord(2, "b"),
-        new SimpleRecord(3, "c")
-    );
-    Dataset<Row> df = spark.createDataFrame(records, SimpleRecord.class);
-    df.coalesce(1).writeTo(tableName).append();
-
-    assertEquals("Should have expected rows",
-        ImmutableList.of(row(1L, "a"), row(2L, "b"), row(3L, "c")),
-        sql("SELECT * FROM %s ORDER BY id", tableName));
-
-    AssertHelpers.assertThrows("Should not delete when not all rows of a file match the filter",
-        AnalysisException.class, "Cannot delete from",
-        () -> sql("DELETE FROM %s WHERE id < 2", tableName));
-
-    sql("DELETE FROM %s WHERE id < 4", tableName);
-
-    assertEquals("Should have no rows after successful delete",
-        ImmutableList.of(),
-        sql("SELECT * FROM %s ORDER BY id", tableName));
   }
 
   @Test
@@ -90,35 +62,6 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
     AssertHelpers.assertThrows("Should not be able to delete from a table at a specific snapshot",
         IllegalArgumentException.class, "Cannot delete from table at a specific snapshot",
         () -> sql("DELETE FROM %s.%s WHERE id < 4", tableName, prefix + snapshotId));
-  }
-
-  @Test
-  public void testDeleteFromPartitionedTable() throws NoSuchTableException {
-    sql("CREATE TABLE %s (id bigint, data string) " +
-        "USING iceberg " +
-        "PARTITIONED BY (truncate(id, 2))", tableName);
-
-    List<SimpleRecord> records = Lists.newArrayList(
-        new SimpleRecord(1, "a"),
-        new SimpleRecord(2, "b"),
-        new SimpleRecord(3, "c")
-    );
-    Dataset<Row> df = spark.createDataFrame(records, SimpleRecord.class);
-    df.coalesce(1).writeTo(tableName).append();
-
-    assertEquals("Should have 3 rows in 2 partitions",
-        ImmutableList.of(row(1L, "a"), row(2L, "b"), row(3L, "c")),
-        sql("SELECT * FROM %s ORDER BY id", tableName));
-
-    AssertHelpers.assertThrows("Should not delete when not all rows of a file match the filter",
-        AnalysisException.class, "Cannot delete from table",
-        () -> sql("DELETE FROM %s WHERE id > 2", tableName));
-
-    sql("DELETE FROM %s WHERE id < 2", tableName);
-
-    assertEquals("Should have two rows in the second partition",
-        ImmutableList.of(row(2L, "b"), row(3L, "c")),
-        sql("SELECT * FROM %s ORDER BY id", tableName));
   }
 
   @Test
