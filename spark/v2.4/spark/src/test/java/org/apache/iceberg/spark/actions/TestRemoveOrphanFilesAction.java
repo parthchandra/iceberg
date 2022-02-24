@@ -21,6 +21,7 @@ package org.apache.iceberg.spark.actions;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,10 @@ import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.catalyst.encoders.RowEncoder;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructType;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -67,6 +72,36 @@ import org.junit.rules.TemporaryFolder;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 
 public class TestRemoveOrphanFilesAction extends SparkTestBase {
+  public static final String USER_LOG_DATA_DUMMY_FILE = "/user/log/data/dummy_file";
+  public static final String HDFS_USER_LOG_DATA_DUMMY_FILE = "hdfs://user/log/data/dummy_file";
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_DUMMY_FILE =
+      "hdfs://servicename/user/log/data/dummy_file";
+  public static final String HDFS_HOST_PORT_USER_LOG_DATA_DUMMY_FILE =
+      "hdfs://localhost:8020/user/log/data/dummy_file";
+  public static final String HDFS_SERVICENAME1_USER_LOG_DATA_DUMMY_FILE =
+      "hdfs://servicename1/user/log/data/dummy_file";
+  public static final String HDFS_THREE_FWD_SLASHES_USER_LOG_DATA_DUMMY_FILE =
+      "hdfs:///user/log/data/dummy_file";
+  public static final String USER_LOG_DATA_SPACE_DUMMY_FILE = "/user/log/space data/dummy_file";
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_SPACE_DUMMY_FILE =
+      "/user/log/space data/dummy_file";
+
+  public static final String USER_LOG_DATA_SPECIAL_DUMMY_FILE = "/user/log/*space data/\\dummy_file";
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_DUMMY_FILE =
+      "hdfs://servicename/user/log/*space data/\\dummy_file";
+
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_ORPHAN_FILE =
+      "hdfs://servicename/user/log/data/orphan_file";
+  public static final String HDFS_HOST_PORT_USER_LOG_DATA_ORPHAN_FILE =
+      "hdfs://localhost:8020/user/log/data/orphan_file";
+  public static final String HDFS_SERVICENAME1_USER_LOG_DATA_ORPHAN_FILE =
+      "hdfs://servicename1/user/log/data/orphan_file";
+  public static final String HDFS_THREE_FWD_SLASHES_USER_LOG_DATA_ORPHAN_FILE =
+      "hdfs:///user/log/data/orphan_file";
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_SPACE_ORPHAN_FILE =
+      "hdfs://servicename/user/log/space data/orphan_file";
+  public static final String HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_ORPHAN_FILE =
+      "hdfs://servicename/user/log/*space data/\\orphan_file";
 
   private static final HadoopTables TABLES = new HadoopTables(new Configuration());
   protected static final Schema SCHEMA = new Schema(
@@ -858,15 +893,6 @@ public class TestRemoveOrphanFilesAction extends SparkTestBase {
   public void testFindOrphanFilesWithPathHasSpecialChars() throws URISyntaxException {
     executeTest(USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4,
         HDFS_SERVICENAME_USER_LOG_DATA_SPECIAL_DUMMY_FILE, 4, null, 0);
-  }
-
-  private List<String> snapshotFiles(long snapshotId) {
-    return spark.read().format("iceberg")
-        .option("snapshot-id", snapshotId)
-        .load(tableLocation + "#files")
-        .select("file_path")
-        .as(Encoders.STRING())
-        .collectAsList();
   }
 
   private static StructType constructStructureWithString() {
