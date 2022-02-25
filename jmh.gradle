@@ -28,7 +28,7 @@ if (jdkVersion == '8' && sparkVersions.contains("2.4")) {
   jmhProjects.add(project(":iceberg-spark:iceberg-spark2"))
 }
 
-if (sparkVersions.contains("3.2")) {
+if (jdkVersion == '11' && sparkVersions.contains("3.2")) {
   jmhProjects.add(project(":iceberg-spark:iceberg-spark-3.2"))
 }
 
