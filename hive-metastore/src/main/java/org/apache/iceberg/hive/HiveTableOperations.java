@@ -608,8 +608,7 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
   }
 
   @SuppressWarnings("ReverseDnsLookup")
-  @VisibleForTesting
-  long acquireLock() throws UnknownHostException, TException, InterruptedException {
+  protected long acquireLock() throws UnknownHostException, TException, InterruptedException {
     final LockComponent lockComponent =
         new LockComponent(LockType.EXCLUSIVE, LockLevel.TABLE, database);
     lockComponent.setTablename(tableName);
@@ -618,7 +617,7 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
             Lists.newArrayList(lockComponent),
             System.getProperty("user.name"),
             InetAddress.getLocalHost().getHostName());
-    LockResponse lockResponse = metaClients.run(client -> client.lock(lockRequest));
+    LockResponse lockResponse = lock(lockRequest);
     AtomicReference<LockState> state = new AtomicReference<>(lockResponse.getState());
     long lockId = lockResponse.getLockid();
 
@@ -646,7 +645,7 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
             .run(
                 id -> {
                   try {
-                    LockResponse response = metaClients.run(client -> client.checkLock(id));
+                    LockResponse response = checkLock(id);
                     LockState newState = response.getState();
                     state.set(newState);
                     if (newState.equals(LockState.WAITING)) {
@@ -687,6 +686,16 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
     return lockId;
   }
 
+  /** A wrapper of HMS client lock for metrics instrumentation */
+  protected LockResponse lock(LockRequest lockRequest) throws TException, InterruptedException {
+    return metaClients.run(client -> client.lock(lockRequest));
+  }
+
+  /** A wrapper of HMS client check lock for metrics instrumentation */
+  protected LockResponse checkLock(long lockId) throws TException, InterruptedException {
+    return metaClients.run(client -> client.checkLock(lockId));
+  }
+
   private void cleanupMetadataAndUnlock(
       CommitStatus commitStatus,
       String metadataLocation,
@@ -705,7 +714,7 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
     }
   }
 
-  private void unlock(Optional<Long> lockId) {
+  protected void unlock(Optional<Long> lockId) {
     if (lockId.isPresent()) {
       try {
         doUnlock(lockId.get());

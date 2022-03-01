@@ -18,6 +18,8 @@
  */
 package org.apache.iceberg.spark.source;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +29,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataOperations;
 import org.apache.iceberg.FileScanTask;
@@ -47,6 +50,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.SparkReadOptions;
+import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
 import org.apache.iceberg.spark.source.SparkScan.ReadTask;
 import org.apache.iceberg.spark.source.SparkScan.ReaderFactory;
 import org.apache.iceberg.util.PropertyUtil;
@@ -326,6 +330,49 @@ public class SparkMicroBatchStream implements MicroBatchStream {
       } catch (IOException ioException) {
         throw new UncheckedIOException(
             String.format("Failed reading offset from: %s", initialOffsetLocation), ioException);
+      }
+    }
+  }
+
+  static SparkMicroBatchStream create(
+      JavaSparkContext sparkContext,
+      Table table,
+      SparkReadConf readConf,
+      Schema expectedSchema,
+      String checkpointLocation) {
+    Configuration conf = sparkContext.hadoopConfiguration();
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = SparkMetricsUtil.metricRegistry();
+      return new MeteredSparkMicroBatchStream(
+          metricRegistry, sparkContext, table, readConf, expectedSchema, checkpointLocation);
+    } else {
+      return new SparkMicroBatchStream(
+          sparkContext, table, readConf, expectedSchema, checkpointLocation);
+    }
+  }
+
+  private static class MeteredSparkMicroBatchStream extends SparkMicroBatchStream {
+    private final MetricRegistry metricRegistry;
+
+    private static final String QUERY_PLAN_TIME = "query.plan.time";
+
+    MeteredSparkMicroBatchStream(
+        MetricRegistry metricRegistry,
+        JavaSparkContext sparkContext,
+        Table table,
+        SparkReadConf readConf,
+        Schema expectedSchema,
+        String checkpointLocation) {
+      super(sparkContext, table, readConf, expectedSchema, checkpointLocation);
+      this.metricRegistry = metricRegistry;
+    }
+
+    @Override
+    public InputPartition[] planInputPartitions(Offset start, Offset end) {
+      try (Timer.Context ctx = metricRegistry.timer(QUERY_PLAN_TIME).time()) {
+        return super.planInputPartitions(start, end);
       }
     }
   }

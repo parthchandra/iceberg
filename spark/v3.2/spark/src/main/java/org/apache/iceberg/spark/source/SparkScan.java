@@ -109,7 +109,7 @@ abstract class SparkScan extends SparkBatch implements Scan, SupportsReportStati
 
   @Override
   public MicroBatchStream toMicroBatchStream(String checkpointLocation) {
-    return new SparkMicroBatchStream(
+    return SparkMicroBatchStream.create(
         sparkContext(), table, readConf, expectedSchema, checkpointLocation);
   }
 

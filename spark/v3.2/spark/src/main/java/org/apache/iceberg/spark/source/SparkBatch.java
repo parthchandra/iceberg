@@ -18,13 +18,18 @@
  */
 package org.apache.iceberg.spark.source;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import java.util.List;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkReadConf;
+import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
 import org.apache.iceberg.spark.source.SparkScan.ReadTask;
 import org.apache.iceberg.spark.source.SparkScan.ReaderFactory;
 import org.apache.iceberg.util.TableScanUtil;
@@ -38,6 +43,8 @@ import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 
 abstract class SparkBatch implements Batch {
+
+  private static final String QUERY_PLAN_TIME = "query.plan.time";
 
   private final JavaSparkContext sparkContext;
   private final Table table;
@@ -57,6 +64,20 @@ abstract class SparkBatch implements Batch {
 
   @Override
   public InputPartition[] planInputPartitions() {
+    Configuration conf = sparkContext.hadoopConfiguration();
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = SparkMetricsUtil.metricRegistry();
+      try (Timer.Context ctx = metricRegistry.timer(QUERY_PLAN_TIME).time()) {
+        return doPlanInputPartitions();
+      }
+    } else {
+      return doPlanInputPartitions();
+    }
+  }
+
+  private InputPartition[] doPlanInputPartitions() {
     // broadcast the table metadata as input partitions will be sent to executors
     Broadcast<Table> tableBroadcast =
         sparkContext.broadcast(SerializableTableWithSize.copyOf(table));

@@ -7,8 +7,9 @@ org.apache.hive:* = 2.3.8
 org.apache.httpcomponents.client5:* = 5.1
 org.apache.orc:* = 1.7.6
 org.apache.parquet:* = 1.12.0.16-apple
-org.apache.spark:spark-hive_2.11 = 2.4.8
-org.apache.spark:spark-avro_2.11 = 2.4.8
+# The metrics in Spark v2.4 requires io.dropwizard.metrics:metrics-core:4.1.1+, which is only in Apple's Spark 2.4.8
+org.apache.spark:spark-hive_2.11 = 2.4.8.26-apple
+org.apache.spark:spark-avro_2.11 = 2.4.8.26-apple
 org.apache.pig:pig = 0.14.0
 com.fasterxml.jackson.*:* = 2.11.4
 com.google.errorprone:error_prone_annotations = 2.3.3
@@ -30,6 +31,7 @@ com.google.cloud:libraries-bom = 24.1.0
 org.scala-lang.modules:scala-collection-compat_2.12 = 2.6.0
 org.scala-lang.modules:scala-collection-compat_2.13 = 2.6.0
 com.emc.ecs:object-client-bundle = 3.3.2
+io.dropwizard.metrics:* = 4.2.0
 
 # test deps
 org.junit.vintage:junit-vintage-engine = 5.8.2
