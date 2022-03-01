@@ -105,12 +105,12 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
 
   @Override
   public Batch toBatch() {
-    return new SparkBatch(sparkContext, table, readConf, tasks(), expectedSchema);
+    return SparkBatch.create(sparkContext, table, readConf, tasks(), expectedSchema);
   }
 
   @Override
   public MicroBatchStream toMicroBatchStream(String checkpointLocation) {
-    return new SparkMicroBatchStream(sparkContext, table, readConf, expectedSchema, checkpointLocation);
+    return SparkMicroBatchStream.create(sparkContext, table, readConf, expectedSchema, checkpointLocation);
   }
 
   @Override

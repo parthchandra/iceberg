@@ -19,6 +19,7 @@
 
 package org.apache.iceberg.hive;
 
+import com.codahale.metrics.MetricRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,6 +51,8 @@ import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
+import org.apache.iceberg.hive.metrics.HiveMetricsUtil;
+import org.apache.iceberg.hive.metrics.MeteredHiveTableOperations;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
@@ -439,7 +442,18 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
   public TableOperations newTableOps(TableIdentifier tableIdentifier) {
     String dbName = tableIdentifier.namespace().level(0);
     String tableName = tableIdentifier.name();
-    return new HiveTableOperations(conf, clients, fileIO, name, dbName, tableName);
+    return createMeteredHiveTableOperations(dbName, tableName);
+  }
+
+  private HiveTableOperations createMeteredHiveTableOperations(String dbName, String tableName) {
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = HiveMetricsUtil.metricRegistry();
+      return new MeteredHiveTableOperations(metricRegistry, conf, clients, fileIO, name, dbName, tableName);
+    } else {
+      return new HiveTableOperations(conf, clients, fileIO, name, dbName, tableName);
+    }
   }
 
   @Override

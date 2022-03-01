@@ -19,14 +19,19 @@
 
 package org.apache.iceberg.spark.source;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import java.util.List;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.SerializableTable;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkReadConf;
+import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
 import org.apache.iceberg.spark.source.SparkScan.ReadTask;
 import org.apache.iceberg.spark.source.SparkScan.ReaderFactory;
 import org.apache.iceberg.util.TableScanUtil;
@@ -113,5 +118,37 @@ class SparkBatch implements Batch {
 
   private boolean onlyFileFormat(CombinedScanTask task, FileFormat fileFormat) {
     return task.files().stream().allMatch(fileScanTask -> fileScanTask.file().format().equals(fileFormat));
+  }
+
+  static SparkBatch create(JavaSparkContext sparkContext, Table table, SparkReadConf readConf,
+      List<CombinedScanTask> tasks, Schema expectedSchema) {
+    Configuration conf = sparkContext.hadoopConfiguration();
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = SparkMetricsUtil.metricRegistry();
+      return new MeteredSparkBatch(metricRegistry, sparkContext, table, readConf, tasks, expectedSchema);
+    } else {
+      return new SparkBatch(sparkContext, table, readConf, tasks, expectedSchema);
+    }
+  }
+
+  private static class MeteredSparkBatch extends SparkBatch {
+    private final MetricRegistry metricRegistry;
+
+    private static final String QUERY_PLAN_TIME = "query.plan.time";
+
+    MeteredSparkBatch(MetricRegistry metricRegistry, JavaSparkContext sparkContext, Table table,
+        SparkReadConf readConf, List<CombinedScanTask> tasks, Schema expectedSchema) {
+      super(sparkContext, table, readConf, tasks, expectedSchema);
+      this.metricRegistry = metricRegistry;
+    }
+
+    @Override
+    public InputPartition[] planInputPartitions() {
+      try (Timer.Context ctx = metricRegistry.timer(QUERY_PLAN_TIME).time()) {
+        return super.planInputPartitions();
+      }
+    }
   }
 }
