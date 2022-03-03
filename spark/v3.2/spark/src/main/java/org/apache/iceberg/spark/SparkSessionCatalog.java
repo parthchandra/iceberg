@@ -287,6 +287,8 @@ public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces>
 
   @Override
   public boolean purgeTable(Identifier ident) {
+    // no need to check table existence to determine which catalog to use. if a table doesn't exist then both are
+    // required to return false.
     return icebergCatalog.purgeTable(ident) || getSessionCatalog().purgeTable(ident);
   }
 
