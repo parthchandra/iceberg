@@ -54,12 +54,6 @@ public class SparkReadOptions {
   // Overrides the table's read.parquet.vectorization.batch-size
   public static final String VECTORIZATION_BATCH_SIZE = "batch-size";
 
-  // Set ID that is used to fetch file scan tasks
-  public static final String FILE_SCAN_TASK_SET_ID = "file-scan-task-set-id";
-
-  // skip snapshots of type delete while reading stream out of iceberg table
-  public static final String STREAMING_SKIP_DELETE_SNAPSHOTS = "streaming-skip-delete-snapshots";
-
   // Controls whether to allow reading timestamps without zone info
   public static final String HANDLE_TIMESTAMP_WITHOUT_TIMEZONE = "handle-timestamp-without-timezone";
 
