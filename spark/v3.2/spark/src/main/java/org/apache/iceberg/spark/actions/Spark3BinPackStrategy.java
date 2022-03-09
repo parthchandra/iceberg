@@ -68,6 +68,7 @@ public class Spark3BinPackStrategy extends BinPackStrategy {
           .option(SparkReadOptions.FILE_OPEN_COST, "0")
           .load(table.name());
 
+      // All files within a file group are written with the same spec, so check the first
       boolean requiresRepartition = !filesToRewrite.get(0).spec().equals(table.spec());
 
       // Invoke a shuffle if the partition spec of the incoming partition does not match the table
