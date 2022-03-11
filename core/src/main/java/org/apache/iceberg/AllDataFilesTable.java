@@ -21,6 +21,7 @@ package org.apache.iceberg;
 
 import java.io.IOException;
 import java.util.List;
+import org.apache.iceberg.BaseFilesTable.ManifestReadTask;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
@@ -117,7 +118,8 @@ public class AllDataFilesTable extends BaseMetadataTable {
       ResidualEvaluator residuals = ResidualEvaluator.unpartitioned(filter);
 
       return CloseableIterable.transform(manifests, manifest ->
-          new DataFilesTable.ManifestReadTask(ops.io(), manifest, schema(), schemaString, specString, residuals));
+          new ManifestReadTask(ops.io(), ops.current().specsById(), manifest, schema(),
+              schemaString, specString, residuals));
     }
   }
 
