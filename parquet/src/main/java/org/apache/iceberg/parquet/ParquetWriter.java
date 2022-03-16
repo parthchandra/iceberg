@@ -203,6 +203,7 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
         flushPageStoreToWriter.invoke(writer);
         writer.endBlock();
         if (!finished) {
+          writeStore.close();
           startRowGroup();
         }
       }
