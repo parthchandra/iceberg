@@ -20,8 +20,10 @@
 package org.apache.iceberg.util;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -132,6 +134,13 @@ public class JsonUtil {
     return ImmutableSet.<Integer>builder()
         .addAll(new JsonIntegerArrayIterator(property, node))
         .build();
+  }
+
+  public static void writeStringIf(boolean condition, String key, String value, JsonGenerator generator)
+      throws IOException {
+    if (condition) {
+      generator.writeStringField(key, value);
+    }
   }
 
   abstract static class JsonArrayIterator<T> implements Iterator<T> {
