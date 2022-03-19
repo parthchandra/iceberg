@@ -56,22 +56,6 @@ pipelines:
     template: buildozer:v4:prb
 
 # publish pipelines
-- name: apple-0.13.x-publish-jdk8
-  branchName: apple-0.13.x
-  machine:
-    env:
-      <<: *base_env
-      RUNTIME_JDK_VERSION: 8-applejdk
-  build:
-    template: buildozer:v4:publish
-  package:
-    libraries:
-    - publish:
-      - repo: m2:oss-patched
-  finally:
-    radar:
-      annotate: true
-
 - name: apple-0.13.x-publish-jdk11
   branchName: apple-0.13.x
   machine:
@@ -87,25 +71,6 @@ pipelines:
   finally:
     radar:
       annotate: true
-
-- name: apple-0.13.x-release-publish-jdk8
-  branchName: apple-0.13.x-release
-  machine:
-    env:
-      <<: *base_env
-      RUNTIME_JDK_VERSION: 8-applejdk
-  build:
-    template: buildozer:v4:publish
-  package:
-    release: true
-    libraries:
-    - publish:
-      - repo: m2:oss-patched
-  finally:
-    radar:
-      annotate: true
-    tag:
-      expression: ${CODE_VERSION}
 
 - name: apple-0.13.x-release-publish-jdk11
   branchName: apple-0.13.x-release
