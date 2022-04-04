@@ -96,22 +96,20 @@ public class BaseDeleteOrphanFilesSparkAction
     return RowFactory.create(fileName, filePathOnly);
   }, FILE_DETAIL_STRUCT);
 
-  private static final ExecutorService DEFAULT_DELETE_EXECUTOR_SERVICE = null;
-
   private final SerializableConfiguration hadoopConf;
   private final int partitionDiscoveryParallelism;
   private final Table table;
-
-  private String location = null;
-  private long olderThanTimestamp = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(3);
-  private Consumer<String> deleteFunc = new Consumer<String>() {
+  private final Consumer<String> defaultDelete = new Consumer<String>() {
     @Override
     public void accept(String file) {
       table.io().deleteFile(file);
     }
   };
 
-  private ExecutorService deleteExecutorService = DEFAULT_DELETE_EXECUTOR_SERVICE;
+  private String location = null;
+  private long olderThanTimestamp = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(3);
+  private Consumer<String> deleteFunc = defaultDelete;
+  private ExecutorService deleteExecutorService = null;
 
   public BaseDeleteOrphanFilesSparkAction(SparkSession spark, Table table) {
     super(spark);
@@ -123,7 +121,7 @@ public class BaseDeleteOrphanFilesSparkAction
 
     ValidationException.check(
         PropertyUtil.propertyAsBoolean(table.properties(), GC_ENABLED, GC_ENABLED_DEFAULT),
-        "Cannot remove orphan files: GC is disabled (deleting files may corrupt other tables)");
+        "Cannot delete orphan files: GC is disabled (deleting files may corrupt other tables)");
   }
 
   @Override
@@ -157,7 +155,7 @@ public class BaseDeleteOrphanFilesSparkAction
 
   @Override
   public DeleteOrphanFiles.Result execute() {
-    JobGroupInfo info = newJobGroupInfo("REMOVE-ORPHAN-FILES", jobDesc());
+    JobGroupInfo info = newJobGroupInfo("DELETE-ORPHAN-FILES", jobDesc());
     return withJobGroupInfo(info, this::doExecute);
   }
 
@@ -167,7 +165,7 @@ public class BaseDeleteOrphanFilesSparkAction
     if (location != null) {
       options.add("location=" + location);
     }
-    return String.format("Removing orphan files (%s) from %s", Joiner.on(',').join(options), table.name());
+    return String.format("Deleting orphan files (%s) from %s", Joiner.on(',').join(options), table.name());
   }
 
   private DeleteOrphanFiles.Result doExecute() {
@@ -200,7 +198,7 @@ public class BaseDeleteOrphanFilesSparkAction
     JavaRDD<String> matchingFileRDD = sparkContext().parallelize(matchingFiles, 1);
 
     if (subDirs.isEmpty()) {
-      return spark().createDataset(matchingFileRDD.rdd(), Encoders.STRING()).toDF("file_path");
+      return spark().createDataset(matchingFileRDD.rdd(), Encoders.STRING()).toDF(FILE_PATH);
     }
 
     int parallelism = Math.min(subDirs.size(), partitionDiscoveryParallelism);
@@ -210,7 +208,7 @@ public class BaseDeleteOrphanFilesSparkAction
     JavaRDD<String> matchingLeafFileRDD = subDirRDD.mapPartitions(listDirsRecursively(conf, olderThanTimestamp));
 
     JavaRDD<String> completeMatchingFileRDD = matchingFileRDD.union(matchingLeafFileRDD);
-    return spark().createDataset(completeMatchingFileRDD.rdd(), Encoders.STRING()).toDF("file_path");
+    return spark().createDataset(completeMatchingFileRDD.rdd(), Encoders.STRING()).toDF(FILE_PATH);
   }
 
   // visible for testing
