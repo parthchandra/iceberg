@@ -57,7 +57,7 @@ import org.apache.spark.sql.internal.SQLConf;
 import scala.Option;
 import scala.collection.JavaConverters;
 
-public class Spark3SortStrategy extends SortStrategy {
+public class SparkSortStrategy extends SortStrategy {
 
   /**
    * The number of shuffle partitions and consequently the number of output files
@@ -82,7 +82,7 @@ public class Spark3SortStrategy extends SortStrategy {
   private double sizeEstimateMultiple;
   private int shuffleTasksPerFile;
 
-  public Spark3SortStrategy(Table table, SparkSession spark) {
+  public SparkSortStrategy(Table table, SparkSession spark) {
     this.table = table;
     this.spark = spark;
   }
