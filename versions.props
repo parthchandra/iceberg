@@ -5,7 +5,7 @@ org.apache.flink:* = 1.12.5
 org.apache.hadoop:* = 2.7.3
 org.apache.hive:* = 2.3.8
 org.apache.orc:* = 1.7.3
-org.apache.parquet:* = 1.12.0.12-apple
+org.apache.parquet:* = 1.12.0.16-apple
 # The metrics in Spark v2.4 requires io.dropwizard.metrics:metrics-core:4.1.1+, which is only in Apple's Spark 2.4.8
 org.apache.spark:spark-hive_2.11 = 2.4.8.26-apple
 org.apache.spark:spark-avro_2.11 = 2.4.8

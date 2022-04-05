@@ -36,6 +36,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.parquet.ParquetReadOptions;
+import org.apache.parquet.crypto.FileDecryptionProperties;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -172,7 +173,10 @@ class ReadConf<T> {
       return null;
     }
 
-    try (ParquetFileReader fileReader = newReader(file, ParquetReadOptions.builder().build())) {
+    FileDecryptionProperties decryptionProperties = (options == null) ? null : options.getDecryptionProperties();
+
+    try (ParquetFileReader fileReader = newReader(file, ParquetReadOptions.builder()
+        .withDecryption(decryptionProperties).build())) {
       Map<Long, Long> offsetToStartPos = Maps.newHashMap();
 
       long curRowCount = 0;
