@@ -46,7 +46,8 @@ public class PartitionsTable extends BaseMetadataTable {
     this.schema = new Schema(
         Types.NestedField.required(1, "partition", Partitioning.partitionType(table)),
         Types.NestedField.required(2, "record_count", Types.LongType.get()),
-        Types.NestedField.required(3, "file_count", Types.IntegerType.get())
+        Types.NestedField.required(3, "file_count", Types.IntegerType.get()),
+        Types.NestedField.required(4, "spec_id", Types.IntegerType.get())
     );
   }
 
@@ -88,7 +89,7 @@ public class PartitionsTable extends BaseMetadataTable {
   }
 
   private static StaticDataTask.Row convertPartition(Partition partition) {
-    return StaticDataTask.Row.of(partition.key, partition.recordCount, partition.fileCount);
+    return StaticDataTask.Row.of(partition.key, partition.recordCount, partition.fileCount, partition.specId);
   }
 
   private static Iterable<Partition> partitions(Table table, StaticTableScan scan) {
@@ -199,16 +200,19 @@ public class PartitionsTable extends BaseMetadataTable {
     private final StructLike key;
     private long recordCount;
     private int fileCount;
+    private int specId;
 
     Partition(StructLike key) {
       this.key = key;
       this.recordCount = 0;
       this.fileCount = 0;
+      this.specId = 0;
     }
 
     void update(DataFile file) {
       this.recordCount += file.recordCount();
       this.fileCount += 1;
+      this.specId = file.specId();
     }
   }
 }
