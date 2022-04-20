@@ -23,9 +23,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.CachingCatalog;
+import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
@@ -640,6 +642,17 @@ public class TestHiveCatalog extends HiveMetastoreTest {
     } finally {
       catalog.dropTable(tableIdent);
     }
+  }
+
+  @Test
+  public void testConstructorWarehousePathWithEndSlash() {
+    HiveCatalog catalogWithSlash = new HiveCatalog();
+    String wareHousePath = "s3://bucket/db/tbl";
+
+    catalogWithSlash.initialize("hive_catalog", ImmutableMap.of(CatalogProperties.WAREHOUSE_LOCATION,
+        wareHousePath + "/"));
+    Assert.assertEquals("Should have trailing slash stripped", wareHousePath, catalogWithSlash.getConf().get(
+        HiveConf.ConfVars.METASTOREWAREHOUSE.varname));
   }
 
   private Map<String, String> hmsTableParameters() throws TException {
