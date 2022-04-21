@@ -217,4 +217,16 @@ public class SparkSortStrategy extends SortStrategy {
       }).toArray(PartitionGroup[]::new);
     }
   }
+
+  protected double sizeEstimateMultiple() {
+    return sizeEstimateMultiple;
+  }
+
+  protected FileScanTaskSetManager manager() {
+    return manager;
+  }
+
+  protected FileRewriteCoordinator rewriteCoordinator() {
+    return rewriteCoordinator;
+  }
 }
