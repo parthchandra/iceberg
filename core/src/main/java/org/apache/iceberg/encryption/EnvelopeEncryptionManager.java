@@ -95,6 +95,9 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
 
   @Override
   public InputFile decrypt(EncryptedInputFile encrypted) {
+    if (encrypted.keyMetadata().buffer() == null) { // unencrypted file
+      return encrypted.encryptedInputFile();
+    }
     EnvelopeMetadata metadata = EnvelopeMetadataParser.fromJson(encrypted.keyMetadata().buffer());
     ByteBuffer fileDek = kmsClient.unwrapKey(metadata.wrappedDek(), metadata.kekId());
 
