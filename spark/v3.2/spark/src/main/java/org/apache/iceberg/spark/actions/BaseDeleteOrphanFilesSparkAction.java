@@ -169,7 +169,7 @@ public class BaseDeleteOrphanFilesSparkAction
   }
 
   private DeleteOrphanFiles.Result doExecute() {
-    Dataset<Row> validDataFileDF = buildValidDataFileDF(table);
+    Dataset<Row> validDataFileDF = buildValidContentFileDF(table);
     Dataset<Row> validMetadataFileDF = buildValidMetadataFileDF(table);
     Dataset<Row> validFileDF = addFilePathOnlyColumn(validDataFileDF.union(validMetadataFileDF));
     Dataset<Row> actualFileDF = addFilePathOnlyColumn(buildActualFileDF());

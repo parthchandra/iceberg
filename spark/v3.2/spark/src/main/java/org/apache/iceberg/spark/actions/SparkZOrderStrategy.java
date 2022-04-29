@@ -193,7 +193,7 @@ public class SparkZOrderStrategy extends SparkSortStrategy {
       Dataset<Row> zvalueDF = scanDF.withColumn(Z_COLUMN, zOrderUDF.interleaveBytes(zvalueArray));
 
       SQLConf sqlConf = cloneSession.sessionState().conf();
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, zvalueDF.logicalPlan(), sqlConf);
+      LogicalPlan sortPlan = sortPlan(distribution, ordering, numOutputFiles, zvalueDF.logicalPlan(), sqlConf);
       Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, zvalueDF.encoder());
       sortedDf
           .select(originalColumns)

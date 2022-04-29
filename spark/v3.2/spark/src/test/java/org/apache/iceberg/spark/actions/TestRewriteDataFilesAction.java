@@ -1110,83 +1110,6 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
   }
 
   @Test
-  public void testZOrderSort() {
-    int originalFiles = 20;
-    Table table = createTable(originalFiles);
-    shouldHaveLastCommitUnsorted(table, "c2");
-    shouldHaveFiles(table, originalFiles);
-
-    List<Object[]> originalData = currentData();
-    double originalFilesC2 = percentFilesRequired(table, "c2", "foo23");
-    double originalFilesC3 = percentFilesRequired(table, "c3", "bar21");
-    double originalFilesC2C3 = percentFilesRequired(table, new String[]{"c2", "c3"}, new String[]{"foo23", "bar23"});
-
-    Assert.assertTrue("Should require all files to scan c2", originalFilesC2 > 0.99);
-    Assert.assertTrue("Should require all files to scan c3", originalFilesC3 > 0.99);
-
-    RewriteDataFiles.Result result =
-            basicRewrite(table)
-                    .zOrder("c2", "c3")
-                    .option(SortStrategy.MAX_FILE_SIZE_BYTES, Integer.toString((averageFileSize(table) / 2) + 2))
-                    // Divide files in 2
-                    .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table) / 2))
-                    .option(SortStrategy.MIN_INPUT_FILES, "1")
-                    .execute();
-
-    Assert.assertEquals("Should have 1 fileGroups", 1, result.rewriteResults().size());
-    int zOrderedFilesTotal = Iterables.size(table.currentSnapshot().addedFiles());
-    Assert.assertTrue("Should have written 40+ files", zOrderedFilesTotal >= 40);
-
-    table.refresh();
-
-    List<Object[]> postRewriteData = currentData();
-    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
-
-    shouldHaveSnapshots(table, 2);
-    shouldHaveACleanCache(table);
-
-    double filesScannedC2 = percentFilesRequired(table, "c2", "foo23");
-    double filesScannedC3 = percentFilesRequired(table, "c3", "bar21");
-    double filesScannedC2C3 = percentFilesRequired(table, new String[]{"c2", "c3"}, new String[]{"foo23", "bar23"});
-
-    Assert.assertTrue("Should have reduced the number of files required for c2",
-            filesScannedC2 < originalFilesC2);
-    Assert.assertTrue("Should have reduced the number of files required for c3",
-            filesScannedC3 < originalFilesC3);
-    Assert.assertTrue("Should have reduced the number of files required for a c2,c3 predicate",
-            filesScannedC2C3 < originalFilesC2C3);
-  }
-
-  @Test
-  public void testZOrderAllTypesSort() {
-    Table table = createTypeTestTable();
-    shouldHaveFiles(table, 10);
-
-    List<Row> originalRaw = spark.read().format("iceberg").load(tableLocation).sort("longCol").collectAsList();
-    List<Object[]> originalData = rowsToJava(originalRaw);
-
-    RewriteDataFiles.Result result =
-            basicRewrite(table)
-                    .zOrder("longCol", "intCol", "floatCol", "doubleCol", "dateCol", "timestampCol", "stringCol")
-                    .option(SortStrategy.MIN_INPUT_FILES, "1")
-                    .option(SortStrategy.REWRITE_ALL, "true")
-                    .execute();
-
-    Assert.assertEquals("Should have 1 fileGroups", 1, result.rewriteResults().size());
-    int zOrderedFilesTotal = Iterables.size(table.currentSnapshot().addedFiles());
-    Assert.assertEquals("Should have written 1 file", 1, zOrderedFilesTotal);
-
-    table.refresh();
-
-    List<Row> postRaw = spark.read().format("iceberg").load(tableLocation).sort("longCol").collectAsList();
-    List<Object[]> postRewriteData = rowsToJava(postRaw);
-    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
-
-    shouldHaveSnapshots(table, 2);
-    shouldHaveACleanCache(table);
-  }
-
-  @Test
   public void testCommitStateUnknownException() {
     Table table = createTable(20);
     shouldHaveFiles(table, 20);
@@ -1490,14 +1413,14 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
 
   protected <T> void shouldHaveLastCommitSorted(Table table, String column) {
     List<Pair<Pair<T, T>, Pair<T, T>>>
-        overlappingFiles = checkForOverlappingFiles(table, column);
+        overlappingFiles = getOverlappingFiles(table, column);
 
     Assert.assertEquals("Found overlapping files", Collections.emptyList(), overlappingFiles);
   }
 
   protected <T> void shouldHaveLastCommitUnsorted(Table table, String column) {
     List<Pair<Pair<T, T>, Pair<T, T>>>
-        overlappingFiles = checkForOverlappingFiles(table, column);
+        overlappingFiles = getOverlappingFiles(table, column);
 
     Assert.assertNotEquals("Found no overlapping files", Collections.emptyList(), overlappingFiles);
   }
@@ -1509,7 +1432,7 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
   }
 
 
-  private <T> List<Pair<Pair<T, T>, Pair<T, T>>> checkForOverlappingFiles(Table table, String column) {
+  private <T> List<Pair<Pair<T, T>, Pair<T, T>>> getOverlappingFiles(Table table, String column) {
     table.refresh();
     NestedField field = table.schema().caseInsensitiveFindField(column);
     Class<T> javaClass = (Class<T>) field.type().typeId().javaClass();
@@ -1519,23 +1442,20 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
 
     Stream<Pair<Pair<T, T>, Pair<T, T>>> overlaps =
         filesByPartition.entrySet().stream().flatMap(entry -> {
-          List<DataFile> datafiles = entry.getValue();
-          Preconditions.checkArgument(datafiles.size() > 1,
-              "This test is checking for overlaps in a situation where no overlaps can actually occur because the " +
-                  "partition %s does not contain multiple datafiles", entry.getKey());
-
-          List<Pair<Pair<T, T>, Pair<T, T>>> boundComparisons = Lists.cartesianProduct(datafiles, datafiles).stream()
-              .filter(tuple -> tuple.get(0) != tuple.get(1))
-              .map(tuple -> Pair.of(boundsOf(tuple.get(0), field, javaClass), boundsOf(tuple.get(1), field, javaClass)))
-              .collect(Collectors.toList());
+          List<Pair<Pair<T, T>, Pair<T, T>>> boundsComparisons =
+              entry.getValue().stream()
+                  .flatMap(left -> entry.getValue().stream()
+                      .filter(right -> left != right)
+                      .map(right -> Pair.of(boundsOf(left, field, javaClass), boundsOf(right, field, javaClass))))
+                  .collect(Collectors.toList());
 
           Assert.assertTrue("Cannot check for overlapping files in partition " + entry.getKey() +
-                          ", there was only a single file",
-                  boundsComparisons.size() != 0);
+                                ", there was only a single file",
+              boundsComparisons.size() != 0);
 
           Comparator<T> comparator = Comparators.forType(field.type().asPrimitiveType());
 
-          List<Pair<Pair<T, T>, Pair<T, T>>> overlappingFiles = boundComparisons.stream()
+          List<Pair<Pair<T, T>, Pair<T, T>>> overlappingFiles = boundsComparisons.stream()
               .filter(filePair -> {
                 Pair<T, T> left = filePair.first();
                 T lMin = left.first();
@@ -1623,6 +1543,18 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
         .mode("append")
         .save(tableLocation);
 
+    return table;
+  }
+
+  protected Table createTableBucketPartitioned(int partitions, int files) {
+    PartitionSpec spec = PartitionSpec.builderFor(SCHEMA)
+        .bucket("c1", partitions, "bucket")
+        .build();
+    Map<String, String> options = Maps.newHashMap();
+    Table table = TABLES.create(SCHEMA, spec, options, tableLocation);
+    Assert.assertNull("Table must be empty", table.currentSnapshot());
+
+    writeRecords(files, SCALE);
     return table;
   }
 
@@ -1723,21 +1655,6 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
         .addAll(manager.fetchSetIDs(table))
         .addAll(coordinator.fetchSetIDs(table))
         .build();
-  }
-
-  private double percentFilesRequired(Table table, String col, String value) {
-    return percentFilesRequired(table, new String[]{col}, new String[]{value});
-  }
-
-  private double percentFilesRequired(Table table, String[] cols, String[] values) {
-    Preconditions.checkArgument(cols.length == values.length);
-    Expression restriction = Expressions.alwaysTrue();
-    for (int i = 0; i < cols.length; i++) {
-      restriction = Expressions.and(restriction, Expressions.equal(cols[i], values[i]));
-    }
-    int totalFiles = Iterables.size(table.newScan().planFiles());
-    int filteredFiles = Iterables.size(table.newScan().filter(restriction).planFiles());
-    return (double) filteredFiles / (double) totalFiles;
   }
 
   class GroupInfoMatcher implements ArgumentMatcher<RewriteFileGroup> {

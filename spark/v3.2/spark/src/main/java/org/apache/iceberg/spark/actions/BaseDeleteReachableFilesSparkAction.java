@@ -154,7 +154,7 @@ public class BaseDeleteReachableFilesSparkAction
         .run(fileInfo -> {
           String file = fileInfo.getString(0);
           String type = fileInfo.getString(1);
-          removeFunc.accept(file);
+          deleteFunc.accept(file);
           switch (type) {
             case CONTENT_FILE:
               dataFileCount.incrementAndGet();

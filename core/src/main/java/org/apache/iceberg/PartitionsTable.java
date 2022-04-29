@@ -44,7 +44,7 @@ public class PartitionsTable extends BaseMetadataTable {
     super(ops, table, name);
 
     this.schema = new Schema(
-        Types.NestedField.required(1, "partition", table.spec().partitionType()),
+        Types.NestedField.required(1, "partition", Partitioning.partitionType(table)),
         Types.NestedField.required(2, "record_count", Types.LongType.get()),
         Types.NestedField.required(3, "file_count", Types.IntegerType.get())
     );

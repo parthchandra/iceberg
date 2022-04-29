@@ -218,10 +218,6 @@ public class SparkSortStrategy extends SortStrategy {
     }
   }
 
-  protected double sizeEstimateMultiple() {
-    return sizeEstimateMultiple;
-  }
-
   protected FileScanTaskSetManager manager() {
     return manager;
   }

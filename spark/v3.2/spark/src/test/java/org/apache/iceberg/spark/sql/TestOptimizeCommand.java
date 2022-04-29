@@ -35,7 +35,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Streams;
 import org.apache.iceberg.spark.SparkCatalogTestBase;
-import org.apache.iceberg.spark.actions.Spark3SortStrategy;
+import org.apache.iceberg.spark.actions.SparkSortStrategy;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
 import org.apache.iceberg.types.Comparators;
 import org.apache.iceberg.types.Conversions;
@@ -135,7 +135,7 @@ public class TestOptimizeCommand extends SparkCatalogTestBase {
         "OPTIMIZE TABLE %s " +
         "ORDER BY c2, c3 " +
         "OPTIONS ('%s'='%d', '%s'='%d')",
-        tableName, Spark3SortStrategy.SHUFFLE_TASKS_PER_FILE, 3,
+        tableName, SparkSortStrategy.SHUFFLE_TASKS_PER_FILE, 3,
         RewriteDataFiles.TARGET_FILE_SIZE_BYTES, averageFileSize(table) * 5);
 
     ImmutableList<Object[]> expected = ImmutableList.of(row("ALL", 20, 3));
@@ -157,7 +157,7 @@ public class TestOptimizeCommand extends SparkCatalogTestBase {
         "OPTIMIZE TABLE %s " +
         "ORDER BY bucket(4, c3), c2, c1 " +
         "OPTIONS ('%s'='%d', '%s'='%d')",
-        tableName, Spark3SortStrategy.SHUFFLE_TASKS_PER_FILE, 2,
+        tableName, SparkSortStrategy.SHUFFLE_TASKS_PER_FILE, 2,
         RewriteDataFiles.TARGET_FILE_SIZE_BYTES, averageFileSize(table) * 5);
 
     rows.sort(Comparator.comparing(l -> (String) l[0]));

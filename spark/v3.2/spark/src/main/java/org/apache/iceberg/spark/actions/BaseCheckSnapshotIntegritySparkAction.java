@@ -128,7 +128,7 @@ public class BaseCheckSnapshotIntegritySparkAction
   }
 
   private Dataset<Row> fileDF(Table tbl) {
-    Dataset<Row> validDataFileDF = buildValidDataFileDF(tbl);
+    Dataset<Row> validDataFileDF = buildValidContentFileDF(tbl);
     Dataset<Row> validMetadataFileDF = buildValidMetadataFileDF(tbl);
     return validDataFileDF.union(validMetadataFileDF);
   }

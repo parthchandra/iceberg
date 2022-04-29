@@ -32,6 +32,7 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.avro.generic.GenericData;
@@ -41,7 +42,9 @@ import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.data.vectorized.IcebergArrowColumnVector;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
@@ -89,7 +92,7 @@ public class TestHelpers {
   }
 
   public static void assertEqualsBatch(Types.StructType struct, Iterator<Record> expected, ColumnarBatch batch,
-                                       boolean checkArrowValidityVector) {
+      boolean checkArrowValidityVector) {
     for (int rowId = 0; rowId < batch.numRows(); rowId++) {
       List<Types.NestedField> fields = struct.fields();
       InternalRow row = batch.getRow(rowId);
