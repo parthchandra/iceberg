@@ -39,6 +39,7 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
   private final boolean nativeFormatEncryption;
   private final KmsClient kmsClient;
   private final int dataKeyLength;
+  private final boolean kmsGeneratedKeys;
 
   private transient volatile SecureRandom workerRNG = null;
 
@@ -52,11 +53,11 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
    */
   public EnvelopeEncryptionManager(boolean nativeFormatEncryption,  EnvelopeConfiguration dataEncryptionConfig,
       KmsClient kmsClient, int dataKeyLength) {
-    this.nativeFormatEncryption = nativeFormatEncryption;
     if (!nativeFormatEncryption) {
       throw new UnsupportedOperationException("EnvelopeEncryptionManager currently only supports encryption " +
           "provided by the underlying file format.");
     }
+    this.nativeFormatEncryption = nativeFormatEncryption;
     Preconditions.checkNotNull(dataEncryptionConfig,
         "Cannot create EnvelopeEncryptionManager because data encryption config is not passed");
     this.dataEncryptionConfig = dataEncryptionConfig;
@@ -66,6 +67,7 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
         "Cannot create EnvelopeEncryptionManager because KmsClient is null");
     this.kmsClient = kmsClient;
     this.dataKeyLength = dataKeyLength;
+    this.kmsGeneratedKeys = kmsClient.supportsKeyGeneration();
   }
 
   @Override
@@ -74,12 +76,13 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
 
     if (nativeFormatEncryption) {
       NativeFileCryptoParameters nativeEncryptParams = NativeFileCryptoParameters.create(metadata.dek())
-          .encryptionAlgorithm(metadata.algorithm().toString())
+          .encryptionAlgorithm(metadata.algorithm())
           .build();
 
-      Preconditions.checkArgument(rawOutput instanceof NativelyEncryptedFile,
-          "Can't natively encrypt " + rawOutput.location() + " because the class " +
-              rawOutput.getClass() + " doesn't implement NativelyEncryptedFile interface");
+      if (!(rawOutput instanceof NativelyEncryptedFile)) {
+        throw new RuntimeException("Can't natively encrypt " + rawOutput.location() + " because the class " +
+            rawOutput.getClass() + " doesn't implement NativelyEncryptedFile interface");
+      }
 
       ((NativelyEncryptedFile) rawOutput).setNativeCryptoParameters(nativeEncryptParams);
 
@@ -92,6 +95,9 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
 
   @Override
   public InputFile decrypt(EncryptedInputFile encrypted) {
+    if (encrypted.keyMetadata().buffer() == null) { // unencrypted file
+      return encrypted.encryptedInputFile();
+    }
     EnvelopeMetadata metadata = EnvelopeMetadataParser.fromJson(encrypted.keyMetadata().buffer());
     ByteBuffer fileDek = kmsClient.unwrapKey(metadata.wrappedDek(), metadata.kekId());
 
@@ -100,9 +106,10 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
       NativeFileCryptoParameters nativeDecryptParams = NativeFileCryptoParameters.create(fileDek).build();
       InputFile rawInput = encrypted.encryptedInputFile();
 
-      Preconditions.checkArgument(rawInput instanceof NativelyEncryptedFile,
-          "Can't natively decrypt " + rawInput.location() + " because the class " +
-              rawInput.getClass() + " doesn't implement NativelyEncryptedFile interface");
+      if (!(rawInput instanceof NativelyEncryptedFile)) {
+        throw new RuntimeException("Can't natively decrypt " + rawInput.location() + " because the class " +
+            rawInput.getClass() + " doesn't implement NativelyEncryptedFile interface");
+      }
 
       ((NativelyEncryptedFile) rawInput).setNativeCryptoParameters(nativeDecryptParams);
 
@@ -118,7 +125,7 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
     byte[] fileDek;
     String wrappedFileDEK;
 
-    if (kmsClient.supportsKeyGeneration()) {
+    if (kmsGeneratedKeys) {
       KmsClient.KeyGenerationResult generatedDek = kmsClient.generateKey(tableKekID);
       fileDek = generatedDek.key().array();
       wrappedFileDEK = generatedDek.wrappedKey();

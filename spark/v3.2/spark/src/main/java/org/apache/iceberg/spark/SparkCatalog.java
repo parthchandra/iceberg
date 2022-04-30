@@ -351,21 +351,24 @@ public class SparkCatalog extends BaseCatalog {
       ValidationException.check(
           PropertyUtil.propertyAsBoolean(table.properties(), GC_ENABLED, GC_ENABLED_DEFAULT),
           "Cannot purge table: GC is disabled (deleting files may corrupt other tables)");
-
       String metadataFileLocation = ((HasTableOperations) table).operations().current().metadataFileLocation();
 
       boolean dropped = dropTableWithoutPurging(ident);
 
       if (dropped) {
-        SparkActions actions = SparkActions.get();
+        // We should check whether the metadata file exists. Because the HadoopCatalog/HadoopTables will drop the
+        // warehouse directly and ignore the `purge` argument.
+        boolean metadataFileExists = table.io().newInputFile(metadataFileLocation).exists();
 
-        actions.deleteReachableFiles(metadataFileLocation)
-            .io(table.io())
-            .execute();
+        if (metadataFileExists) {
+          SparkActions.get()
+              .deleteReachableFiles(metadataFileLocation)
+              .io(table.io())
+              .execute();
+        }
       }
 
       return dropped;
-
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
       return false;
     }
@@ -373,9 +376,9 @@ public class SparkCatalog extends BaseCatalog {
 
   private boolean dropTableWithoutPurging(Identifier ident) {
     if (isPathIdentifier(ident)) {
-      return tables.dropTable(((PathIdentifier) ident).location(), false);
+      return tables.dropTable(((PathIdentifier) ident).location(), false /* don't purge data */);
     } else {
-      return icebergCatalog.dropTable(buildIdentifier(ident), false);
+      return icebergCatalog.dropTable(buildIdentifier(ident), false /* don't purge data */);
     }
   }
 

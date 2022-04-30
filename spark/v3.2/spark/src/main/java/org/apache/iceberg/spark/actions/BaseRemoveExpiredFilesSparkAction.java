@@ -127,7 +127,7 @@ public class BaseRemoveExpiredFilesSparkAction extends BaseSparkAction<RemoveExp
 
   private Dataset<Row> buildValidFileDF(TableMetadata metadata) {
     Table staticTable = newStaticTable(metadata, this.table.io());
-    return appendTypeString(buildValidDataFileDF(staticTable), DATA_FILE)
+    return appendTypeString(buildValidContentFileDF(staticTable), CONTENT_FILE)
         .union(appendTypeString(buildManifestFileDF(staticTable), MANIFEST))
         .union(appendTypeString(buildManifestListDF(staticTable), MANIFEST_LIST));
   }

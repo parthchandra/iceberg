@@ -16,3 +16,24 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
+package org.apache.iceberg.spark.sql;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import org.apache.iceberg.encryption.kms.MemoryMockKMS;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
+
+public class MockKMS extends MemoryMockKMS {
+  public static final String MASTER_KEY_NAME1 = "keyA";
+  public static final byte[] MASTER_KEY1 = "0123456789012345".getBytes(StandardCharsets.UTF_8);
+  public static final String MASTER_KEY_NAME2 = "keyB";
+  public static final byte[] MASTER_KEY2 = "1123456789012345".getBytes(StandardCharsets.UTF_8);
+
+  @Override
+  public void initialize(Map<String, String> properties) {
+    masterKeys = ImmutableMap.of(
+        MASTER_KEY_NAME1, MASTER_KEY1,
+        MASTER_KEY_NAME2, MASTER_KEY2);
+  }
+}

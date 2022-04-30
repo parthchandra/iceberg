@@ -24,11 +24,9 @@ import java.util.Map;
 import org.apache.iceberg.actions.MigrateTable;
 import org.apache.iceberg.actions.SnapshotTable;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.spark.actions.BaseMigrateTableSparkAction;
-import org.apache.iceberg.spark.actions.BaseSnapshotTableSparkAction;
+import org.apache.iceberg.spark.actions.SparkActions;
 import org.apache.iceberg.spark.procedures.SparkProcedures;
 import org.apache.iceberg.spark.procedures.SparkProcedures.ProcedureBuilder;
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchProcedureException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.connector.catalog.Identifier;
@@ -70,8 +68,7 @@ abstract class BaseCatalog implements StagingTableCatalog, ProcedureCatalog,
         provider(properties).equals("iceberg"),
         "Iceberg catalogs cannot MIGRATE to a format other than Iceberg");
 
-    SparkSession spark = SparkSession.active();
-    MigrateTable action = new BaseMigrateTableSparkAction(spark, this, ident);
+    MigrateTable action = SparkActions.get().migrateTable(this.name() + "." + ident.toString());
     MigrateTable.Result result = action.tableProperties(properties).execute();
     LOG.info("Migrated table {} and registered {} files", ident, result.migratedDataFilesCount());
 
@@ -90,8 +87,9 @@ abstract class BaseCatalog implements StagingTableCatalog, ProcedureCatalog,
         provider(properties).equals("iceberg"),
         "Iceberg catalogs cannot SNAPSHOT to a format other than Iceberg");
 
-    SparkSession spark = SparkSession.active();
-    SnapshotTable action = new BaseSnapshotTableSparkAction(spark, sourceCatalog, sourceIdent, this, ident);
+    SnapshotTable action = SparkActions.get()
+        .snapshotTable(sourceCatalog.name() + "." +  sourceIdent.toString())
+        .as(this.name() + "." + ident.toString());
     SnapshotTable.Result result = action.tableProperties(properties).execute();
     long filesCount = result.importedDataFilesCount();
     LOG.info("Created a snapshot table {} with {} files from {}.{}", ident, filesCount, sourceCatalog, sourceIdent);
