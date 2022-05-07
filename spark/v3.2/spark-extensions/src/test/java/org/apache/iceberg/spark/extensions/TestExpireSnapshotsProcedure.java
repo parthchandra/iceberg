@@ -233,6 +233,7 @@ public class TestExpireSnapshotsProcedure extends SparkExtensionsTestBase {
     table.updateProperties()
         .set("auto-management.enabled", "true")
         .commit();
+    sql("REFRESH TABLE %s", tableName);
     AssertHelpers.assertThrows("Should not expire snapshots when auto management is enabled",
         ValidationException.class, "Cannot expire snapshots manually in the table opted into auto management",
         () -> sql("CALL %s.system.expire_snapshots('%s')", catalogName, tableIdent));

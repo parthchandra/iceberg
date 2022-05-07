@@ -23,6 +23,7 @@ import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.IsolationLevel;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
@@ -128,8 +129,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     Preconditions.checkArgument(handleTimestampWithoutZone || !SparkUtil.hasTimestampWithoutZone(table.schema()),
         SparkUtil.TIMESTAMP_WITHOUT_TIMEZONE_ERROR);
 
-    Schema writeSchema = SparkSchemaUtil.convert(table.schema(), dsSchema);
-    TypeUtil.validateWriteSchema(table.schema(), writeSchema, writeConf.checkNullability(), writeConf.checkOrdering());
+    Schema writeSchema = validateOrMergeWriteSchema(table, dsSchema, writeConf);
     SparkUtil.validatePartitionTransforms(table.spec());
 
     // Get application id
@@ -211,5 +211,32 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     } else {
       return SparkDistributionAndOrderingUtil.buildRequiredOrdering(table, requiredDistribution);
     }
+  }
+
+  private static Schema validateOrMergeWriteSchema(Table table, StructType dsSchema, SparkWriteConf writeConf) {
+    Schema writeSchema;
+    if (writeConf.mergeSchema()) {
+      // convert the dataset schema and assign fresh ids for new fields
+      Schema newSchema = SparkSchemaUtil.convertWithFreshIds(table.schema(), dsSchema);
+
+      // update the table to get final id assignments and validate the changes
+      UpdateSchema update = table.updateSchema().unionByNameWith(newSchema);
+      Schema mergedSchema = update.apply();
+
+      // reconvert the dsSchema without assignment to use the ids assigned by UpdateSchema
+      writeSchema = SparkSchemaUtil.convert(mergedSchema, dsSchema);
+
+      TypeUtil.validateWriteSchema(
+          mergedSchema, writeSchema, writeConf.checkNullability(), writeConf.checkOrdering());
+
+      // if the validation passed, update the table schema
+      update.commit();
+    } else {
+      writeSchema = SparkSchemaUtil.convert(table.schema(), dsSchema);
+      TypeUtil.validateWriteSchema(
+          table.schema(), writeSchema, writeConf.checkNullability(), writeConf.checkOrdering());
+    }
+
+    return writeSchema;
   }
 }
