@@ -39,6 +39,7 @@ import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.column.ColumnWriteStore;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.column.page.PageWriteStore;
+import org.apache.parquet.column.values.bloomfilter.BloomFilterWriteStore;
 import org.apache.parquet.crypto.FileEncryptionProperties;
 import org.apache.parquet.crypto.InternalFileEncryptor;
 import org.apache.parquet.hadoop.CodecFactory;
@@ -236,7 +237,7 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
     this.rowGroupOrdinal++;
 
     this.flushPageStoreToWriter = flushToWriter.bind(pageStore);
-    this.writeStore = props.newColumnWriteStore(parquetSchema, pageStore);
+    this.writeStore = props.newColumnWriteStore(parquetSchema, pageStore, (BloomFilterWriteStore) pageStore);
 
     model.setColumnStore(writeStore);
   }
