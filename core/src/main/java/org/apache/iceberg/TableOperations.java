@@ -19,7 +19,12 @@
 
 package org.apache.iceberg;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 import org.apache.iceberg.encryption.EncryptionAlgorithm;
 import org.apache.iceberg.encryption.EncryptionManager;
@@ -103,7 +108,48 @@ public interface TableOperations {
       return new PlaintextEncryptionManager();
     }
 
+    Properties clientSideEncryptionProperties = null;
+    String clientSideEncryptionConfigFile = System.getenv(EnvelopeEncryptionManager.CLIENT_SIDE_CRYPTO_CONFIG_FILE);
+    String clientSideEncrPropSource = "System environment variable " +
+        EnvelopeEncryptionManager.CLIENT_SIDE_CRYPTO_CONFIG_FILE;
+    if (null == clientSideEncryptionConfigFile) {
+      clientSideEncryptionConfigFile = System.getProperty(EnvelopeEncryptionManager.clientSideEncryptionConfigFile);
+      clientSideEncrPropSource = "System property " + EnvelopeEncryptionManager.clientSideEncryptionConfigFile;
+    }
+
+    if (null != clientSideEncryptionConfigFile) {
+      clientSideEncryptionProperties = new Properties();
+      try {
+        clientSideEncryptionProperties.load(new FileInputStream(clientSideEncryptionConfigFile));
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to load client-side encryption properties from " +
+            clientSideEncryptionConfigFile + ", configured via " + clientSideEncrPropSource, e);
+      }
+    }
+
     Map<String, String> tableProperties = tableMetadata.properties();
+
+    // Verify that table encryption properties are not tampered with in storage, by comparing with client-side
+    // encryption properties (if set)
+    if (null != clientSideEncryptionProperties) {
+      Set<String> keys = clientSideEncryptionProperties.stringPropertyNames();
+      for (String key : keys) {
+        if (!tableProperties.containsKey(key)) {
+          throw new RuntimeException(EnvelopeEncryptionManager.encryptionConfigMismatchMessagePrefix +
+              "Property " + key + " not found in table properties. Configured to " +
+              clientSideEncryptionProperties.getProperty(key) + " in " + clientSideEncryptionConfigFile +
+              ". Source of client-side configuration: " + clientSideEncrPropSource);
+        }
+
+        if (!tableProperties.get(key).equals(clientSideEncryptionProperties.getProperty(key))) {
+          throw new RuntimeException(EnvelopeEncryptionManager.encryptionConfigMismatchMessagePrefix +
+              "Property " + key + " is set in table properties to : " + tableProperties.get(key) +
+              " and in client-side properties to : " + clientSideEncryptionProperties.getProperty(key) +
+              ", set in " + clientSideEncryptionConfigFile +
+              ". Source of client-side configuration: " + clientSideEncrPropSource);
+        }
+      }
+    }
 
     String tableKeyId = PropertyUtil.propertyAsString(tableProperties, ENCRYPTION_TABLE_KEY, null);
     if (null == tableKeyId) { // Unencrypted table

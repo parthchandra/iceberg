@@ -43,6 +43,14 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
 
   private transient volatile SecureRandom workerRNG = null;
 
+  public static final String CLIENT_SIDE_CRYPTO_CONFIG_FILE = "ICE_CRYPT_CONFIG_FILE";
+  public static final String clientSideEncryptionConfigFile = "iceberg.encryption.config.file";
+  public static final String encryptionConfigMismatchMessagePrefix =
+      "Cannot create encryption manager - detected mismatch between client encryption properties and table " +
+          "encryption properties. Mismatch can be caused by changing encryption properties after table creation " +
+          "(currently not supported), or by malicious tampering with table properties kept in metadata.json in " +
+          "storage. Mismatch details: ";
+
   /**
    * @param nativeFormatEncryption true for native encryption inside file formats (Parquet or ORC), false for generic
    *                               encryption of file streams

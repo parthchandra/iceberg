@@ -96,9 +96,11 @@ class ReadConf<T> {
 
     ParquetMetricsRowGroupFilter statsFilter = null;
     ParquetDictionaryRowGroupFilter dictFilter = null;
+    ParquetBloomRowGroupFilter bloomFilter = null;
     if (filter != null) {
       statsFilter = new ParquetMetricsRowGroupFilter(expectedSchema, filter, caseSensitive);
       dictFilter = new ParquetDictionaryRowGroupFilter(expectedSchema, filter, caseSensitive);
+      bloomFilter = new ParquetBloomRowGroupFilter(expectedSchema, filter, caseSensitive);
     }
 
     long computedTotalValues = 0L;
@@ -107,7 +109,8 @@ class ReadConf<T> {
       startRowPositions[i] = offsetToStartPos == null ? 0 : offsetToStartPos.get(rowGroup.getStartingPos());
       boolean shouldRead = filter == null || (
           statsFilter.shouldRead(typeWithIds, rowGroup) &&
-              dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)));
+              dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)) &&
+                  bloomFilter.shouldRead(typeWithIds, rowGroup, reader.getBloomFilterDataReader(rowGroup)));
       this.shouldSkip[i] = !shouldRead;
       if (shouldRead) {
         computedTotalValues += rowGroup.getRowCount();

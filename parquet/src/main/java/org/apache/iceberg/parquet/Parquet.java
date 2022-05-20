@@ -88,11 +88,17 @@ import org.apache.parquet.schema.MessageType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.iceberg.TableProperties.DEFAULT_PARQUET_BLOOM_FILTER_ENABLED;
+import static org.apache.iceberg.TableProperties.DEFAULT_PARQUET_BLOOM_FILTER_ENABLED_DEFAULT;
 import static org.apache.iceberg.TableProperties.DELETE_PARQUET_COMPRESSION;
 import static org.apache.iceberg.TableProperties.DELETE_PARQUET_COMPRESSION_LEVEL;
 import static org.apache.iceberg.TableProperties.DELETE_PARQUET_DICT_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.DELETE_PARQUET_PAGE_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.DELETE_PARQUET_ROW_GROUP_SIZE_BYTES;
+import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX;
+import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_EXPECTED_NDV_PREFIX;
+import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES;
+import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION_DEFAULT;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION_LEVEL;
@@ -273,6 +279,13 @@ public class Parquet {
       int dictionaryPageSize = context.dictionaryPageSize();
       String compressionLevel = context.compressionLevel();
       CompressionCodecName codec = context.codec();
+      boolean bloomFilterEnabled = PropertyUtil.propertyAsBoolean(config, DEFAULT_PARQUET_BLOOM_FILTER_ENABLED,
+          DEFAULT_PARQUET_BLOOM_FILTER_ENABLED_DEFAULT);
+      int bloomFilterMaxBytes = PropertyUtil.propertyAsInt(config, PARQUET_BLOOM_FILTER_MAX_BYTES,
+          PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT);
+      Map<String, String> columnBloomFilterModes = getBloomColumnConfigMap(PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX);
+      Map<String, String> columnBloomFilterNDVs =
+          getBloomColumnConfigMap(PARQUET_BLOOM_FILTER_COLUMN_EXPECTED_NDV_PREFIX);
 
       if (compressionLevel != null) {
         switch (codec) {
@@ -309,17 +322,32 @@ public class Parquet {
           conf.set(entry.getKey(), entry.getValue());
         }
 
-        ParquetProperties parquetProperties = ParquetProperties.builder()
+        ParquetProperties.Builder propsBuilder = ParquetProperties.builder()
             .withWriterVersion(writerVersion)
             .withPageSize(pageSize)
             .withDictionaryPageSize(dictionaryPageSize)
-            .build();
+            .withMaxBloomFilterBytes(bloomFilterMaxBytes)
+            .withBloomFilterEnabled(bloomFilterEnabled);
+
+        for (Map.Entry<String, String> entry : columnBloomFilterModes.entrySet()) {
+          String col = entry.getKey();
+          String value = entry.getValue();
+          propsBuilder.withBloomFilterEnabled(col, Boolean.valueOf(value));
+        }
+
+        for (Map.Entry<String, String> entry : columnBloomFilterNDVs.entrySet()) {
+          String col = entry.getKey();
+          String value = entry.getValue();
+          propsBuilder.withBloomFilterNDV(col, Long.valueOf(value));
+        }
+
+        ParquetProperties parquetProperties = propsBuilder.build();
 
         return new org.apache.iceberg.parquet.ParquetWriter<>(
             conf, file, schema, rowGroupSize, metadata, createWriterFunc, codec,
             parquetProperties, metricsConfig, writeMode, fileEncryptionProperties);
       } else {
-        return new ParquetWriteAdapter<>(new ParquetWriteBuilder<D>(ParquetIO.file(file))
+        ParquetWriteBuilder<D> parquetWriteBuilder = new ParquetWriteBuilder<D>(ParquetIO.file(file))
             .withWriterVersion(writerVersion)
             .setType(type)
             .setConfig(config)
@@ -331,9 +359,37 @@ public class Parquet {
             .withPageSize(pageSize)
             .withDictionaryPageSize(dictionaryPageSize)
             .withEncryption(fileEncryptionProperties)
-            .build(),
+            // TODO: add .withMaxBloomFilterBytes(bloomFilterMaxBytes) once ParquetWriter.Builder supports it
+            .withBloomFilterEnabled(bloomFilterEnabled);
+
+        for (Map.Entry<String, String> entry : columnBloomFilterModes.entrySet()) {
+          String col = entry.getKey();
+          String value = entry.getValue();
+          parquetWriteBuilder.withBloomFilterEnabled(col, Boolean.valueOf(value));
+        }
+
+        for (Map.Entry<String, String> entry : columnBloomFilterNDVs.entrySet()) {
+          String col = entry.getKey();
+          String value = entry.getValue();
+          parquetWriteBuilder.withBloomFilterNDV(col, Long.valueOf(value));
+        }
+
+        return new ParquetWriteAdapter<>(
+            parquetWriteBuilder.build(),
             metricsConfig);
       }
+    }
+
+    private Map<String, String> getBloomColumnConfigMap(String prefix) {
+      Map<String, String> columnBloomFilterModes = Maps.newHashMap();
+      config.keySet().stream()
+          .filter(key -> key.startsWith(prefix))
+          .forEach(key -> {
+            String columnAlias = key.replaceFirst(prefix, "");
+            String bloomFilterMode = config.get(key);
+            columnBloomFilterModes.put(columnAlias, bloomFilterMode);
+          });
+      return columnBloomFilterModes;
     }
 
     private static class Context {
@@ -925,12 +981,14 @@ public class Parquet {
         Schema fileSchema = ParquetSchemaUtil.convert(type);
         builder.useStatsFilter()
             .useDictionaryFilter()
+            .useBloomFilter()
             .useRecordFilter(filterRecords)
             .withFilter(ParquetFilters.convert(fileSchema, filter, caseSensitive));
       } else {
         // turn off filtering
         builder.useStatsFilter(false)
             .useDictionaryFilter(false)
+            .useBloomFilter(false)
             .useRecordFilter(false);
       }
 
