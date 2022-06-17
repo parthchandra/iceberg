@@ -138,7 +138,7 @@ public class TestOptimizeCommand extends SparkCatalogTestBase {
         tableName, SparkSortStrategy.SHUFFLE_TASKS_PER_FILE, 3,
         RewriteDataFiles.TARGET_FILE_SIZE_BYTES, averageFileSize(table) * 5);
 
-    ImmutableList<Object[]> expected = ImmutableList.of(row("ALL", 20, 3));
+    ImmutableList<Object[]> expected = ImmutableList.of(row("ALL", 20, 4));
     assertEquals("Should have correct results", expected, rows);
 
     table.refresh();
@@ -162,11 +162,11 @@ public class TestOptimizeCommand extends SparkCatalogTestBase {
 
     rows.sort(Comparator.comparing(l -> (String) l[0]));
     ImmutableList<Object[]> expected = ImmutableList.of(
-        row("ALL", 40, 4),
-        row("PartitionData{c3_bucket=0}", 10, 1),
-        row("PartitionData{c3_bucket=1}", 10, 1),
-        row("PartitionData{c3_bucket=2}", 10, 1),
-        row("PartitionData{c3_bucket=3}", 10, 1)
+        row("ALL", 40, 8),
+        row("PartitionData{c3_bucket=0}", 10, 2),
+        row("PartitionData{c3_bucket=1}", 10, 2),
+        row("PartitionData{c3_bucket=2}", 10, 2),
+        row("PartitionData{c3_bucket=3}", 10, 2)
     );
     assertEquals("Should have correct results", expected, rows);
   }
