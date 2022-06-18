@@ -52,6 +52,7 @@ import org.apache.spark.sql.catalyst.plans.logical.OrderAwareCoalesce;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.distributions.Distributions;
 import org.apache.spark.sql.connector.expressions.SortOrder;
+import org.apache.spark.sql.connector.write.RequiresDistributionAndOrdering;
 import org.apache.spark.sql.execution.datasources.v2.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.internal.SQLConf;
 import scala.Option;
@@ -145,17 +146,15 @@ public class SparkSortStrategy extends SortStrategy {
       SparkSession cloneSession = spark.cloneSession();
       cloneSession.conf().set(SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), false);
 
-      // Reset Shuffle Partitions for our sort
-      long numOutputFiles = numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple));
-      cloneSession.conf().set(SQLConf.SHUFFLE_PARTITIONS().key(), Math.max(1, numOutputFiles));
+      long numOutputFiles = Math.max(1, numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple))) *
+              shuffleTasksPerFile;
 
       Dataset<Row> scanDF = cloneSession.read().format("iceberg")
           .option(SparkReadOptions.FILE_SCAN_TASK_SET_ID, groupID)
           .load(table.name());
 
       // write the packed data into new files where each split becomes a new file
-      SQLConf sqlConf = cloneSession.sessionState().conf();
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, numOutputFiles, scanDF.logicalPlan(), sqlConf);
+      LogicalPlan sortPlan = sortPlan(distribution, ordering, numOutputFiles, scanDF.logicalPlan());
       Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, scanDF.encoder());
 
       sortedDf.write()
@@ -179,8 +178,30 @@ public class SparkSortStrategy extends SortStrategy {
 
   protected LogicalPlan sortPlan(
           Distribution distribution, SortOrder[] ordering, long numOutputFiles,
-          LogicalPlan plan, SQLConf conf) {
-    LogicalPlan sortPlan = DistributionAndOrderingUtils$.MODULE$.prepareQuery(distribution, ordering, plan, conf);
+          LogicalPlan plan) {
+    RequiresDistributionAndOrdering write = new RequiresDistributionAndOrdering() {
+      @Override
+      public Distribution requiredDistribution() {
+        return distribution;
+      }
+
+      @Override
+      public boolean distributionStrictlyRequired() {
+        return true;
+      }
+
+      @Override
+      public int requiredNumPartitions() {
+        return (int) numOutputFiles;
+      }
+
+      @Override
+      public SortOrder[] requiredOrdering() {
+        return ordering;
+      }
+    };
+
+    LogicalPlan sortPlan = DistributionAndOrderingUtils$.MODULE$.prepareQuery(write, plan);
     if (shuffleTasksPerFile == 1) {
       return sortPlan;
     } else {

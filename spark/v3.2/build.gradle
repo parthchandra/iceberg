@@ -25,7 +25,7 @@ def sparkProjects = [
 
 configure(sparkProjects) {
   project.ext {
-    sparkVersion = '3.2.0.23-apple-SNAPSHOT'
+    sparkVersion = '3.2.0.38-apple-SNAPSHOT'
   }
 
   configurations {
@@ -33,6 +33,15 @@ configure(sparkProjects) {
       resolutionStrategy {
         force 'com.fasterxml.jackson.module:jackson-module-scala_2.12:2.12.3'
         force 'com.fasterxml.jackson.module:jackson-module-paranamer:2.12.3'
+        // Required to avoid us using the parquet version provided by spark in tests
+        // can be removed when we upgrade parquet to match spark
+        force 'org.apache.parquet:parquet-avro:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-column:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-common:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-encoding:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-format-structures:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-hadoop:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-jackson:1.12.0.16-apple'
       }
     }
   }
