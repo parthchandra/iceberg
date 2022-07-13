@@ -316,6 +316,11 @@ project(':iceberg-aws') {
     implementation project(':iceberg-common')
     implementation project(':iceberg-core')
 
+    // For Apple Aws Connect Factory (Shouldn't need transitive false but packaging was incorrect in some versions)
+    compileOnly (group: "com.apple.pie.spark", name: "awsappleconnect-spark-utils-shaded", classifier: "shaded") {
+      transitive = false
+    }
+    compileOnly 'com.amazonaws:aws-java-sdk-sts'
     compileOnly 'software.amazon.awssdk:url-connection-client'
     compileOnly 'software.amazon.awssdk:s3'
     compileOnly 'software.amazon.awssdk:kms'
