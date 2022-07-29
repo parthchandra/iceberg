@@ -40,6 +40,7 @@ public class CachedClientPool implements ClientPool<IMetaStoreClient, TException
   private final String metastoreUri;
   private final int clientPoolSize;
   private final long evictionInterval;
+  private final Map<String, String> properties;
 
   CachedClientPool(Configuration conf, Map<String, String> properties) {
     this.conf = conf;
@@ -50,12 +51,13 @@ public class CachedClientPool implements ClientPool<IMetaStoreClient, TException
     this.evictionInterval = PropertyUtil.propertyAsLong(properties,
             CatalogProperties.CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS,
             CatalogProperties.CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS_DEFAULT);
+    this.properties = properties;
     init();
   }
 
   @VisibleForTesting
   HiveClientPool clientPool() {
-    return clientPoolCache.get(metastoreUri, k -> new HiveClientPool(clientPoolSize, conf));
+    return clientPoolCache.get(metastoreUri, k -> new HiveClientPool(clientPoolSize, conf, properties));
   }
 
   private synchronized void init() {

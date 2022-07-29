@@ -25,7 +25,7 @@ def sparkProjects = [
 
 configure(sparkProjects) {
   project.ext {
-    sparkVersion = '3.2.0.38-apple-SNAPSHOT'
+    sparkVersion = '3.2.0.44-apple-SNAPSHOT'
   }
 
   configurations {
@@ -42,6 +42,9 @@ configure(sparkProjects) {
         force 'org.apache.parquet:parquet-format-structures:1.12.0.16-apple'
         force 'org.apache.parquet:parquet-hadoop:1.12.0.16-apple'
         force 'org.apache.parquet:parquet-jackson:1.12.0.16-apple'
+        // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
+        // We can remove this once Hive version is upgraded in Spark.
+        force 'org.apache.hive:hive-metastore:2.3.9.2-apple'
       }
     }
   }

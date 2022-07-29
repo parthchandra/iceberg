@@ -22,17 +22,23 @@ package org.apache.iceberg.hive;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
+import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.metastore.api.FunctionType;
 import org.apache.hadoop.hive.metastore.api.GetAllFunctionsResponse;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.iceberg.AssertHelpers;
+import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.thrift.transport.TTransportException;
 import org.junit.After;
@@ -82,6 +88,30 @@ public class TestHiveClientPool {
     Assert.assertEquals(conf.get(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL.varname),
             clientConf.get(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL.varname));
     Assert.assertTrue(clientConf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL));
+  }
+
+  @Test
+  public void testHiveCatalog() throws Exception {
+    TestHiveMetastore metastore = new TestHiveMetastore();
+    metastore.start();
+
+    Map<String, String> properties = new HashMap<String, String>();
+    properties.put(CatalogProperties.HIVE_CATALOG, "test_catalog");
+
+    HiveClientPool clientPool = new HiveClientPool(1, new Configuration(), properties);
+
+    IMetaStoreClient client = clientPool.get();
+    InvocationHandler handler = Proxy.getInvocationHandler(client);
+    try {
+      String catalog = (String) handler.invoke(client,
+              HiveMetaStoreClient.class.getDeclaredMethod("getCurrentCatalog"),
+              new Object[]{});
+      Assert.assertEquals(catalog, "test_catalog");
+    } catch (Throwable e) {
+      throw new RuntimeException("Test failed to invoke `getCurrentCatalog`");
+    } finally {
+      metastore.stop();
+    }
   }
 
   private HiveConf createHiveConf() {
