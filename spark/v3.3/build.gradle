@@ -27,6 +27,18 @@ def sparkProjects = [
     project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersion}"),
 ]
 
+configure(sparkProjects) {
+  configurations {
+    all {
+      resolutionStrategy {
+        // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
+        // We can remove this once Hive version is upgraded in Spark.
+        force 'org.apache.hive:hive-metastore:2.3.9.2-apple'
+      }
+    }
+  }
+}
+
 project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
   apply plugin: 'scala'
   apply plugin: 'com.github.alisiikh.scalastyle'

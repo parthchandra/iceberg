@@ -58,6 +58,7 @@ public class CatalogProperties {
   public static final long CACHE_EXPIRATION_INTERVAL_MS_OFF = -1;
 
   public static final String URI = "uri";
+  public static final String HIVE_CATALOG = "hive_catalog";
   public static final String CLIENT_POOL_SIZE = "clients";
   public static final int CLIENT_POOL_SIZE_DEFAULT = 2;
   public static final String CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS =
