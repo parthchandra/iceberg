@@ -19,20 +19,13 @@
 
 package org.apache.iceberg.hive;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Proxy;
-import java.util.Collections;
-import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaHookLoader;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
-import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.RetryingMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.MetaException;
-import org.apache.hive.common.util.HiveVersionInfo;
-import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.ClientPoolImpl;
 import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
@@ -47,23 +40,12 @@ public class HiveClientPool extends ClientPoolImpl<IMetaStoreClient, TException>
       .buildStatic();
 
   private final HiveConf hiveConf;
-  private String catalog;
 
   public HiveClientPool(int poolSize, Configuration conf) {
-    this(poolSize, conf, Collections.emptyMap());
-  }
-
-  public HiveClientPool(int poolSize, Configuration conf, Map<String, String> properties) {
     // Do not allow retry by default as we rely on RetryingHiveClient
     super(poolSize, TTransportException.class, false);
     this.hiveConf = new HiveConf(conf, HiveClientPool.class);
     this.hiveConf.addResource(conf);
-
-    if (properties.containsKey(CatalogProperties.HIVE_CATALOG)) {
-      this.catalog = properties.get(CatalogProperties.HIVE_CATALOG);
-    } else {
-      this.catalog = MetaStoreUtils.getDefaultCatalog(this.hiveConf);
-    }
   }
 
   @Override
@@ -116,29 +98,5 @@ public class HiveClientPool extends ClientPoolImpl<IMetaStoreClient, TException>
   @VisibleForTesting
   HiveConf hiveConf() {
     return hiveConf;
-  }
-
-  @Override
-  protected IMetaStoreClient get() throws InterruptedException {
-    IMetaStoreClient client = super.get();
-
-    String hiveMajorVersion = HiveVersionInfo.getVersion().split("\\.")[0];
-
-    // `TestHiveClientPool` may return a mock of `HiveMetaStoreClient`, which causes `getInvocationHandler` stuck.
-    // HMS catalog is only supported on Apple Hive 2.
-    if (hiveMajorVersion.equals("2") && Proxy.isProxyClass(client.getClass())) {
-      try {
-        InvocationHandler handler = Proxy.getInvocationHandler(client);
-        handler.invoke(client,
-                HiveMetaStoreClient.class.getDeclaredMethod("setCurrentCatalog", String.class),
-                new Object[]{this.catalog});
-      } catch (NoSuchMethodException e) {
-        throw new RuntimeMetaException(e, "HiveMetaStoreClient instance doesn't support `setCurrentCatalog` API.");
-      } catch (Throwable t) {
-        throw new RuntimeMetaException(t, "Failed to invoke `setCurrentCatalog` on the proxy of HiveMetaStoreClient");
-      }
-    }
-
-    return client;
   }
 }

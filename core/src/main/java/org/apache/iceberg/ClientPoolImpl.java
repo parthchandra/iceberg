@@ -114,7 +114,7 @@ public abstract class ClientPoolImpl<C, E extends Exception> implements Closeabl
     }
   }
 
-  protected C get() throws InterruptedException {
+  private C get() throws InterruptedException {
     Preconditions.checkState(!closed, "Cannot get a client from a closed pool");
     while (true) {
       if (!clients.isEmpty() || currentSize < poolSize) {

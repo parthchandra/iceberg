@@ -19,9 +19,15 @@
 
 package org.apache.iceberg.hive;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
+import org.apache.iceberg.CatalogProperties;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -40,4 +46,24 @@ public class TestCachedClientPool extends HiveMetastoreTest {
     Assert.assertNull(CachedClientPool.clientPoolCache().getIfPresent(metastoreUri));
   }
 
+  @Test
+  public void testHiveCatalog() throws Exception {
+    Map<String, String> properties = new HashMap<String, String>();
+    properties.put(CatalogProperties.HIVE_CATALOG, "test_catalog");
+
+    CachedClientPool clientPool = new CachedClientPool(hiveConf, properties);
+
+    clientPool.run(client -> {
+      InvocationHandler handler = Proxy.getInvocationHandler(client);
+      try {
+        String catalog = (String) handler.invoke(client,
+                HiveMetaStoreClient.class.getDeclaredMethod("getCurrentCatalog"),
+                new Object[]{});
+        Assert.assertEquals(catalog, "test_catalog");
+      } catch (Throwable e) {
+        throw new RuntimeException("Test failed to invoke `getCurrentCatalog`", e);
+      }
+      return null;
+    });
+  }
 }
