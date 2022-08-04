@@ -63,6 +63,7 @@ class SchemaUpdate implements UpdateSchema {
   private int lastColumnId;
   private boolean allowIncompatibleChanges = false;
   private Set<String> identifierFieldNames;
+  private boolean caseSensitive = true;
 
   SchemaUpdate(TableOperations ops) {
     this(ops, ops.current());
@@ -127,7 +128,7 @@ class SchemaUpdate implements UpdateSchema {
     int parentId = TABLE_ROOT_ID;
     String fullName;
     if (parent != null) {
-      Types.NestedField parentField = schema.findField(parent);
+      Types.NestedField parentField = findField(parent);
       Preconditions.checkArgument(parentField != null, "Cannot find parent struct: %s", parent);
       Type parentType = parentField.type();
       if (parentType.isNestedType()) {
@@ -144,16 +145,21 @@ class SchemaUpdate implements UpdateSchema {
           parentField.type().isNestedType() && parentField.type().asNestedType().isStructType(),
           "Cannot add to non-struct column: %s: %s", parent, parentField.type());
       parentId = parentField.fieldId();
-      Types.NestedField currentField = schema.findField(parent + "." + name);
-      Preconditions.checkArgument(!deletes.contains(parentId),
-          "Cannot add to a column that will be deleted: %s", parent);
-      Preconditions.checkArgument(currentField == null || deletes.contains(currentField.fieldId()),
-          "Cannot add column, name already exists: %s.%s", parent, name);
+      Types.NestedField currentField = findField(parent + "." + name);
+      Preconditions.checkArgument(
+          !deletes.contains(parentId), "Cannot add to a column that will be deleted: %s", parent);
+      Preconditions.checkArgument(
+          currentField == null || deletes.contains(currentField.fieldId()),
+          "Cannot add column, name already exists: %s.%s",
+          parent,
+          name);
       fullName = schema.findColumnName(parentId) + "." + name;
     } else {
-      Types.NestedField currentField = schema.findField(name);
-      Preconditions.checkArgument(currentField == null || deletes.contains(currentField.fieldId()),
-          "Cannot add column, name already exists: %s", name);
+      Types.NestedField currentField = findField(name);
+      Preconditions.checkArgument(
+          currentField == null || deletes.contains(currentField.fieldId()),
+          "Cannot add column, name already exists: %s",
+          name);
       fullName = name;
     }
 
@@ -172,7 +178,7 @@ class SchemaUpdate implements UpdateSchema {
 
   @Override
   public UpdateSchema deleteColumn(String name) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     Preconditions.checkArgument(field != null, "Cannot delete missing column: %s", name);
     Preconditions.checkArgument(!adds.containsKey(field.fieldId()),
         "Cannot delete a column that has additions: %s", name);
@@ -185,7 +191,7 @@ class SchemaUpdate implements UpdateSchema {
 
   @Override
   public UpdateSchema renameColumn(String name, String newName) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     Preconditions.checkArgument(field != null, "Cannot rename missing column: %s", name);
     Preconditions.checkArgument(newName != null, "Cannot rename a column to null");
     Preconditions.checkArgument(!deletes.contains(field.fieldId()),
@@ -221,7 +227,7 @@ class SchemaUpdate implements UpdateSchema {
   }
 
   private void internalUpdateColumnRequirement(String name, boolean isOptional) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     Preconditions.checkArgument(field != null, "Cannot update missing column: %s", name);
 
     if ((!isOptional && field.isRequired()) || (isOptional && field.isOptional())) {
@@ -246,7 +252,7 @@ class SchemaUpdate implements UpdateSchema {
 
   @Override
   public UpdateSchema updateColumn(String name, Type.PrimitiveType newType) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     Preconditions.checkArgument(field != null, "Cannot update missing column: %s", name);
     Preconditions.checkArgument(!deletes.contains(field.fieldId()),
         "Cannot update a column that will be deleted: %s", field.name());
@@ -272,7 +278,7 @@ class SchemaUpdate implements UpdateSchema {
 
   @Override
   public UpdateSchema updateColumnDoc(String name, String doc) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     Preconditions.checkArgument(field != null, "Cannot update missing column: %s", name);
     Preconditions.checkArgument(!deletes.contains(field.fieldId()),
         "Cannot update a column that will be deleted: %s", field.name());
@@ -325,7 +331,7 @@ class SchemaUpdate implements UpdateSchema {
 
   @Override
   public UpdateSchema unionByNameWith(Schema newSchema) {
-    UnionByNameVisitor.visit(this, schema, newSchema);
+    UnionByNameVisitor.visit(this, schema, newSchema, caseSensitive);
     return this;
   }
 
@@ -335,8 +341,14 @@ class SchemaUpdate implements UpdateSchema {
     return this;
   }
 
+  @Override
+  public UpdateSchema caseSensitive(boolean caseSensitivity) {
+    this.caseSensitive = caseSensitivity;
+    return this;
+  }
+
   private Integer findForMove(String name) {
-    Types.NestedField field = schema.findField(name);
+    Types.NestedField field = findField(name);
     if (field != null) {
       return field.fieldId();
     }
@@ -377,7 +389,8 @@ class SchemaUpdate implements UpdateSchema {
    */
   @Override
   public Schema apply() {
-    Schema newSchema = applyChanges(schema, deletes, updates, adds, moves, identifierFieldNames);
+    Schema newSchema =
+        applyChanges(schema, deletes, updates, adds, moves, identifierFieldNames, caseSensitive);
 
     return newSchema;
   }
@@ -433,14 +446,18 @@ class SchemaUpdate implements UpdateSchema {
     return newMetadata;
   }
 
-  private static Schema applyChanges(Schema schema, List<Integer> deletes,
-                                     Map<Integer, Types.NestedField> updates,
-                                     Multimap<Integer, Types.NestedField> adds,
-                                     Multimap<Integer, Move> moves,
-                                     Set<String> identifierFieldNames) {
+  private static Schema applyChanges(
+      Schema schema,
+      List<Integer> deletes,
+      Map<Integer, Types.NestedField> updates,
+      Multimap<Integer, Types.NestedField> adds,
+      Multimap<Integer, Move> moves,
+      Set<String> identifierFieldNames,
+      boolean caseSensitive) {
     // validate existing identifier fields are not deleted
     for (String name : identifierFieldNames) {
-      Types.NestedField field = schema.findField(name);
+      Types.NestedField field =
+          caseSensitive ? schema.findField(name) : schema.caseInsensitiveFindField(name);
       if (field != null) {
         Preconditions.checkArgument(!deletes.contains(field.fieldId()),
             "Cannot delete identifier field %s. To force deletion, " +
@@ -734,5 +751,9 @@ class SchemaUpdate implements UpdateSchema {
     public MoveType type() {
       return type;
     }
+  }
+
+  private Types.NestedField findField(String fieldName) {
+    return caseSensitive ? schema.findField(fieldName) : schema.caseInsensitiveFindField(fieldName);
   }
 }

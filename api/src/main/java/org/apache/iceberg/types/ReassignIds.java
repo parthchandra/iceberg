@@ -29,10 +29,16 @@ class ReassignIds extends TypeUtil.CustomOrderSchemaVisitor<Type> {
   private final Schema sourceSchema;
   private final TypeUtil.NextID assignId;
   private Type sourceType;
+  private boolean caseSensitive = true;
 
   ReassignIds(Schema sourceSchema, TypeUtil.NextID nextID) {
     this.sourceSchema = sourceSchema;
     this.assignId = nextID;
+  }
+
+  ReassignIds(Schema sourceSchema, TypeUtil.NextID nextID, boolean caseSensitive) {
+    this(sourceSchema, nextID);
+    this.caseSensitive = caseSensitive;
   }
 
   @Override
@@ -46,7 +52,9 @@ class ReassignIds extends TypeUtil.CustomOrderSchemaVisitor<Type> {
   }
 
   private int id(Types.StructType sourceStruct, String name) {
-    Types.NestedField sourceField = sourceStruct.field(name);
+    Types.NestedField sourceField =
+        caseSensitive ? sourceStruct.field(name) : sourceStruct.caseInsensitiveField(name);
+
     if (sourceField != null) {
       return sourceField.fieldId();
     }
@@ -87,7 +95,9 @@ class ReassignIds extends TypeUtil.CustomOrderSchemaVisitor<Type> {
     Preconditions.checkArgument(sourceType.isStructType(), "Not a struct: %s", sourceType);
 
     Types.StructType sourceStruct = sourceType.asStructType();
-    Types.NestedField sourceField = sourceStruct.field(field.name());
+    Types.NestedField sourceField =
+        caseSensitive ? sourceStruct.field(field.name())
+            : sourceStruct.caseInsensitiveField(field.name());
     if (sourceField != null) {
       this.sourceType = sourceField.type();
       try {
