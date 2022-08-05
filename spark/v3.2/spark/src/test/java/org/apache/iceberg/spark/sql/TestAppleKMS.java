@@ -40,12 +40,12 @@ public class TestAppleKMS extends SparkCatalogTestBase {
   public void createTables() throws IOException, URISyntaxException {
     String keyFilePath = getClass().getClassLoader().getResource("master_keys_v1").getPath();
     sql("CREATE TABLE %s (id bigint, data string, float float) USING iceberg " +
-        "TBLPROPERTIES ( " +
-        "'encryption.table.key.id'='keyA' , " +
-        "'kms.client.bridge.key.source.uid'='whisper " +
+            "TBLPROPERTIES ( " +
+            "'encryption.table.key.id'='keyA' , " +
+            "'kms.client.bridge.key.source.uid'='whisper " +
             "group:sample-usecase@group.apple.com, bucket:uc1-bucket, secret:master_keys_vx ' , " +
-        "'encryption.kms.client-impl'='org.apache.iceberg.encryption.kms.BridgeKmsClient' , " +
-        "'kms.client.bridge.key.file.path.pattern'='%s')",
+            "'encryption.kms.client-impl'='org.apache.iceberg.encryption.kms.BridgeKmsClient' , " +
+            "'kms.client.bridge.key.file.path.pattern'='%s')",
         tableName, keyFilePath);
     sql("INSERT INTO %s VALUES (1, 'a', 1.0), (2, 'b', 2.0), (3, 'c', float('NaN'))", tableName);
   }
@@ -54,20 +54,10 @@ public class TestAppleKMS extends SparkCatalogTestBase {
   public void testSelectWithoutKeys() {
     sql("ALTER TABLE %s UNSET TBLPROPERTIES ('encryption.table.key.id')", tableName);
 
-    AssertHelpers.assertThrows("Must fail to read encrypted data files without key",
+    AssertHelpers.assertThrows(
+        "Must fail to read encrypted data files without key",
         SparkException.class,
         "ParquetCryptoRuntimeException: Trying to read file with encrypted footer. No keys available",
-        () -> sql("SELECT * FROM %s", tableName));
-  }
-
-  @Test
-  public void testSelectWithOldKeys() {
-    String oldKeyFilePath = getClass().getClassLoader().getResource("master_keys_v0").getPath();
-    sql("ALTER TABLE %s SET TBLPROPERTIES ('kms.client.bridge.key.file.path.pattern'='%s')", tableName, oldKeyFilePath);
-
-    AssertHelpers.assertThrows("Must fail to read encrypted data files when using an old key",
-        SparkException.class,
-        "Failed to find keys with version v1",
         () -> sql("SELECT * FROM %s", tableName));
   }
 

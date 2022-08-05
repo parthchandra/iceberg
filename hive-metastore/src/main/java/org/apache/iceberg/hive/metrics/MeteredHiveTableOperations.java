@@ -28,6 +28,7 @@ import org.apache.hadoop.hive.metastore.api.LockRequest;
 import org.apache.hadoop.hive.metastore.api.LockResponse;
 import org.apache.iceberg.ClientPool;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.hive.HiveTableOperations;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.metrics.Metered;
@@ -44,8 +45,9 @@ public class MeteredHiveTableOperations extends HiveTableOperations implements M
   public static final String HIVE_TABLE_UNLOCK_TIME = "hive.table.unlock.time";
 
   public MeteredHiveTableOperations(MetricRegistry metricRegistry, Configuration conf, ClientPool metaClients,
-      FileIO fileIO, String catalogName, String database, String table) {
-    super(conf, metaClients, fileIO, catalogName, database, table);
+                                    FileIO fileIO, EncryptionManagerFactory encryptionManagerFactory,
+                                    String catalogName, String database, String table) {
+    super(conf, metaClients, fileIO, encryptionManagerFactory, catalogName, database, table);
     this.metricRegistry = metricRegistry;
   }
 

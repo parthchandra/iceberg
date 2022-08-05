@@ -27,6 +27,7 @@ import org.apache.iceberg.LockManager;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.aws.AwsProperties;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
@@ -61,10 +62,12 @@ class GlueTableOperations extends BaseMetastoreTableOperations {
   private final String fullTableName;
   private final String commitLockEntityId;
   private final FileIO fileIO;
+  private final EncryptionManagerFactory encryptionManagerFactory;
   private final LockManager lockManager;
 
   GlueTableOperations(GlueClient glue, LockManager lockManager, String catalogName, AwsProperties awsProperties,
-                      FileIO fileIO, TableIdentifier tableIdentifier) {
+                      FileIO fileIO, EncryptionManagerFactory encryptionManagerFactory,
+                      TableIdentifier tableIdentifier) {
     this.glue = glue;
     this.awsProperties = awsProperties;
     this.databaseName = IcebergToGlueConverter.getDatabaseName(tableIdentifier);
@@ -72,12 +75,18 @@ class GlueTableOperations extends BaseMetastoreTableOperations {
     this.fullTableName = String.format("%s.%s.%s", catalogName, databaseName, tableName);
     this.commitLockEntityId = String.format("%s.%s", databaseName, tableName);
     this.fileIO = fileIO;
+    this.encryptionManagerFactory = encryptionManagerFactory;
     this.lockManager = lockManager;
   }
 
   @Override
   public FileIO io() {
     return fileIO;
+  }
+
+  @Override
+  protected EncryptionManagerFactory encryptionManagerFactory() {
+    return encryptionManagerFactory;
   }
 
   @Override

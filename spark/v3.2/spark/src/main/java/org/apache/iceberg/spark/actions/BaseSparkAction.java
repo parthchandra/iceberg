@@ -33,6 +33,7 @@ import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.actions.Action;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.io.ClosingIterator;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
@@ -119,12 +120,13 @@ abstract class BaseSparkAction<ThisT, R> implements Action<ThisT, R> {
     return new JobGroupInfo(groupId + "-" + JOB_COUNTER.incrementAndGet(), desc, false);
   }
 
-  protected Table newStaticTable(TableMetadata metadata, FileIO io) {
-    return newStaticTable(metadata.metadataFileLocation(), io);
+  protected Table newStaticTable(TableMetadata metadata, FileIO io, EncryptionManagerFactory encryptionManagerFactory) {
+    return newStaticTable(metadata.metadataFileLocation(), io, encryptionManagerFactory);
   }
 
-  protected Table newStaticTable(String metadataFileLocation, FileIO io) {
-    StaticTableOperations ops = new StaticTableOperations(metadataFileLocation, io);
+  protected Table newStaticTable(String metadataFileLocation, FileIO io,
+                                 EncryptionManagerFactory encryptionManagerFactory) {
+    StaticTableOperations ops = new StaticTableOperations(metadataFileLocation, io, encryptionManagerFactory);
     return new BaseTable(ops, metadataFileLocation);
   }
 

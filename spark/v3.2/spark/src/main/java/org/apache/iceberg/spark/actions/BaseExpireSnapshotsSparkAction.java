@@ -214,7 +214,7 @@ public class BaseExpireSnapshotsSparkAction
   }
 
   private Dataset<Row> buildValidFileDF(TableMetadata metadata) {
-    Table staticTable = newStaticTable(metadata, table.io());
+    Table staticTable = newStaticTable(metadata, table.io(), tableMetadata -> table.encryption());
     return withFileType(buildValidContentFileDF(staticTable), CONTENT_FILE)
         .union(withFileType(buildManifestFileDF(staticTable), MANIFEST))
         .union(withFileType(buildManifestListDF(staticTable), MANIFEST_LIST));

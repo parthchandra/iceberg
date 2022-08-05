@@ -25,6 +25,7 @@ import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableMetadataParser;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
@@ -55,6 +56,7 @@ public class NessieTableOperations extends BaseMetastoreTableOperations {
   private final UpdateableReference reference;
   private IcebergTable table;
   private final FileIO fileIO;
+  private final EncryptionManagerFactory encryptionManagerFactory;
   private final Map<String, String> catalogOptions;
 
   /**
@@ -65,11 +67,13 @@ public class NessieTableOperations extends BaseMetastoreTableOperations {
       UpdateableReference reference,
       NessieApiV1 api,
       FileIO fileIO,
+      EncryptionManagerFactory encryptionManagerFactory,
       Map<String, String> catalogOptions) {
     this.key = key;
     this.reference = reference;
     this.api = api;
     this.fileIO = fileIO;
+    this.encryptionManagerFactory = encryptionManagerFactory;
     this.catalogOptions = catalogOptions;
   }
 
@@ -199,5 +203,10 @@ public class NessieTableOperations extends BaseMetastoreTableOperations {
   @Override
   public FileIO io() {
     return fileIO;
+  }
+
+  @Override
+  protected EncryptionManagerFactory encryptionManagerFactory() {
+    return encryptionManagerFactory;
   }
 }

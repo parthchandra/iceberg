@@ -20,6 +20,8 @@
 package org.apache.iceberg.hive;
 
 import com.codahale.metrics.MetricRegistry;
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,12 +49,14 @@ import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.hive.metrics.HiveMetricsUtil;
 import org.apache.iceberg.hive.metrics.MeteredHiveTableOperations;
+import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
@@ -64,7 +68,7 @@ import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespaces, Configurable {
+public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespaces, Configurable, Closeable {
   public static final String LIST_ALL_TABLES = "list-all-tables";
   public static final String LIST_ALL_TABLES_DEFAULT = "false";
 
@@ -73,7 +77,9 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
   private String name;
   private Configuration conf;
   private FileIO fileIO;
+  private EncryptionManagerFactory encryptionManagerFactory;
   private ClientPool<IMetaStoreClient, TException> clients;
+  private CloseableGroup closeableGroup;
   private boolean listAllTables = false;
 
   public HiveCatalog() {
@@ -100,7 +106,12 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
     String fileIOImpl = properties.get(CatalogProperties.FILE_IO_IMPL);
     this.fileIO = fileIOImpl == null ? new HadoopFileIO(conf) : CatalogUtil.loadFileIO(fileIOImpl, properties, conf);
 
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(properties);
     this.clients = new CachedClientPool(conf, properties);
+
+    this.closeableGroup = new CloseableGroup();
+    closeableGroup.addCloseable(fileIO);
+    closeableGroup.addCloseable(encryptionManagerFactory);
   }
 
   @Override
@@ -450,9 +461,10 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
 
     if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
       MetricRegistry metricRegistry = HiveMetricsUtil.metricRegistry();
-      return new MeteredHiveTableOperations(metricRegistry, conf, clients, fileIO, name, dbName, tableName);
+      return new MeteredHiveTableOperations(metricRegistry, conf, clients, fileIO, encryptionManagerFactory, name,
+              dbName, tableName);
     } else {
-      return new HiveTableOperations(conf, clients, fileIO, name, dbName, tableName);
+      return new HiveTableOperations(conf, clients, fileIO, encryptionManagerFactory, name, dbName, tableName);
     }
   }
 
@@ -554,5 +566,10 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
   @VisibleForTesting
   void setListAllTables(boolean listAllTables) {
     this.listAllTables = listAllTables;
+  }
+
+  @Override
+  public void close() throws IOException {
+    closeableGroup.close();
   }
 }

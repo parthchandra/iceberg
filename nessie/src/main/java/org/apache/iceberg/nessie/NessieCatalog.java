@@ -19,6 +19,7 @@
 
 package org.apache.iceberg.nessie;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,12 +36,14 @@ import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.common.DynMethods;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
+import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
@@ -86,7 +89,9 @@ public class NessieCatalog extends BaseMetastoreCatalog implements AutoCloseable
   private UpdateableReference reference;
   private String name;
   private FileIO fileIO;
+  private EncryptionManagerFactory encryptionManagerFactory;
   private Map<String, String> catalogOptions;
+  private CloseableGroup closeableGroup;
 
   public NessieCatalog() {
   }
@@ -96,6 +101,7 @@ public class NessieCatalog extends BaseMetastoreCatalog implements AutoCloseable
     this.catalogOptions = ImmutableMap.copyOf(options);
     String fileIOImpl = options.get(CatalogProperties.FILE_IO_IMPL);
     this.fileIO = fileIOImpl == null ? new HadoopFileIO(config) : CatalogUtil.loadFileIO(fileIOImpl, options, config);
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(options);
     this.name = inputName == null ? "nessie" : inputName;
     // remove nessie prefix
     final Function<String, String> removePrefix = x -> x.replace(NessieUtil.NESSIE_CONFIG_PREFIX, "");
@@ -103,6 +109,10 @@ public class NessieCatalog extends BaseMetastoreCatalog implements AutoCloseable
     this.api = createNessieClientBuilder(options.get(NessieUtil.CONFIG_CLIENT_BUILDER_IMPL))
         .fromConfig(x -> options.get(removePrefix.apply(x)))
         .build(NessieApiV1.class);
+
+    closeableGroup = new CloseableGroup();
+    closeableGroup.addCloseable(fileIO);
+    closeableGroup.addCloseable(encryptionManagerFactory);
 
     this.warehouseLocation = options.get(CatalogProperties.WAREHOUSE_LOCATION);
     if (warehouseLocation == null) {
@@ -145,8 +155,8 @@ public class NessieCatalog extends BaseMetastoreCatalog implements AutoCloseable
   }
 
   @Override
-  public void close() {
-    api.close();
+  public void close() throws IOException {
+    closeableGroup.close();
   }
 
   @Override
@@ -168,6 +178,7 @@ public class NessieCatalog extends BaseMetastoreCatalog implements AutoCloseable
         newReference,
         api,
         fileIO,
+        encryptionManagerFactory,
         catalogOptions);
   }
 

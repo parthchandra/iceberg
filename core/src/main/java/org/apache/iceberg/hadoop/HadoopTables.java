@@ -42,6 +42,7 @@ import org.apache.iceberg.Tables;
 import org.apache.iceberg.Transaction;
 import org.apache.iceberg.Transactions;
 import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.metrics.CoreMetricsUtil;
@@ -201,14 +202,27 @@ public class HadoopTables implements Tables, Configurable {
     }
   }
 
+  private Map<String, String> encryptionConfigFromConf() {
+    Map<String, String> props = Maps.newHashMap();
+    // this map could be big as we are copying hadoop conf to map
+    // we don't filter out encryption related conf because this will make the code hard to track if we want to add
+    // new encryption related conf property
+    for (Map.Entry<String, String> entry : conf) {
+      props.put(entry.getKey(), entry.getValue());
+    }
+    return props;
+  }
+
   @VisibleForTesting
   TableOperations newTableOps(String location) {
+    EncryptionManagerFactory encryptionManagerFactory =
+            CatalogUtil.loadEncryptionManagerFactory(encryptionConfigFromConf());
     if (location.contains(METADATA_JSON)) {
-      TableOperations tableOps = new StaticTableOperations(location, new HadoopFileIO(conf));
+      TableOperations tableOps = new StaticTableOperations(location, new HadoopFileIO(conf), encryptionManagerFactory);
       return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, TableOperationsMetricType.STATIC, tableOps);
     } else {
-      TableOperations tableOps = new HadoopTableOperations(new Path(location), new HadoopFileIO(conf), conf,
-          createOrGetLockManager(this));
+      TableOperations tableOps = new HadoopTableOperations(new Path(location), new HadoopFileIO(conf),
+              encryptionManagerFactory, conf, createOrGetLockManager(this));
       return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, TableOperationsMetricType.HADOOP, tableOps);
     }
   }

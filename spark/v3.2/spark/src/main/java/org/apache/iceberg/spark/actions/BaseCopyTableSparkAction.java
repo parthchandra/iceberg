@@ -164,7 +164,7 @@ public class BaseCopyTableSparkAction
 
     validateAndSetEndVersion();
 
-    endStaticTable = newStaticTable(endVersion, table.io());
+    endStaticTable = newStaticTable(endVersion, table.io(), tableMetadata -> table.encryption());
 
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
     Preconditions.checkArgument(tableMetadata.formatVersion() == 1, "Support Iceberg format version 1 only.");
@@ -172,7 +172,7 @@ public class BaseCopyTableSparkAction
     validateAndSetStartVersion(tableMetadata);
 
     if (fileExist(startVersion)) {
-      startStaticTable = newStaticTable(startVersion, table.io());
+      startStaticTable = newStaticTable(startVersion, table.io(), tableMetadata1 -> table.encryption());
     }
 
     if (stagingDir.isEmpty()) {
@@ -338,7 +338,8 @@ public class BaseCopyTableSparkAction
           fileExist(versionFilePath),
           String.format("Version file %s doesn't exist", versionFilePath));
       String newPath = stagingPath(versionFilePath, stagingDir);
-      TableMetadata tableMetadata = new StaticTableOperations(versionFilePath, table.io()).current();
+      TableMetadata tableMetadata = new StaticTableOperations(versionFilePath, table.io(),
+          tableMetadata1 -> table.encryption()).current();
 
       tableMetadata.snapshots().forEach(snapshot -> allSnapshotIds.add(snapshot.snapshotId()));
 
@@ -351,7 +352,8 @@ public class BaseCopyTableSparkAction
   private Set<Snapshot> snapshotSet(String metadataPath) {
     Set<Snapshot> snapshots = Sets.newHashSet();
     if (!metadataPath.isEmpty()) {
-      StaticTableOperations ops = new StaticTableOperations(metadataPath, table.io());
+      StaticTableOperations ops = new StaticTableOperations(metadataPath, table.io(),
+          tableMetadata -> table.encryption());
       TableMetadata metadata = ops.current();
       snapshots.addAll(metadata.snapshots());
     }

@@ -539,7 +539,7 @@ public class TestHiveCatalog extends HiveMetastoreTest {
   public void testSetSnapshotSummary() throws Exception {
     Configuration conf = new Configuration();
     conf.set("iceberg.hive.table-property-max-size", "4000");
-    HiveTableOperations ops = new HiveTableOperations(conf, null, null, catalog.name(), DB_NAME, "tbl");
+    HiveTableOperations ops = new HiveTableOperations(conf, null, null, null, catalog.name(), DB_NAME, "tbl");
     Snapshot snapshot = mock(Snapshot.class);
     Map<String, String> summary = Maps.newHashMap();
     when(snapshot.summary()).thenReturn(summary);
@@ -569,7 +569,7 @@ public class TestHiveCatalog extends HiveMetastoreTest {
   public void testNotExposeTableProperties() {
     Configuration conf = new Configuration();
     conf.set("iceberg.hive.table-property-max-size", "0");
-    HiveTableOperations ops = new HiveTableOperations(conf, null, null, catalog.name(), DB_NAME, "tbl");
+    HiveTableOperations ops = new HiveTableOperations(conf, null, null, null, catalog.name(), DB_NAME, "tbl");
     TableMetadata metadata = mock(TableMetadata.class);
     Map<String, String> parameters = Maps.newHashMap();
     parameters.put(CURRENT_SNAPSHOT_SUMMARY, "summary");

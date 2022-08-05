@@ -19,35 +19,11 @@
 
 package org.apache.iceberg;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
 import java.util.UUID;
-import org.apache.iceberg.encryption.EncryptionAlgorithm;
 import org.apache.iceberg.encryption.EncryptionManager;
-import org.apache.iceberg.encryption.EnvelopeConfiguration;
-import org.apache.iceberg.encryption.EnvelopeEncryptionManager;
-import org.apache.iceberg.encryption.KmsClient;
-import org.apache.iceberg.encryption.KmsUtil;
 import org.apache.iceberg.encryption.PlaintextEncryptionManager;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
-import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.iceberg.util.PropertyUtil;
-
-import static org.apache.iceberg.TableProperties.ENCRYPTION_DATA_ALGORITHM;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_DATA_ALGORITHM_DEFAULT;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_DEK_LENGTH;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_DEK_LENGTH_DEFAULT;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_KMS_CLIENT_CUSTOM_PROPERTIES_PREFIX;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_KMS_CLIENT_IMPL;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_PUSHDOWN_ENABLED;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_PUSHDOWN_ENABLED_DEFAULT;
-import static org.apache.iceberg.TableProperties.ENCRYPTION_TABLE_KEY;
 
 /**
  * SPI interface to abstract table metadata access and updates.
@@ -97,94 +73,9 @@ public interface TableOperations {
   /**
    * Returns an {@link org.apache.iceberg.encryption.EncryptionManager} for a table.
    * <p>
-   * If table metadata/properties are not available yet, or if encryption is not configured in the table properties,
-   * a PlaintextEncryptionManager is returned (no encryption).
-   * Otherwise, an EnvelopeEncryptionManager is returned, configured with table key(s) and other parameters set up in
-   * the table properties.
    */
   default EncryptionManager encryption() {
-    TableMetadata tableMetadata = current();
-    if (null == tableMetadata) {
-      return new PlaintextEncryptionManager();
-    }
-
-    Properties clientSideEncryptionProperties = null;
-    String clientSideEncryptionConfigFile = System.getenv(EnvelopeEncryptionManager.CLIENT_SIDE_CRYPTO_CONFIG_FILE);
-    String clientSideEncrPropSource = "System environment variable " +
-        EnvelopeEncryptionManager.CLIENT_SIDE_CRYPTO_CONFIG_FILE;
-    if (null == clientSideEncryptionConfigFile) {
-      clientSideEncryptionConfigFile = System.getProperty(EnvelopeEncryptionManager.clientSideEncryptionConfigFile);
-      clientSideEncrPropSource = "System property " + EnvelopeEncryptionManager.clientSideEncryptionConfigFile;
-    }
-
-    if (null != clientSideEncryptionConfigFile) {
-      clientSideEncryptionProperties = new Properties();
-      try {
-        clientSideEncryptionProperties.load(new FileInputStream(clientSideEncryptionConfigFile));
-      } catch (IOException e) {
-        throw new UncheckedIOException("Failed to load client-side encryption properties from " +
-            clientSideEncryptionConfigFile + ", configured via " + clientSideEncrPropSource, e);
-      }
-    }
-
-    Map<String, String> tableProperties = tableMetadata.properties();
-
-    // Verify that table encryption properties are not tampered with in storage, by comparing with client-side
-    // encryption properties (if set)
-    if (null != clientSideEncryptionProperties) {
-      Set<String> keys = clientSideEncryptionProperties.stringPropertyNames();
-      for (String key : keys) {
-        if (!tableProperties.containsKey(key)) {
-          throw new RuntimeException(EnvelopeEncryptionManager.encryptionConfigMismatchMessagePrefix +
-              "Property " + key + " not found in table properties. Configured to " +
-              clientSideEncryptionProperties.getProperty(key) + " in " + clientSideEncryptionConfigFile +
-              ". Source of client-side configuration: " + clientSideEncrPropSource);
-        }
-
-        if (!tableProperties.get(key).equals(clientSideEncryptionProperties.getProperty(key))) {
-          throw new RuntimeException(EnvelopeEncryptionManager.encryptionConfigMismatchMessagePrefix +
-              "Property " + key + " is set in table properties to : " + tableProperties.get(key) +
-              " and in client-side properties to : " + clientSideEncryptionProperties.getProperty(key) +
-              ", set in " + clientSideEncryptionConfigFile +
-              ". Source of client-side configuration: " + clientSideEncrPropSource);
-        }
-      }
-    }
-
-    String tableKeyId = PropertyUtil.propertyAsString(tableProperties, ENCRYPTION_TABLE_KEY, null);
-    if (null == tableKeyId) { // Unencrypted table
-      return new PlaintextEncryptionManager();
-    }
-
-    // At this point, we have an encrypted table
-    boolean pushdown = PropertyUtil.propertyAsBoolean(tableProperties,
-        ENCRYPTION_PUSHDOWN_ENABLED, ENCRYPTION_PUSHDOWN_ENABLED_DEFAULT);
-
-    String dataEncryptionAlgorithm = PropertyUtil.propertyAsString(tableProperties,
-        ENCRYPTION_DATA_ALGORITHM, ENCRYPTION_DATA_ALGORITHM_DEFAULT);
-
-    EnvelopeConfiguration dataEncryptionConfig = EnvelopeConfiguration.builder()
-        .singleWrap(tableKeyId)
-        .useAlgorithm(EncryptionAlgorithm.valueOf(dataEncryptionAlgorithm))
-        .build();
-
-    String kmsClientImpl = PropertyUtil.propertyAsString(tableProperties, ENCRYPTION_KMS_CLIENT_IMPL, null);
-    Preconditions.checkArgument(null != kmsClientImpl,
-        "KMS Client implementation class is not set (via " + ENCRYPTION_KMS_CLIENT_IMPL + " table property)");
-
-    // Pass custom kms configuration from table properties
-    Map<String, String> kmsProperties = Maps.newHashMap();
-    for (Map.Entry<String, String> property : tableProperties.entrySet()) {
-      if (property.getKey().startsWith(ENCRYPTION_KMS_CLIENT_CUSTOM_PROPERTIES_PREFIX)) {
-        kmsProperties.put(property.getKey(), property.getValue());
-      }
-    }
-
-    KmsClient kmsClient = KmsUtil.loadKmsClient(kmsClientImpl, kmsProperties);
-    int dataKeyLength = PropertyUtil.propertyAsInt(tableProperties, ENCRYPTION_DEK_LENGTH,
-        ENCRYPTION_DEK_LENGTH_DEFAULT);
-
-    return new EnvelopeEncryptionManager(pushdown, dataEncryptionConfig, kmsClient, dataKeyLength);
+    return PlaintextEncryptionManager.INSTANCE;
   }
 
   /**

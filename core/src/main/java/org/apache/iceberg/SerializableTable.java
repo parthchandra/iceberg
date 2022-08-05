@@ -122,7 +122,8 @@ public class SerializableTable implements Table, Serializable {
             throw new UnsupportedOperationException("Cannot load metadata: metadata file location is null");
           }
 
-          TableOperations ops = new StaticTableOperations(metadataFileLocation, io, locationProvider);
+          TableOperations ops = new StaticTableOperations(metadataFileLocation, io, locationProvider,
+                  tableMetadata -> SerializableTable.this.encryption);
           this.lazyTable = newTable(ops, name);
         }
       }

@@ -45,6 +45,7 @@ import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
@@ -90,6 +91,7 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
   private String warehouseLocation;
   private FileSystem fs;
   private FileIO fileIO;
+  private EncryptionManagerFactory encryptionManagerFactory;
   private LockManager lockManager;
   private boolean suppressPermissionError = false;
 
@@ -107,11 +109,12 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
 
     String fileIOImpl = properties.get(CatalogProperties.FILE_IO_IMPL);
     this.fileIO = fileIOImpl == null ? new HadoopFileIO(conf) : CatalogUtil.loadFileIO(fileIOImpl, properties, conf);
-
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(properties);
     this.lockManager = LockManagers.from(properties);
 
     this.closeableGroup = new CloseableGroup();
     closeableGroup.addCloseable(lockManager);
+    closeableGroup.addCloseable(encryptionManagerFactory);
     closeableGroup.setSuppressCloseFailure(true);
 
     this.suppressPermissionError = Boolean.parseBoolean(properties.get(HADOOP_SUPPRESS_PERMISSION_ERROR));
@@ -215,7 +218,8 @@ public class HadoopCatalog extends BaseMetastoreCatalog implements Closeable, Su
 
   @Override
   protected TableOperations newTableOps(TableIdentifier identifier) {
-    return new HadoopTableOperations(new Path(defaultWarehouseLocation(identifier)), fileIO, conf, lockManager);
+    return new HadoopTableOperations(new Path(defaultWarehouseLocation(identifier)), fileIO,
+            encryptionManagerFactory, conf, lockManager);
   }
 
   @Override
