@@ -18,6 +18,28 @@ reports:
 
 pipelines:
 
+# boson
+- name: apple-0.13.x-prb-jdk11-boson
+  branchName: apple-0.13.x-test
+  machine:
+    baseImage: docker.apple.com/pie/boson
+    env:
+      <<: *base_env
+      RUNTIME_JDK_VERSION: 11
+  build:
+    template: buildozer:v4:prb
+
+# boson
+- name: apple-0.13.x-release-prb-jdk11-boson
+  branchName: apple-0.13.x-test-release
+  machine:
+    baseImage: docker.apple.com/pie/boson
+    env:
+      <<: *base_env
+      RUNTIME_JDK_VERSION: 11
+  build:
+    template: buildozer:v4:prb
+
 # prb builds
 - name: apple-0.13.x-prb-jdk8
   branchName: apple-0.13.x
