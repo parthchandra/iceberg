@@ -20,7 +20,7 @@ pipelines:
 
 # boson
 - name: apple-0.13.x-prb-jdk11-boson
-  branchName: apple-0.13.x-test
+  branchName: apple-0.13.x-boson
   machine:
     baseImage: docker.apple.com/pie/boson
     env:
@@ -31,7 +31,7 @@ pipelines:
 
 # boson
 - name: apple-0.13.x-release-prb-jdk11-boson
-  branchName: apple-0.13.x-test-release
+  branchName: apple-0.13.x-boson-release
   machine:
     baseImage: docker.apple.com/pie/boson
     env:
