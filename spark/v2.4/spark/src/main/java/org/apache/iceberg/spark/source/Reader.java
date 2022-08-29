@@ -103,6 +103,7 @@ class Reader
   private Boolean readUsingBatch = null;
   private int batchSize = 0;
 
+  @SuppressWarnings("checkstyle:CyclomaticComplexity")
   Reader(SparkSession spark, Table table, boolean caseSensitive, DataSourceOptions options) {
     this.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
     this.table = table;
@@ -111,8 +112,9 @@ class Reader
     this.baseScan = configureBaseScan(caseSensitive, options);
     this.schema = baseScan.schema();
 
-    if (table.io() instanceof HadoopFileIO) {
-      String fsscheme = "no_exist";
+    boolean localityOption = options.get("locality").map(Boolean::parseBoolean).orElse(false);
+    if (localityOption && table.io() instanceof HadoopFileIO) {
+      String scheme = "no_exist";
       try {
         Configuration conf = SparkSession.active().sessionState().newHadoopConf();
         // merge hadoop config set on table
@@ -120,16 +122,11 @@ class Reader
         // merge hadoop config passed as options and overwrite the one on table
         mergeIcebergHadoopConfs(conf, options.asMap());
         FileSystem fs = new Path(table.location()).getFileSystem(conf);
-        fsscheme = fs.getScheme().toLowerCase(Locale.ENGLISH);
+        scheme = fs.getScheme().toLowerCase(Locale.ENGLISH);
       } catch (IOException ioe) {
         LOG.warn("Failed to get Hadoop Filesystem", ioe);
       }
-      String scheme = fsscheme; // Makes an effectively final version of scheme
-      this.localityPreferred =
-          options
-              .get("locality")
-              .map(Boolean::parseBoolean)
-              .orElseGet(() -> LOCALITY_WHITELIST_FS.contains(scheme));
+      this.localityPreferred = LOCALITY_WHITELIST_FS.contains(scheme);
     } else {
       this.localityPreferred = false;
     }
