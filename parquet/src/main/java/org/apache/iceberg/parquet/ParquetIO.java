@@ -160,6 +160,11 @@ class ParquetIO {
     public long defaultBlockSize() {
       return 0;
     }
+
+    @Override
+    public String getPath() {
+      return file.location();
+    }
   }
 
   private static class ParquetInputFile implements InputFile {
