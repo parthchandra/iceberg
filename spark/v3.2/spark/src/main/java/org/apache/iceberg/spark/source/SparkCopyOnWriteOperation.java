@@ -18,8 +18,8 @@
  */
 package org.apache.iceberg.spark.source;
 
-import static org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command.DELETE;
-import static org.apache.spark.sql.connector.iceberg.write.RowLevelOperation.Command.UPDATE;
+import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.DELETE;
+import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.UPDATE;
 
 import org.apache.iceberg.IsolationLevel;
 import org.apache.iceberg.MetadataColumns;
@@ -28,11 +28,11 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.NamedReference;
-import org.apache.spark.sql.connector.iceberg.write.ExtendedLogicalWriteInfo;
-import org.apache.spark.sql.connector.iceberg.write.RowLevelOperation;
-import org.apache.spark.sql.connector.iceberg.write.RowLevelOperationInfo;
 import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.connector.read.ScanBuilder;
+import org.apache.spark.sql.connector.write.LogicalWriteInfo;
+import org.apache.spark.sql.connector.write.RowLevelOperation;
+import org.apache.spark.sql.connector.write.RowLevelOperationInfo;
 import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
@@ -79,7 +79,7 @@ class SparkCopyOnWriteOperation implements RowLevelOperation {
   }
 
   @Override
-  public WriteBuilder newWriteBuilder(ExtendedLogicalWriteInfo info) {
+  public WriteBuilder newWriteBuilder(LogicalWriteInfo info) {
     if (lazyWriteBuilder == null) {
       Preconditions.checkState(configuredScan != null, "Write must be configured after scan");
       SparkWriteBuilder writeBuilder = new SparkWriteBuilder(spark, table, info);

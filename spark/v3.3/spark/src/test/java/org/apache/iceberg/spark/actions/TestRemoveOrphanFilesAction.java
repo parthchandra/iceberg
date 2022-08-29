@@ -57,6 +57,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.SparkTestBase;
+import org.apache.iceberg.spark.SparkWriteOptions;
 import org.apache.iceberg.spark.actions.DeleteOrphanFilesSparkAction.StringToFileURI;
 import org.apache.iceberg.spark.source.FilePathLastModifiedRecord;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
@@ -540,7 +541,12 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
 
     Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class);
 
-    df.select("c1", "c2", "c3").write().format("iceberg").mode("append").save(tableLocation);
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .option(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING, "false")
+        .save(tableLocation);
 
     waitUntilAfter(System.currentTimeMillis());
 
@@ -569,7 +575,12 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
 
     Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class);
 
-    df.select("c1", "c2", "c3").write().format("iceberg").mode("append").save(tableLocation);
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .option(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING, "false")
+        .save(tableLocation);
 
     waitUntilAfter(System.currentTimeMillis());
 

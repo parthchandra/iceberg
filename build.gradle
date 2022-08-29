@@ -98,6 +98,8 @@ allprojects {
   repositories {
     mavenCentral()
     mavenLocal()
+    maven { url "https://artifacts.apple.com/plugins-snapshot" }
+    maven { url "https://artifacts.apple.com/plugins-release" }
   }
 }
 

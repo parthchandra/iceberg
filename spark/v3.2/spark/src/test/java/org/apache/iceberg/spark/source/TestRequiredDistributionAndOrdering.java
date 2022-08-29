@@ -216,45 +216,6 @@ public class TestRequiredDistributionAndOrdering extends SparkCatalogTestBase {
   }
 
   @Test
-  public void testNoSortBucketTransformsWithoutExtensions() throws NoSuchTableException {
-    sql(
-        "CREATE TABLE %s (c1 INT, c2 STRING, c3 STRING) "
-            + "USING iceberg "
-            + "PARTITIONED BY (bucket(2, c1))",
-        tableName);
-
-    List<ThreeColumnRecord> data =
-        ImmutableList.of(
-            new ThreeColumnRecord(1, null, "A"),
-            new ThreeColumnRecord(2, "BBBB", "B"),
-            new ThreeColumnRecord(3, "BBBB", "B"),
-            new ThreeColumnRecord(4, "BBBB", "B"));
-    Dataset<Row> ds = spark.createDataFrame(data, ThreeColumnRecord.class);
-    Dataset<Row> inputDF = ds.coalesce(1).sortWithinPartitions("c1");
-
-    // should fail by default as extensions are disabled
-    AssertHelpers.assertThrows(
-        "Should reject writes without ordering",
-        SparkException.class,
-        "Writing job aborted",
-        () -> {
-          try {
-            inputDF.writeTo(tableName).append();
-          } catch (NoSuchTableException e) {
-            throw new RuntimeException(e);
-          }
-        });
-
-    inputDF.writeTo(tableName).option(SparkWriteOptions.FANOUT_ENABLED, "true").append();
-
-    List<Object[]> expected =
-        ImmutableList.of(
-            row(1, null, "A"), row(2, "BBBB", "B"), row(3, "BBBB", "B"), row(4, "BBBB", "B"));
-
-    assertEquals("Rows must match", expected, sql("SELECT * FROM %s ORDER BY c1", tableName));
-  }
-
-  @Test
   public void testRangeDistributionWithQuotedColumnsNames() throws NoSuchTableException {
     sql(
         "CREATE TABLE %s (c1 INT, c2 STRING, `c.3` STRING) "

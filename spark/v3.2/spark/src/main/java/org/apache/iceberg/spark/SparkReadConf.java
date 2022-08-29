@@ -51,13 +51,11 @@ public class SparkReadConf {
 
   private final SparkSession spark;
   private final Table table;
-  private final Map<String, String> readOptions;
   private final SparkConfParser confParser;
 
   public SparkReadConf(SparkSession spark, Table table, Map<String, String> readOptions) {
     this.spark = spark;
     this.table = table;
-    this.readOptions = readOptions;
     this.confParser = new SparkConfParser(spark, table, readOptions);
   }
 

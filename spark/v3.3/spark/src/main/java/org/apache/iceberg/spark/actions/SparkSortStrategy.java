@@ -41,10 +41,10 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
-import org.apache.spark.sql.catalyst.utils.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.distributions.Distributions;
 import org.apache.spark.sql.connector.expressions.SortOrder;
+import org.apache.spark.sql.execution.datasources.v2.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.internal.SQLConf;
 
 public class SparkSortStrategy extends SortStrategy {
@@ -136,8 +136,7 @@ public class SparkSortStrategy extends SortStrategy {
               .load(groupID);
 
       // write the packed data into new files where each split becomes a new file
-      SQLConf sqlConf = cloneSession.sessionState().conf();
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, scanDF.logicalPlan(), sqlConf);
+      LogicalPlan sortPlan = sortPlan(distribution, ordering, scanDF.logicalPlan());
       Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, scanDF.encoder());
 
       sortedDf
@@ -163,8 +162,8 @@ public class SparkSortStrategy extends SortStrategy {
   }
 
   protected LogicalPlan sortPlan(
-      Distribution distribution, SortOrder[] ordering, LogicalPlan plan, SQLConf conf) {
-    return DistributionAndOrderingUtils$.MODULE$.prepareQuery(distribution, ordering, plan, conf);
+      Distribution distribution, SortOrder[] ordering, LogicalPlan plan) {
+    return DistributionAndOrderingUtils$.MODULE$.prepareQuery(distribution, ordering, plan);
   }
 
   protected double sizeEstimateMultiple() {

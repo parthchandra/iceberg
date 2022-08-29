@@ -18,13 +18,18 @@
  */
 package org.apache.iceberg.spark;
 
+import static org.apache.iceberg.NullOrder.NULLS_FIRST;
+import static org.apache.iceberg.NullOrder.NULLS_LAST;
 import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.DELETE;
 import static org.apache.spark.sql.connector.write.RowLevelOperation.Command.UPDATE;
 
 import java.util.List;
+import java.util.stream.Stream;
 import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.MetadataColumns;
+import org.apache.iceberg.NullOrder;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.expressions.Term;
 import org.apache.iceberg.relocated.com.google.common.collect.ObjectArrays;
 import org.apache.iceberg.transforms.SortOrderVisitor;
 import org.apache.iceberg.util.SortOrderUtil;
@@ -36,6 +41,7 @@ import org.apache.spark.sql.connector.distributions.UnspecifiedDistribution;
 import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.sql.connector.expressions.NullOrdering;
 import org.apache.spark.sql.connector.expressions.SortDirection;
 import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.write.RowLevelOperation.Command;
@@ -225,6 +231,23 @@ public class SparkDistributionAndOrderingUtil {
       SortOrder[] dataOrdering = buildTableOrdering(table);
       return ObjectArrays.concat(POSITION_DELETE_ORDERING, dataOrdering, SortOrder.class);
     }
+  }
+
+  public static void rebuildSortOrder(
+      org.apache.iceberg.SortOrderBuilder<?> builder, SortOrder[] orderFields) {
+
+    Stream.of(orderFields)
+        .forEach(
+            field -> {
+              Term term = Spark3Util.toIcebergTerm(field.expression());
+              NullOrder nullOrder =
+                  field.nullOrdering() == NullOrdering.NULLS_FIRST ? NULLS_FIRST : NULLS_LAST;
+              if (field.direction() == SortDirection.ASCENDING) {
+                builder.asc(term, nullOrder);
+              } else {
+                builder.desc(term, nullOrder);
+              }
+            });
   }
 
   public static SortOrder[] convert(org.apache.iceberg.SortOrder sortOrder) {
