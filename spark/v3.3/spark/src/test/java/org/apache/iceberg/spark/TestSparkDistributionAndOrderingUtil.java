@@ -128,6 +128,9 @@ public class TestSparkDistributionAndOrderingUtil extends SparkTestBaseWithCatal
 
     Table table = validationCatalog.loadTable(tableIdent);
 
+    // remove the mode set by CREATE in Apple Spark
+    table.updateProperties().remove(WRITE_DISTRIBUTION_MODE).commit();
+
     table.replaceSortOrder().asc("id").asc("data").commit();
 
     SortOrder[] expectedOrdering =
@@ -258,6 +261,9 @@ public class TestSparkDistributionAndOrderingUtil extends SparkTestBaseWithCatal
 
     Table table = validationCatalog.loadTable(tableIdent);
 
+    // remove the mode set by CREATE in Apple Spark
+    table.updateProperties().remove(WRITE_DISTRIBUTION_MODE).commit();
+
     table.replaceSortOrder().desc("id").commit();
 
     SortOrder[] expectedOrdering =
@@ -308,6 +314,8 @@ public class TestSparkDistributionAndOrderingUtil extends SparkTestBaseWithCatal
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
+
+    table.updateProperties().set(WRITE_DISTRIBUTION_MODE, WRITE_DISTRIBUTION_MODE_RANGE).commit();
 
     table.replaceSortOrder().asc("id").commit();
 

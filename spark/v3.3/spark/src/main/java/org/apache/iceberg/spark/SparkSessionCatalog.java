@@ -22,6 +22,7 @@ import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.source.HasIcebergCatalog;
@@ -41,6 +42,7 @@ import org.apache.spark.sql.connector.catalog.SupportsNamespaces;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
+import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
@@ -53,6 +55,8 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces> extends BaseCatalog
     implements CatalogExtension {
   private static final String[] DEFAULT_NAMESPACE = new String[] {"default"};
+  private static final String DEFAULT_DISTRIBUTION_MODE = DistributionMode.NONE.modeName();
+  private static final SortOrder[] DEFAULT_ORDERING = new SortOrder[] {};
 
   private String catalogName = null;
   private TableCatalog icebergCatalog = null;
@@ -167,9 +171,25 @@ public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces> ex
   public Table createTable(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws TableAlreadyExistsException, NoSuchNamespaceException {
+
+    return createTable(
+        ident, schema, partitions, properties, DEFAULT_DISTRIBUTION_MODE, DEFAULT_ORDERING);
+  }
+
+  @Override
+  public Table createTable(
+      Identifier ident,
+      StructType schema,
+      Transform[] partitions,
+      Map<String, String> properties,
+      String distributionModeName,
+      SortOrder[] ordering)
+      throws TableAlreadyExistsException, NoSuchNamespaceException {
+
     String provider = properties.get("provider");
     if (useIceberg(provider)) {
-      return icebergCatalog.createTable(ident, schema, partitions, properties);
+      return icebergCatalog.createTable(
+          ident, schema, partitions, properties, distributionModeName, ordering);
     } else {
       // delegate to the session catalog
       return getSessionCatalog().createTable(ident, schema, partitions, properties);
@@ -180,11 +200,27 @@ public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces> ex
   public StagedTable stageCreate(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws TableAlreadyExistsException, NoSuchNamespaceException {
+
+    return stageCreate(
+        ident, schema, partitions, properties, DEFAULT_DISTRIBUTION_MODE, DEFAULT_ORDERING);
+  }
+
+  @Override
+  public StagedTable stageCreate(
+      Identifier ident,
+      StructType schema,
+      Transform[] partitions,
+      Map<String, String> properties,
+      String distributionModeName,
+      SortOrder[] ordering)
+      throws TableAlreadyExistsException, NoSuchNamespaceException {
+
     String provider = properties.get("provider");
     TableCatalog catalog;
     if (useIceberg(provider)) {
       if (asStagingCatalog != null) {
-        return asStagingCatalog.stageCreate(ident, schema, partitions, properties);
+        return asStagingCatalog.stageCreate(
+            ident, schema, partitions, properties, distributionModeName, ordering);
       }
       catalog = icebergCatalog;
     } else {
@@ -201,16 +237,40 @@ public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces> ex
   public StagedTable stageReplace(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws NoSuchNamespaceException, NoSuchTableException {
+
+    return stageReplace(
+        ident, schema, partitions, properties, DEFAULT_DISTRIBUTION_MODE, DEFAULT_ORDERING);
+  }
+
+  @Override
+  public StagedTable stageReplace(
+      Identifier ident,
+      StructType schema,
+      Transform[] partitions,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering)
+      throws NoSuchNamespaceException, NoSuchTableException {
+
     String provider = properties.get("provider");
     TableCatalog catalog;
     if (useIceberg(provider)) {
       if (asStagingCatalog != null) {
-        return asStagingCatalog.stageReplace(ident, schema, partitions, properties);
+        return asStagingCatalog.stageReplace(
+            ident, schema, partitions, properties, distributionMode, ordering);
       }
       catalog = icebergCatalog;
     } else {
       catalog = getSessionCatalog();
     }
+
+    Preconditions.checkArgument(
+        "none".equalsIgnoreCase(distributionMode),
+        "Setting a specific distribution is only supported for Iceberg tables");
+
+    Preconditions.checkArgument(
+        ordering == null || ordering.length == 0,
+        "Setting a specific ordering is only supported for Iceberg tables");
 
     // attempt to drop the table and fail if it doesn't exist
     if (!catalog.dropTable(ident)) {
@@ -233,16 +293,40 @@ public class SparkSessionCatalog<T extends TableCatalog & SupportsNamespaces> ex
   public StagedTable stageCreateOrReplace(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws NoSuchNamespaceException {
+
+    return stageCreateOrReplace(
+        ident, schema, partitions, properties, DEFAULT_DISTRIBUTION_MODE, DEFAULT_ORDERING);
+  }
+
+  @Override
+  public StagedTable stageCreateOrReplace(
+      Identifier ident,
+      StructType schema,
+      Transform[] partitions,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering)
+      throws NoSuchNamespaceException {
+
     String provider = properties.get("provider");
     TableCatalog catalog;
     if (useIceberg(provider)) {
       if (asStagingCatalog != null) {
-        return asStagingCatalog.stageCreateOrReplace(ident, schema, partitions, properties);
+        return asStagingCatalog.stageCreateOrReplace(
+            ident, schema, partitions, properties, distributionMode, ordering);
       }
       catalog = icebergCatalog;
     } else {
       catalog = getSessionCatalog();
     }
+
+    Preconditions.checkArgument(
+        "none".equalsIgnoreCase(distributionMode),
+        "Setting a specific distribution is only supported for Iceberg tables");
+
+    Preconditions.checkArgument(
+        ordering == null || ordering.length == 0,
+        "Setting a specific ordering is only supported for Iceberg tables");
 
     // drop the table if it exists
     catalog.dropTable(ident);
