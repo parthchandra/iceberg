@@ -22,6 +22,7 @@ import static org.apache.iceberg.TableProperties.CURRENT_SNAPSHOT_ID;
 import static org.apache.iceberg.TableProperties.FORMAT_VERSION;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.BaseTable;
@@ -31,10 +32,15 @@ import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Partitioning;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScan;
+import org.apache.iceberg.actions.RewriteDataFiles;
+import org.apache.iceberg.actions.RewriteDataFiles.FileGroupRewriteResult;
+import org.apache.iceberg.exceptions.ValidationException;
+import org.apache.iceberg.expressions.Binder;
 import org.apache.iceberg.expressions.Evaluator;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
@@ -45,21 +51,27 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkFilters;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.actions.SparkActions;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.SnapshotUtil;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.connector.catalog.MetadataColumn;
 import org.apache.spark.sql.connector.catalog.SupportsDelete;
 import org.apache.spark.sql.connector.catalog.SupportsMetadataColumns;
+import org.apache.spark.sql.connector.catalog.SupportsOptimize;
 import org.apache.spark.sql.connector.catalog.SupportsRead;
 import org.apache.spark.sql.connector.catalog.SupportsRowLevelOperations;
 import org.apache.spark.sql.connector.catalog.SupportsWrite;
 import org.apache.spark.sql.connector.catalog.TableCapability;
+import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.connector.read.ScanBuilder;
 import org.apache.spark.sql.connector.write.LogicalWriteInfo;
@@ -69,8 +81,11 @@ import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.sources.Filter;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
+import org.apache.spark.unsafe.types.UTF8String;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,7 +95,8 @@ public class SparkTable
         SupportsWrite,
         SupportsDelete,
         SupportsRowLevelOperations,
-        SupportsMetadataColumns {
+        SupportsMetadataColumns,
+        SupportsOptimize {
 
   private static final Logger LOG = LoggerFactory.getLogger(SparkTable.class);
 
@@ -365,5 +381,132 @@ public class SparkTable
     }
 
     return options;
+  }
+
+  /** Returns the type of rows produced by the OPTIMIZE command. */
+  @Override
+  public StructType optimizeOutput() {
+    StructField[] fields = {
+      new StructField("partition", DataTypes.StringType, false, Metadata.empty()),
+      new StructField("rewritten_data_files_count", DataTypes.IntegerType, false, Metadata.empty()),
+      new StructField("added_data_files_count", DataTypes.IntegerType, false, Metadata.empty())
+    };
+
+    return new StructType(fields);
+  }
+
+  private InternalRow optimizeOutputRow(UTF8String partition, Integer rewritten, Integer added) {
+    return new GenericInternalRow(new Object[] {partition, rewritten, added});
+  }
+
+  @Override
+  public InternalRow[] binPack(Filter[] filters, CaseInsensitiveStringMap options) {
+    RewriteDataFiles.Result result = baseRewrite(filters, options).binPack().execute();
+
+    return toOutputRows(result);
+  }
+
+  @Override
+  public InternalRow[] orderBy(
+      Filter[] filters, SortOrder[] requestedOrdering, CaseInsensitiveStringMap options) {
+
+    RewriteDataFiles.Result result;
+
+    if (requestedOrdering.length == 0) {
+      result = baseRewrite(filters, options).sort().execute();
+    } else {
+      result =
+          baseRewrite(filters, options)
+              .sort(Spark3Util.toSortOrder(table().schema(), requestedOrdering))
+              .execute();
+    }
+
+    return toOutputRows(result);
+  }
+
+  @Override
+  public InternalRow[] zOrder(
+      Filter[] filters, String[] colNames, CaseInsensitiveStringMap options) {
+    RewriteDataFiles.Result result = baseRewrite(filters, options).zOrder(colNames).execute();
+
+    return toOutputRows(result);
+  }
+
+  private InternalRow[] toOutputRows(RewriteDataFiles.Result result) {
+    Map<StructLike, List<FileGroupRewriteResult>> resultsByPartition = Maps.newHashMap();
+
+    if (result.rewriteResults().size() == 1 && table().spec().isUnpartitioned()) {
+      return new InternalRow[] {
+        optimizeOutputRow(
+            UTF8String.fromString("ALL"),
+            result.rewrittenDataFilesCount(),
+            result.addedDataFilesCount())
+      };
+    }
+
+    result
+        .rewriteResults()
+        .forEach(
+            fileGroupRewriteResult -> {
+              StructLike partition = fileGroupRewriteResult.info().partition();
+              List<FileGroupRewriteResult> results =
+                  resultsByPartition.computeIfAbsent(partition, v -> Lists.newArrayList());
+              results.add(fileGroupRewriteResult);
+            });
+
+    // we will output a summary record + a record for each partition
+    InternalRow[] rows = new InternalRow[resultsByPartition.size() + 1];
+
+    rows[0] =
+        optimizeOutputRow(
+            UTF8String.fromString("ALL"),
+            result.rewrittenDataFilesCount(),
+            result.addedDataFilesCount());
+
+    int index = 1;
+    for (Map.Entry<StructLike, List<FileGroupRewriteResult>> entry :
+        resultsByPartition.entrySet()) {
+      rows[index++] =
+          optimizeOutputRow(
+              UTF8String.fromString(entry.getKey().toString()),
+              entry.getValue().stream()
+                  .mapToInt(FileGroupRewriteResult::rewrittenDataFilesCount)
+                  .sum(),
+              entry.getValue().stream()
+                  .mapToInt(FileGroupRewriteResult::addedDataFilesCount)
+                  .sum());
+    }
+
+    return rows;
+  }
+
+  private Expression convertFilters(Filter[] filters) {
+    boolean caseSensitive =
+        Boolean.parseBoolean(sparkSession().conf().get("spark.sql.caseSensitive"));
+    List<Expression> expressions = Lists.newArrayListWithExpectedSize(filters.length);
+
+    for (Filter filter : filters) {
+      Expression expr = SparkFilters.convert(filter);
+      try {
+        Binder.bind(table().schema().asStruct(), expr, caseSensitive);
+        expressions.add(expr);
+      } catch (ValidationException | NullPointerException e) {
+        String errorMessage =
+            String.format(
+                "Cannot build Iceberg expression for the Spark expression %s. If "
+                    + "we cannot build an expression we cannot use the filter in an optimize command.",
+                filter);
+        throw new IllegalArgumentException(errorMessage, e);
+      }
+    }
+
+    return expressions.stream().reduce(Expressions.alwaysTrue(), Expressions::and);
+  }
+
+  private RewriteDataFiles baseRewrite(Filter[] filters, CaseInsensitiveStringMap options) {
+    return SparkActions.get()
+        .rewriteDataFiles(table())
+        .filter(convertFilters(filters))
+        .options(options);
   }
 }

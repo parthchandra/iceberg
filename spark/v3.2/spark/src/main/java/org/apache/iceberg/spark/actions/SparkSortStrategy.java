@@ -18,11 +18,14 @@
  */
 package org.apache.iceberg.spark.actions;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.RewriteStrategy;
@@ -35,17 +38,25 @@ import org.apache.iceberg.spark.SparkDistributionAndOrderingUtil;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.SparkTableCache;
 import org.apache.iceberg.spark.SparkWriteOptions;
+import org.apache.iceberg.util.BinPacking;
 import org.apache.iceberg.util.PropertyUtil;
-import org.apache.iceberg.util.SortOrderUtil;
+import org.apache.spark.Partition;
+import org.apache.spark.rdd.PartitionCoalescer;
+import org.apache.spark.rdd.PartitionGroup;
+import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
+import org.apache.spark.sql.catalyst.plans.logical.OrderAwareCoalesce;
 import org.apache.spark.sql.connector.distributions.Distribution;
 import org.apache.spark.sql.connector.distributions.Distributions;
 import org.apache.spark.sql.connector.expressions.SortOrder;
+import org.apache.spark.sql.connector.write.RequiresDistributionAndOrdering;
 import org.apache.spark.sql.execution.datasources.v2.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.internal.SQLConf;
+import scala.Option;
+import scala.collection.JavaConverters;
 
 public class SparkSortStrategy extends SortStrategy {
 
@@ -60,6 +71,9 @@ public class SparkSortStrategy extends SortStrategy {
    */
   public static final String COMPRESSION_FACTOR = "compression-factor";
 
+  public static final String SHUFFLE_TASKS_PER_FILE = "shuffle-tasks-per-file";
+  public static final int SHUFFLE_TASKS_PER_FILE_DEFAULT = 1;
+
   private final Table table;
   private final SparkSession spark;
   private final SparkTableCache tableCache = SparkTableCache.get();
@@ -67,6 +81,7 @@ public class SparkSortStrategy extends SortStrategy {
   private final FileRewriteCoordinator rewriteCoordinator = FileRewriteCoordinator.get();
 
   private double sizeEstimateMultiple;
+  private int shuffleTasksPerFile;
 
   public SparkSortStrategy(Table table, SparkSession spark) {
     this.table = table;
@@ -83,6 +98,7 @@ public class SparkSortStrategy extends SortStrategy {
     return ImmutableSet.<String>builder()
         .addAll(super.validOptions())
         .add(COMPRESSION_FACTOR)
+        .add(SHUFFLE_TASKS_PER_FILE)
         .build();
   }
 
@@ -95,6 +111,15 @@ public class SparkSortStrategy extends SortStrategy {
         "Invalid compression factor: %s (not positive)",
         sizeEstimateMultiple);
 
+    shuffleTasksPerFile =
+        PropertyUtil.propertyAsInt(options, SHUFFLE_TASKS_PER_FILE, SHUFFLE_TASKS_PER_FILE_DEFAULT);
+
+    Preconditions.checkArgument(
+        shuffleTasksPerFile >= 1,
+        "Cannot use Spark sort strategy as option %s must be >= 1, found %s",
+        SHUFFLE_TASKS_PER_FILE,
+        shuffleTasksPerFile);
+
     return super.options(options);
   }
 
@@ -102,18 +127,22 @@ public class SparkSortStrategy extends SortStrategy {
   public Set<DataFile> rewriteFiles(List<FileScanTask> filesToRewrite) {
     String groupID = UUID.randomUUID().toString();
     boolean requiresRepartition = !filesToRewrite.get(0).spec().equals(table.spec());
+    SortOrder[] ordering = SparkDistributionAndOrderingUtil.convert(sortOrder());
+    Distribution distribution;
 
-    SortOrder[] ordering;
     if (requiresRepartition) {
-      // Build in the requirement for Partition Sorting into our sort order
+      distribution =
+          SparkDistributionAndOrderingUtil.buildRequiredDistribution(table, DistributionMode.RANGE);
       ordering =
-          SparkDistributionAndOrderingUtil.convert(
-              SortOrderUtil.buildSortOrder(table, sortOrder()));
+          Stream.concat(
+                  Arrays.stream(
+                      SparkDistributionAndOrderingUtil.buildRequiredOrdering(
+                          table(), distribution)),
+                  Arrays.stream(ordering))
+              .toArray(SortOrder[]::new);
     } else {
-      ordering = SparkDistributionAndOrderingUtil.convert(sortOrder());
+      distribution = Distributions.ordered(ordering);
     }
-
-    Distribution distribution = Distributions.ordered(ordering);
 
     try {
       tableCache.add(groupID, table);
@@ -123,10 +152,9 @@ public class SparkSortStrategy extends SortStrategy {
       SparkSession cloneSession = spark.cloneSession();
       cloneSession.conf().set(SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), false);
 
-      // Reset Shuffle Partitions for our sort
       long numOutputFiles =
-          numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple));
-      cloneSession.conf().set(SQLConf.SHUFFLE_PARTITIONS().key(), Math.max(1, numOutputFiles));
+          Math.max(
+              1, numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple)));
 
       Dataset<Row> scanDF =
           cloneSession
@@ -136,7 +164,7 @@ public class SparkSortStrategy extends SortStrategy {
               .load(groupID);
 
       // write the packed data into new files where each split becomes a new file
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, scanDF.logicalPlan());
+      LogicalPlan sortPlan = sortPlan(distribution, ordering, numOutputFiles, scanDF.logicalPlan());
       Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, scanDF.encoder());
 
       sortedDf
@@ -157,13 +185,44 @@ public class SparkSortStrategy extends SortStrategy {
     }
   }
 
-  protected SparkSession spark() {
-    return this.spark;
+  protected LogicalPlan sortPlan(
+      Distribution distribution, SortOrder[] ordering, long numOutputFiles, LogicalPlan plan) {
+
+    RequiresDistributionAndOrdering write =
+        new RequiresDistributionAndOrdering() {
+          @Override
+          public Distribution requiredDistribution() {
+            return distribution;
+          }
+
+          @Override
+          public boolean distributionStrictlyRequired() {
+            return true;
+          }
+
+          @Override
+          public int requiredNumPartitions() {
+            return (int) (numOutputFiles * shuffleTasksPerFile);
+          }
+
+          @Override
+          public SortOrder[] requiredOrdering() {
+            return ordering;
+          }
+        };
+
+    LogicalPlan sortPlan = DistributionAndOrderingUtils$.MODULE$.prepareQuery(write, plan);
+    if (shuffleTasksPerFile == 1) {
+      return sortPlan;
+    } else {
+      OrderAwareCoalescer coalescer = new OrderAwareCoalescer(shuffleTasksPerFile);
+      // it should be safe to assume we have less than 2 billion files at this point
+      return new OrderAwareCoalesce((int) numOutputFiles, coalescer, sortPlan);
+    }
   }
 
-  protected LogicalPlan sortPlan(
-      Distribution distribution, SortOrder[] ordering, LogicalPlan plan) {
-    return DistributionAndOrderingUtils$.MODULE$.prepareQuery(distribution, ordering, plan);
+  protected SparkSession spark() {
+    return this.spark;
   }
 
   protected double sizeEstimateMultiple() {
@@ -180,5 +239,30 @@ public class SparkSortStrategy extends SortStrategy {
 
   protected FileRewriteCoordinator rewriteCoordinator() {
     return rewriteCoordinator;
+  }
+
+  private static class OrderAwareCoalescer implements PartitionCoalescer, scala.Serializable {
+    private final int shuffleTasksPerFile;
+
+    OrderAwareCoalescer(int shuffleTasksPerFile) {
+      this.shuffleTasksPerFile = shuffleTasksPerFile;
+    }
+
+    @Override
+    public PartitionGroup[] coalesce(int maxPartitions, RDD<?> parent) {
+      // use lookback as 1 to preserve the ordering
+      BinPacking.ListPacker<Partition> packer =
+          new BinPacking.ListPacker<>(shuffleTasksPerFile, 1, false);
+      List<List<Partition>> partitionBins =
+          packer.pack(Arrays.asList(parent.partitions()), partition -> 1L);
+      return partitionBins.stream()
+          .map(
+              bin -> {
+                PartitionGroup partitionGroup = new PartitionGroup(Option.empty());
+                JavaConverters.bufferAsJavaList(partitionGroup.partitions()).addAll(bin);
+                return partitionGroup;
+              })
+          .toArray(PartitionGroup[]::new);
+    }
   }
 }

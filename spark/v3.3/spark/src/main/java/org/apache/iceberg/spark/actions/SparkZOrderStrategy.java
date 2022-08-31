@@ -206,10 +206,9 @@ public class SparkZOrderStrategy extends SparkSortStrategy {
       SparkSession cloneSession = spark().cloneSession();
       cloneSession.conf().set(SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), false);
 
-      // Reset Shuffle Partitions for our sort
       long numOutputFiles =
-          numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple()));
-      cloneSession.conf().set(SQLConf.SHUFFLE_PARTITIONS().key(), Math.max(1, numOutputFiles));
+          Math.max(
+              1, numOutputFiles((long) (inputFileSize(filesToRewrite) * sizeEstimateMultiple())));
 
       Dataset<Row> scanDF =
           cloneSession
@@ -235,7 +234,8 @@ public class SparkZOrderStrategy extends SparkSortStrategy {
 
       Dataset<Row> zvalueDF = scanDF.withColumn(Z_COLUMN, zOrderUDF.interleaveBytes(zvalueArray));
 
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, zvalueDF.logicalPlan());
+      LogicalPlan sortPlan =
+          sortPlan(distribution, ordering, numOutputFiles, zvalueDF.logicalPlan());
       Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, zvalueDF.encoder());
       sortedDf
           .select(originalColumns)

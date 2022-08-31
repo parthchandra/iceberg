@@ -840,6 +840,40 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testManualSizeEstimate() {
+    Table table = createTable(20);
+    shouldHaveLastCommitUnsorted(table, "c2");
+    shouldHaveFiles(table, 20);
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort(SortOrder.builderFor(table.schema()).asc("c2").build())
+            .option(SortStrategy.REWRITE_ALL, "true")
+            .option(
+                RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .option("compression-factor", "2.00")
+            .option(SortStrategy.MIN_INPUT_FILES, "1")
+            .execute();
+
+    Assert.assertEquals("Should have 1 fileGroups", result.rewriteResults().size(), 1);
+    // Our estimate is set such that we think each Spark partition will actually have 2 files worth
+    // of data even though
+    // by our measurements it should be 1. So we get 2X Files from what we started with.
+    shouldHaveFiles(table, 40);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveLastCommitSorted(table, "c2");
+  }
+
+  @Test
   public void testSortMultipleGroups() {
     Table table = createTable(20);
     shouldHaveFiles(table, 20);
@@ -1000,6 +1034,36 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
     shouldHaveMultipleFiles(table);
     shouldHaveLastCommitUnsorted(table, "c2");
     shouldHaveLastCommitSorted(table, "c3");
+  }
+
+  @Test
+  public void testSortBucketed() {
+    Table table = createTableBucketPartitioned(4, 5);
+    shouldHaveFiles(table, 20);
+    table.replaceSortOrder().asc("c2").commit();
+    shouldHaveLastCommitUnsorted(table, "c2");
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort()
+            .option(SortStrategy.MIN_INPUT_FILES, "1")
+            .option(SortStrategy.REWRITE_ALL, "true")
+            .option(
+                RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 4 fileGroups", 4, result.rewriteResults().size());
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveLastCommitSorted(table, "c2");
   }
 
   @Test
@@ -1523,6 +1587,17 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
         .mode("append")
         .save(tableLocation);
 
+    return table;
+  }
+
+  protected Table createTableBucketPartitioned(int partitions, int files) {
+    PartitionSpec spec =
+        PartitionSpec.builderFor(SCHEMA).bucket("c1", partitions, "bucket").build();
+    Map<String, String> options = Maps.newHashMap();
+    Table table = TABLES.create(SCHEMA, spec, options, tableLocation);
+    Assert.assertNull("Table must be empty", table.currentSnapshot());
+
+    writeRecords(files, SCALE);
     return table;
   }
 

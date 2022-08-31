@@ -293,12 +293,9 @@ public class TestExpireSnapshotsProcedure extends SparkExtensionsTestBase {
         new Path(String.valueOf(TestHelpers.deleteFiles(table).iterator().next().path()));
 
     sql(
-        "CALL %s.system.rewrite_data_files("
-            + "table => '%s',"
-            + "options => map("
-            + "'delete-file-threshold','1',"
-            + "'use-starting-sequence-number', 'false'))",
-        catalogName, tableIdent);
+        "OPTIMIZE %s OPTIONS ('delete-file-threshold'='1', 'use-starting-sequence-number' = 'false')",
+        tableName);
+
     table.refresh();
 
     sql(
