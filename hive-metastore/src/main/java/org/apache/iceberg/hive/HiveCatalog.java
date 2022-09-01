@@ -48,6 +48,7 @@ import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.hive.metrics.HiveMetricsUtil;
 import org.apache.iceberg.hive.metrics.MeteredHiveTableOperations;
@@ -182,11 +183,16 @@ public class HiveCatalog extends BaseMetastoreCatalog
     String database = identifier.namespace().level(0);
 
     TableOperations ops = newTableOps(identifier);
-    TableMetadata lastMetadata;
-    if (purge && ops.current() != null) {
-      lastMetadata = ops.current();
-    } else {
-      lastMetadata = null;
+    TableMetadata lastMetadata = null;
+    if (purge) {
+      try {
+        lastMetadata = ops.current();
+      } catch (NotFoundException e) {
+        LOG.warn(
+            "Failed to load table metadata for table: {}, continuing drop without purge",
+            identifier,
+            e);
+      }
     }
 
     try {
