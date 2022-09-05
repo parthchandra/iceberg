@@ -403,6 +403,7 @@ project(':iceberg-aws') {
       exclude group: 'junit'
     }
     testImplementation "com.esotericsoftware:kryo"
+    testImplementation "org.xerial:sqlite-jdbc"
   }
 
   sourceSets {
