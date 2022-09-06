@@ -65,12 +65,9 @@ public interface TableOperations {
   /** Returns a {@link FileIO} to read and write table data and metadata files. */
   FileIO io();
 
-  /**
-   * Returns a {@link org.apache.iceberg.encryption.EncryptionManager} to encrypt and decrypt data
-   * files.
-   */
+  /** Returns a {@link org.apache.iceberg.encryption.EncryptionManager} for a table. */
   default EncryptionManager encryption() {
-    return new PlaintextEncryptionManager();
+    return PlaintextEncryptionManager.INSTANCE;
   }
 
   /**

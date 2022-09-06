@@ -18,6 +18,9 @@
  */
 package org.apache.iceberg;
 
+import org.apache.iceberg.encryption.EncryptionManager;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
+import org.apache.iceberg.encryption.PlaintextEncryptionManager;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
 
@@ -30,16 +33,31 @@ public class StaticTableOperations implements TableOperations {
   private TableMetadata staticMetadata;
   private final String metadataFileLocation;
   private final FileIO io;
+  private final EncryptionManagerFactory encryptionManagerFactory;
   private final LocationProvider locationProvider;
 
   /** Creates a StaticTableOperations tied to a specific static version of the TableMetadata */
   public StaticTableOperations(String metadataFileLocation, FileIO io) {
-    this(metadataFileLocation, io, null);
+    this(metadataFileLocation, io, EncryptionManagerFactory.NO_ENCRYPTION);
   }
 
   public StaticTableOperations(
       String metadataFileLocation, FileIO io, LocationProvider locationProvider) {
+    this(metadataFileLocation, io, locationProvider, EncryptionManagerFactory.NO_ENCRYPTION);
+  }
+
+  public StaticTableOperations(
+      String metadataFileLocation, FileIO io, EncryptionManagerFactory encryptionManagerFactory) {
+    this(metadataFileLocation, io, null, encryptionManagerFactory);
+  }
+
+  public StaticTableOperations(
+      String metadataFileLocation,
+      FileIO io,
+      LocationProvider locationProvider,
+      EncryptionManagerFactory encryptionManagerFactory) {
     this.io = io;
+    this.encryptionManagerFactory = encryptionManagerFactory;
     this.metadataFileLocation = metadataFileLocation;
     this.locationProvider = locationProvider;
   }
@@ -71,6 +89,16 @@ public class StaticTableOperations implements TableOperations {
   @Override
   public FileIO io() {
     return this.io;
+  }
+
+  @Override
+  public EncryptionManager encryption() {
+    TableMetadata metadata = current();
+    if (null != metadata) {
+      return encryptionManagerFactory.create(metadata);
+    } else {
+      return PlaintextEncryptionManager.INSTANCE;
+    }
   }
 
   @Override

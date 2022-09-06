@@ -48,6 +48,7 @@ import static org.apache.iceberg.TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DE
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -70,7 +71,10 @@ import org.apache.iceberg.avro.AvroSchemaUtil;
 import org.apache.iceberg.data.parquet.GenericParquetWriter;
 import org.apache.iceberg.deletes.EqualityDeleteWriter;
 import org.apache.iceberg.deletes.PositionDeleteWriter;
+import org.apache.iceberg.encryption.EncryptionAlgorithm;
 import org.apache.iceberg.encryption.EncryptionKeyMetadata;
+import org.apache.iceberg.encryption.NativeFileCryptoParameters;
+import org.apache.iceberg.encryption.NativelyEncryptedFile;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.hadoop.HadoopInputFile;
@@ -96,6 +100,10 @@ import org.apache.parquet.avro.AvroReadSupport;
 import org.apache.parquet.avro.AvroWriteSupport;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.column.ParquetProperties.WriterVersion;
+import org.apache.parquet.crypto.FileDecryptionProperties;
+import org.apache.parquet.crypto.FileEncryptionProperties;
+import org.apache.parquet.crypto.ParquetCipher;
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.ParquetReader;
@@ -104,15 +112,20 @@ import org.apache.parquet.hadoop.api.ReadSupport;
 import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Parquet {
   private Parquet() {}
+
+  private static final Logger LOG = LoggerFactory.getLogger(Parquet.class);
 
   private static final Collection<String> READ_PROPERTIES_TO_REMOVE =
       Sets.newHashSet(
           "parquet.read.filter",
           "parquet.private.read.filter.predicate",
-          "parquet.read.support.class");
+          "parquet.read.support.class",
+          "parquet.crypto.factory.class");
 
   public static WriteBuilder write(OutputFile file) {
     return new WriteBuilder(file);
@@ -131,6 +144,7 @@ public class Parquet {
     private ParquetFileWriter.Mode writeMode = ParquetFileWriter.Mode.CREATE;
     private WriterVersion writerVersion = WriterVersion.PARQUET_1_0;
     private Function<Map<String, String>, Context> createContextFunc = Context::dataContext;
+    private FileEncryptionProperties fileEncryptionProperties = null;
 
     private WriteBuilder(OutputFile file) {
       this.file = file;
@@ -138,6 +152,13 @@ public class Parquet {
         this.conf = new Configuration(((HadoopOutputFile) file).getConf());
       } else {
         this.conf = new Configuration();
+      }
+      if (file instanceof NativelyEncryptedFile) {
+        NativeFileCryptoParameters nativeEncryptionParameters =
+            ((NativelyEncryptedFile) file).nativeCryptoParameters();
+        if (null != nativeEncryptionParameters) {
+          fileEncryptionProperties = createEncryptionProperties(nativeEncryptionParameters);
+        }
       }
     }
 
@@ -231,6 +252,39 @@ public class Parquet {
       return this;
     }
 
+    private FileEncryptionProperties createEncryptionProperties(
+        NativeFileCryptoParameters nativeParameters) {
+      Preconditions.checkArgument(nativeParameters != null, "Null native crypto parameters");
+
+      ParquetCipher parquetEncryptionAlgorithm;
+      if (nativeParameters.encryptionAlgorithm() == null) {
+        parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_V1; // default
+        LOG.info("No encryption algorithm specified. Using Parquet default - AES_GCM_V1");
+      } else {
+        EncryptionAlgorithm icebergEncryptionAlgorithm = nativeParameters.encryptionAlgorithm();
+        if (icebergEncryptionAlgorithm.equals(EncryptionAlgorithm.AES_GCM)) {
+          parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_V1;
+        } else if (icebergEncryptionAlgorithm.equals(EncryptionAlgorithm.AES_GCM_CTR)) {
+          parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_CTR_V1;
+        } else {
+          throw new ParquetCryptoRuntimeException(
+              "Can't create parquet encryption properties - "
+                  + "unsupported algorithm: "
+                  + nativeParameters.encryptionAlgorithm());
+        }
+      }
+
+      ByteBuffer footerDataKey = nativeParameters.fileKey();
+      if (null == footerDataKey) {
+        throw new ParquetCryptoRuntimeException(
+            "Can't create parquet encryption properties - " + "missing key for parquet footer");
+      }
+
+      return FileEncryptionProperties.builder(footerDataKey.array())
+          .withAlgorithm(parquetEncryptionAlgorithm)
+          .build();
+    }
+
     public <D> FileAppender<D> build() throws IOException {
       Preconditions.checkNotNull(schema, "Schema is required");
       Preconditions.checkNotNull(name, "Table name is required and cannot be null");
@@ -309,7 +363,8 @@ public class Parquet {
             codec,
             parquetProperties,
             metricsConfig,
-            writeMode);
+            writeMode,
+            fileEncryptionProperties);
       } else {
         ParquetWriteBuilder<D> parquetWriteBuilder =
             new ParquetWriteBuilder<D>(ParquetIO.file(file))
@@ -323,7 +378,8 @@ public class Parquet {
                 .withRowGroupSize(rowGroupSize)
                 .withPageSize(pageSize)
                 .withPageRowCountLimit(pageRowLimit)
-                .withDictionaryPageSize(dictionaryPageSize);
+                .withDictionaryPageSize(dictionaryPageSize)
+                .withEncryption(fileEncryptionProperties);
 
         for (Map.Entry<String, String> entry : columnBloomFilterEnabled.entrySet()) {
           String colPath = entry.getKey();
@@ -911,9 +967,17 @@ public class Parquet {
     private boolean reuseContainers = false;
     private int maxRecordsPerBatch = 10000;
     private NameMapping nameMapping = null;
+    private FileDecryptionProperties fileDecryptionProperties = null;
 
     private ReadBuilder(InputFile file) {
       this.file = file;
+      if (file instanceof NativelyEncryptedFile) {
+        NativeFileCryptoParameters nativeDecryptionParameters =
+            ((NativelyEncryptedFile) file).nativeCryptoParameters();
+        if (null != nativeDecryptionParameters) {
+          fileDecryptionProperties = createDecryptionProperties(nativeDecryptionParameters);
+        }
+      }
     }
 
     /**
@@ -1000,6 +1064,19 @@ public class Parquet {
       return this;
     }
 
+    private FileDecryptionProperties createDecryptionProperties(
+        NativeFileCryptoParameters nativeParameters) {
+      Preconditions.checkArgument(nativeParameters != null, "Null native crypto parameters");
+
+      ByteBuffer footerDataKey = nativeParameters.fileKey();
+      if (null == footerDataKey) {
+        throw new ParquetCryptoRuntimeException(
+            "Can't create parquet decryption properties - " + "missing key for parquet footer");
+      }
+
+      return FileDecryptionProperties.builder().withFooterKey(footerDataKey.array()).build();
+    }
+
     @SuppressWarnings({"unchecked", "checkstyle:CyclomaticComplexity"})
     public <D> CloseableIterable<D> build() {
       if (readerFunc != null || batchedReaderFunc != null) {
@@ -1021,6 +1098,10 @@ public class Parquet {
 
         if (start != null) {
           optionsBuilder.withRange(start, start + length);
+        }
+
+        if (fileDecryptionProperties != null) {
+          optionsBuilder.withDecryption(fileDecryptionProperties);
         }
 
         ParquetReadOptions options = optionsBuilder.build();
@@ -1074,8 +1155,11 @@ public class Parquet {
       if (filter != null) {
         // TODO: should not need to get the schema to push down before opening the file.
         // Parquet should allow setting a filter inside its read support
+        ParquetReadOptions decryptOptions =
+            ParquetReadOptions.builder().withDecryption(fileDecryptionProperties).build();
         MessageType type;
-        try (ParquetFileReader schemaReader = ParquetFileReader.open(ParquetIO.file(file))) {
+        try (ParquetFileReader schemaReader =
+            ParquetFileReader.open(ParquetIO.file(file), decryptOptions)) {
           type = schemaReader.getFileMetaData().getSchema();
         } catch (IOException e) {
           throw new RuntimeIOException(e);
@@ -1106,6 +1190,10 @@ public class Parquet {
 
       if (nameMapping != null) {
         builder.withNameMapping(nameMapping);
+      }
+
+      if (fileDecryptionProperties != null) {
+        builder.withDecryption(fileDecryptionProperties);
       }
 
       return new ParquetIterable<>(builder);

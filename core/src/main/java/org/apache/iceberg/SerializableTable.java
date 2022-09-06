@@ -126,7 +126,11 @@ public class SerializableTable implements Table, Serializable {
           }
 
           TableOperations ops =
-              new StaticTableOperations(metadataFileLocation, io, locationProvider);
+              new StaticTableOperations(
+                  metadataFileLocation,
+                  io,
+                  locationProvider,
+                  tableMetadata -> SerializableTable.this.encryption);
           this.lazyTable = newTable(ops, name);
         }
       }

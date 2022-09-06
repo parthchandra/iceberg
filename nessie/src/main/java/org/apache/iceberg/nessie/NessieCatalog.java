@@ -33,6 +33,7 @@ import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.common.DynMethods;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
@@ -69,6 +70,7 @@ public class NessieCatalog extends BaseMetastoreCatalog
   private Configuration config;
   private String name;
   private FileIO fileIO;
+  private EncryptionManagerFactory encryptionManagerFactory;
   private Map<String, String> catalogOptions;
   private CloseableGroup closeableGroup;
 
@@ -91,6 +93,8 @@ public class NessieCatalog extends BaseMetastoreCatalog
                 options.get(NessieConfigConstants.CONF_NESSIE_CLIENT_BUILDER_IMPL))
             .fromConfig(x -> options.get(removePrefix.apply(x)))
             .build(NessieApiV1.class);
+
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(options);
 
     initialize(
         name,
@@ -122,6 +126,7 @@ public class NessieCatalog extends BaseMetastoreCatalog
     this.closeableGroup = new CloseableGroup();
     closeableGroup.addCloseable(client);
     closeableGroup.addCloseable(fileIO);
+    closeableGroup.addCloseable(encryptionManagerFactory);
     closeableGroup.setSuppressCloseFailure(true);
   }
 
@@ -194,6 +199,7 @@ public class NessieCatalog extends BaseMetastoreCatalog
             tr.getName()),
         client.withReference(tr.getReference(), tr.getHash()),
         fileIO,
+        encryptionManagerFactory,
         catalogOptions);
   }
 

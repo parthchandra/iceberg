@@ -21,6 +21,7 @@ package org.apache.iceberg.dell.ecs;
 import java.util.Map;
 import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.io.FileIO;
@@ -33,6 +34,7 @@ public class EcsTableOperations extends BaseMetastoreTableOperations {
 
   private final String tableName;
   private final FileIO fileIO;
+  private final EncryptionManagerFactory encryptionManagerFactory;
   private final EcsCatalog catalog;
   private final EcsURI tableObject;
 
@@ -45,10 +47,15 @@ public class EcsTableOperations extends BaseMetastoreTableOperations {
   private String eTag;
 
   public EcsTableOperations(
-      String tableName, EcsURI tableObject, FileIO fileIO, EcsCatalog catalog) {
+      String tableName,
+      EcsURI tableObject,
+      FileIO fileIO,
+      EncryptionManagerFactory encryptionManagerFactory,
+      EcsCatalog catalog) {
     this.tableName = tableName;
     this.tableObject = tableObject;
     this.fileIO = fileIO;
+    this.encryptionManagerFactory = encryptionManagerFactory;
     this.catalog = catalog;
   }
 
@@ -60,6 +67,11 @@ public class EcsTableOperations extends BaseMetastoreTableOperations {
   @Override
   public FileIO io() {
     return fileIO;
+  }
+
+  @Override
+  protected EncryptionManagerFactory encryptionManagerFactory() {
+    return encryptionManagerFactory;
   }
 
   @Override

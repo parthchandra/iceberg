@@ -134,6 +134,7 @@ public class TestHiveCommitLocks extends HiveTableBaseTest {
                 overriddenHiveConf,
                 spyCachedClientPool,
                 ops.io(),
+                ops.encryptionManagerFactory(),
                 catalog.name(),
                 dbName,
                 tableName));

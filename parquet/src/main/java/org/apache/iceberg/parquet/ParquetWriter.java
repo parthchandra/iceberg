@@ -39,6 +39,8 @@ import org.apache.parquet.column.ColumnWriteStore;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.column.page.PageWriteStore;
 import org.apache.parquet.column.values.bloomfilter.BloomFilterWriteStore;
+import org.apache.parquet.crypto.FileEncryptionProperties;
+import org.apache.parquet.crypto.InternalFileEncryptor;
 import org.apache.parquet.hadoop.CodecFactory;
 import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
@@ -55,6 +57,9 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
               CodecFactory.BytesCompressor.class,
               MessageType.class,
               ByteBufferAllocator.class,
+              int.class,
+              boolean.class,
+              InternalFileEncryptor.class,
               int.class)
           .build();
 
@@ -82,6 +87,8 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
   private long nextCheckRecordCount = 10;
   private boolean closed;
   private ParquetFileWriter writer;
+  private final InternalFileEncryptor fileEncryptor;
+  private int rowGroupOrdinal;
 
   private static final String COLUMN_INDEX_TRUNCATE_LENGTH = "parquet.columnindex.truncate.length";
   private static final int DEFAULT_COLUMN_INDEX_TRUNCATE_LENGTH = 64;
@@ -97,7 +104,8 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
       CompressionCodecName codec,
       ParquetProperties properties,
       MetricsConfig metricsConfig,
-      ParquetFileWriter.Mode writeMode) {
+      ParquetFileWriter.Mode writeMode,
+      FileEncryptionProperties encryptionProperties) {
     this.targetRowGroupSize = rowGroupSize;
     this.props = properties;
     this.metadata = ImmutableMap.copyOf(metadata);
@@ -110,6 +118,9 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
     this.writeMode = writeMode;
     this.output = output;
     this.conf = conf;
+    this.rowGroupOrdinal = 0;
+    this.fileEncryptor =
+        (encryptionProperties == null ? null : new InternalFileEncryptor(encryptionProperties));
 
     startRowGroup();
   }
@@ -119,7 +130,15 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
       try {
         this.writer =
             new ParquetFileWriter(
-                ParquetIO.file(output, conf), parquetSchema, writeMode, targetRowGroupSize, 0);
+                ParquetIO.file(output, conf),
+                parquetSchema,
+                writeMode,
+                targetRowGroupSize,
+                0,
+                columnIndexTruncateLength,
+                ParquetProperties.DEFAULT_STATISTICS_TRUNCATE_LENGTH,
+                ParquetProperties.DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED,
+                fileEncryptor);
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to create Parquet file", e);
       }
@@ -236,7 +255,14 @@ class ParquetWriter<T> implements FileAppender<T>, Closeable {
 
     PageWriteStore pageStore =
         pageStoreCtorParquet.newInstance(
-            compressor, parquetSchema, props.getAllocator(), this.columnIndexTruncateLength);
+            compressor,
+            parquetSchema,
+            props.getAllocator(),
+            this.columnIndexTruncateLength,
+            ParquetProperties.DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED,
+            fileEncryptor,
+            rowGroupOrdinal);
+    this.rowGroupOrdinal++;
 
     this.flushPageStoreToWriter = flushToWriter.bind(pageStore);
     this.writeStore =

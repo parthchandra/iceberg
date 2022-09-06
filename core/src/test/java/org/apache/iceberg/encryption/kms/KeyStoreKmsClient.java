@@ -41,7 +41,7 @@ public class KeyStoreKmsClient extends MemoryMockKMS {
 
   // Path to keystore file. Preferably kept in volatile storage, such as ramdisk. Don't store with
   // data.
-  public static final String KEYSTORE_FILE_PATH_PROP = "keystore.kms.client.file.path";
+  public static final String KEYSTORE_FILE_PATH_PROP = "kms.client.keystore.path";
 
   // Credentials (such as keystore password) must never be kept in a persistent storage.
   // In this class, the password is passed as a system environment variable.
