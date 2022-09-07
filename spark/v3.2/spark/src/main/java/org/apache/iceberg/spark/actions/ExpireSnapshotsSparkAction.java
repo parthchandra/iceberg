@@ -237,7 +237,7 @@ public class ExpireSnapshotsSparkAction extends BaseSparkAction<ExpireSnapshotsS
   }
 
   private Dataset<FileInfo> validFileDS(TableMetadata metadata) {
-    Table staticTable = newStaticTable(metadata, table.io());
+    Table staticTable = newStaticTable(metadata, table.io(), tableMetadata -> table.encryption());
     return contentFileDS(staticTable)
         .union(manifestDS(staticTable))
         .union(manifestListDS(staticTable));
