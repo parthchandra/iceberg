@@ -2123,7 +2123,7 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
     AssertHelpers.assertThrows(
         "Should complain about the target column",
         AnalysisException.class,
-        "Cannot resolve [c2]",
+        "Column 'c2' does not exist",
         () -> {
           sql(
               "MERGE INTO %s t USING source s "

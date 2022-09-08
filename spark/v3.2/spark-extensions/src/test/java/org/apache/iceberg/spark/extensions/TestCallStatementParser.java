@@ -22,7 +22,6 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
-import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.spark.sql.SparkSession;
@@ -139,15 +138,6 @@ public class TestCallStatementParser {
     Assert.assertEquals(1, call.args().size());
 
     checkArg(call, 0, "value", DataTypes.StringType);
-  }
-
-  @Test
-  public void testCallParseError() {
-    AssertHelpers.assertThrows(
-        "Should fail with a sensible parse error",
-        ParseException.class,
-        "missing '(' at 'radish'",
-        () -> parser.parsePlan("CALL cat.system radish kebab"));
   }
 
   @Test
