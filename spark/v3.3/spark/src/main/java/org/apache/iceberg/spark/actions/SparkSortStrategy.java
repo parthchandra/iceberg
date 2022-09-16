@@ -41,7 +41,6 @@ import org.apache.iceberg.spark.SparkWriteOptions;
 import org.apache.iceberg.util.BinPacking;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.Partition;
-import org.apache.spark.rdd.PartitionCoalescer;
 import org.apache.spark.rdd.PartitionGroup;
 import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.Dataset;
@@ -241,28 +240,19 @@ public class SparkSortStrategy extends SortStrategy {
     return rewriteCoordinator;
   }
 
-  private static class OrderAwareCoalescer implements PartitionCoalescer, scala.Serializable {
-    private final int shuffleTasksPerFile;
-
-    OrderAwareCoalescer(int shuffleTasksPerFile) {
-      this.shuffleTasksPerFile = shuffleTasksPerFile;
-    }
-
-    @Override
-    public PartitionGroup[] coalesce(int maxPartitions, RDD<?> parent) {
-      // use lookback as 1 to preserve the ordering
-      BinPacking.ListPacker<Partition> packer =
-          new BinPacking.ListPacker<>(shuffleTasksPerFile, 1, false);
-      List<List<Partition>> partitionBins =
-          packer.pack(Arrays.asList(parent.partitions()), partition -> 1L);
-      return partitionBins.stream()
-          .map(
-              bin -> {
-                PartitionGroup partitionGroup = new PartitionGroup(Option.empty());
-                JavaConverters.bufferAsJavaList(partitionGroup.partitions()).addAll(bin);
-                return partitionGroup;
-              })
-          .toArray(PartitionGroup[]::new);
-    }
+  public static PartitionGroup[] coalesce(long shuffleTasksPerFile, RDD<?> parent) {
+    // use lookback as 1 to preserve the ordering
+    BinPacking.ListPacker<Partition> packer =
+        new BinPacking.ListPacker<>(shuffleTasksPerFile, 1, false);
+    List<List<Partition>> partitionBins =
+        packer.pack(Arrays.asList(parent.partitions()), partition -> 1L);
+    return partitionBins.stream()
+        .map(
+            bin -> {
+              PartitionGroup partitionGroup = new PartitionGroup(Option.empty());
+              JavaConverters.bufferAsJavaList(partitionGroup.partitions()).addAll(bin);
+              return partitionGroup;
+            })
+        .toArray(PartitionGroup[]::new);
   }
 }

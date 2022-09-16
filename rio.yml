@@ -6,7 +6,7 @@ notify:
     postOnSuccess: false
 
 machine:
-  env:
+  env: &base_env
     RUNTIME_JDK_VERSION: 11
     skipTest: false
     CODE_VERSION: $(./code_version.sh)
@@ -20,28 +20,30 @@ reports:
 pipelines:
 
 # prb builds
-- name: pr-scala-2.12
+- name: apple-1.0.x-preview-scala-2.12-prb
   branchName: apple-1.0.x-preview
   build:
     template: buildozer:v4:prb
   machine:
     env:
-      scalaVersion: 2.12
+      <<: *base_env
+      ORG_GRADLE_PROJECT_scalaVersion: 2.12
 
-- name: pr-scala-2.13
+- name: apple-1.0.x-preview-scala-2.13-prb
   branchName: apple-1.0.x-preview
   build:
-    template: buildozer:v4:prb
+    template: freestyle:v4:publish
+    steps:
+      - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.3_2.13:build :iceberg-spark:iceberg-spark-extensions-3.3_2.13:build :iceberg-spark:iceberg-spark-runtime-3.3_2.13:build
   machine:
-    env:
-      scalaVersion: 2.13
+    baseImage: docker.apple.com/base-images/ubi8/java11-builder
 
 - branchName: apple-1.0.x-preview-release
   build:
     template: buildozer:v4:prb
 
 # publish pipelines
-- name: publish-scala-2.12
+- name: apple-1.0.x-preview-scala-2.12-snapshot
   branchName: apple-1.0.x-preview
   build:
     template: buildozer:v4:publish
@@ -52,26 +54,28 @@ pipelines:
   finally:
     radar:
       annotate: true
-  machine:
-    env:
-      scalaVersion: 2.12
 
-- name: publish-scala-2.13
+- name: apple-1.0.x-preview-scala-2.13-snapshot
   branchName: apple-1.0.x-preview
   build:
-    template: buildozer:v4:publish
+    template: freestyle:v4:publish
+    steps:
+      - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.3_2.13:build :iceberg-spark:iceberg-spark-extensions-3.3_2.13:build :iceberg-spark:iceberg-spark-runtime-3.3_2.13:build
+      - my_version="$(cat version.txt)-SNAPSHOT"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-runtime/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-runtime-3.3_2.13/${my_version}/"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-extensions/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-extensions-3.3_2.13/${my_version}/"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-3.3_2.13/${my_version}/"
   package:
-    libraries:
-      - publish:
-          - repo: m2:oss-patched
+    freeform:
+    - publish:
+      - repo: m2:oss-patched
   finally:
     radar:
       annotate: true
   machine:
-    env:
-      scalaVersion: 2.13
+    baseImage: docker.apple.com/base-images/ubi8/java11-builder
 
-- branchName: apple-1.0.x-preview-release
+- branchName: apple-1.0.x-preview-scala-2.12-release
   build:
     template: buildozer:v4:publish
   package:
@@ -84,3 +88,25 @@ pipelines:
       annotate: true
     tag:
       expression: ${CODE_VERSION}
+
+- name: apple-1.0.x-preview-scala-2.13-release
+  branchName: apple-1.0.x-preview
+  build:
+    template: freestyle:v4:publish
+    steps:
+      - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.3_2.13:build :iceberg-spark:iceberg-spark-extensions-3.3_2.13:build :iceberg-spark:iceberg-spark-runtime-3.3_2.13:build
+      - ./dev/remove-snapshot-suffix.sh
+      - my_version="$(cat version.txt)"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-runtime/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-runtime-3.3_2.13/${my_version}/"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-extensions/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-extensions-3.3_2.13/${my_version}/"
+      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-3.3_2.13/${my_version}/"
+  package:
+    release: true
+    freeform:
+      - publish:
+          - repo: m2:oss-patched
+  finally:
+    radar:
+      annotate: true
+  machine:
+    baseImage: docker.apple.com/base-images/ubi8/java11-builder
