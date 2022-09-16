@@ -20,16 +20,29 @@ reports:
 pipelines:
 
 # prb builds
-- branchName: apple-1.0.x-preview
+- name: pr-scala-2.12
+  branchName: apple-1.0.x-preview
   build:
     template: buildozer:v4:prb
+  machine:
+    env:
+      scalaVersion: 2.12
+
+- name: pr-scala-2.13
+  branchName: apple-1.0.x-preview
+  build:
+    template: buildozer:v4:prb
+  machine:
+    env:
+      scalaVersion: 2.13
 
 - branchName: apple-1.0.x-preview-release
   build:
     template: buildozer:v4:prb
 
 # publish pipelines
-- branchName: apple-1.0.x-preview
+- name: publish-scala-2.12
+  branchName: apple-1.0.x-preview
   build:
     template: buildozer:v4:publish
   package:
@@ -39,6 +52,24 @@ pipelines:
   finally:
     radar:
       annotate: true
+  machine:
+    env:
+      scalaVersion: 2.12
+
+- name: publish-scala-2.13
+  branchName: apple-1.0.x-preview
+  build:
+    template: buildozer:v4:publish
+  package:
+    libraries:
+      - publish:
+          - repo: m2:oss-patched
+  finally:
+    radar:
+      annotate: true
+  machine:
+    env:
+      scalaVersion: 2.13
 
 - branchName: apple-1.0.x-preview-release
   build:
