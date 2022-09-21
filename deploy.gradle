@@ -72,6 +72,10 @@ subprojects {
     publishing {
       publications {
         apache(MavenPublication) {
+          if(project.hasProperty('riorelease')) {
+            version = project.version.toString().replace("-SNAPSHOT", "")
+          }
+
           if (tasks.matching({task -> task.name == 'shadowJar'}).isEmpty()) {
             from components.java
           } else {

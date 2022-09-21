@@ -61,10 +61,10 @@ pipelines:
     template: freestyle:v4:publish
     steps:
       - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.3_2.13:build :iceberg-spark:iceberg-spark-extensions-3.3_2.13:build :iceberg-spark:iceberg-spark-runtime-3.3_2.13:build
-      - my_version="$(cat version.txt)-SNAPSHOT"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-runtime/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-runtime-3.3_2.13/${my_version}/"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-extensions/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-extensions-3.3_2.13/${my_version}/"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-3.3_2.13/${my_version}/"
+      - home_dir=$(pwd)
+      - ./gradlew -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-3.3_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-3.3_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-3.3_2.13:publishToMavenLocal
+      - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
+      - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
   package:
     freeform:
     - publish:
@@ -95,11 +95,10 @@ pipelines:
     template: freestyle:v4:publish
     steps:
       - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.3_2.13:build :iceberg-spark:iceberg-spark-extensions-3.3_2.13:build :iceberg-spark:iceberg-spark-runtime-3.3_2.13:build
-      - ./dev/remove-snapshot-suffix.sh
-      - my_version="$(cat version.txt)"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-runtime/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-runtime-3.3_2.13/${my_version}/"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark-extensions/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-extensions-3.3_2.13/${my_version}/"
-      - ci stage-lib --many-many-artifacts "./spark/v3.3/spark/.out/libs/*.jar,org/apache/iceberg/iceberg-spark-3.3_2.13/${my_version}/"
+      - home_dir=$(pwd)
+      - ./gradlew -Priorelease -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-3.3_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-3.3_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-3.3_2.13:publishToMavenLocal
+      - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
+      - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
   package:
     release: true
     freeform:
