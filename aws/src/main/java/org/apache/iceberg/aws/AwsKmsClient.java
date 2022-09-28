@@ -22,7 +22,6 @@ package org.apache.iceberg.aws;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.iceberg.encryption.KmsClient;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.util.SerializableSupplier;
@@ -38,8 +37,6 @@ import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
 import static org.apache.iceberg.TableProperties.ENCRYPTION_KMS_CLIENT_CUSTOM_PROPERTIES_PREFIX;
 
 public class AwsKmsClient implements KmsClient {
-  private final AtomicBoolean isResourceClosed = new AtomicBoolean(false);
-
   private SerializableSupplier<software.amazon.awssdk.services.kms.KmsClient> kms;
   private transient software.amazon.awssdk.services.kms.KmsClient client;
   /*
@@ -109,12 +106,4 @@ public class AwsKmsClient implements KmsClient {
     return client;
   }
 
-  @Override
-  public void close() {
-    if (isResourceClosed.compareAndSet(false, true)) {
-      if (client != null) {
-        client.close();
-      }
-    }
-  }
 }

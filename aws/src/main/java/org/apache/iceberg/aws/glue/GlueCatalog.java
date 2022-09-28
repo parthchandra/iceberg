@@ -39,7 +39,6 @@ import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
@@ -85,7 +84,6 @@ public class GlueCatalog extends BaseMetastoreCatalog
   private String warehousePath;
   private AwsProperties awsProperties;
   private FileIO fileIO;
-  private EncryptionManagerFactory encryptionManagerFactory;
   private LockManager lockManager;
   private CloseableGroup closeableGroup;
 
@@ -105,12 +103,7 @@ public class GlueCatalog extends BaseMetastoreCatalog
         new AwsProperties(properties),
         AwsClientFactories.from(properties).glue(),
         LockManagers.from(properties),
-        initializeFileIO(properties),
-        initializeEncryptionManagerFactory(properties));
-  }
-
-  private EncryptionManagerFactory initializeEncryptionManagerFactory(Map<String, String> properties) {
-    return CatalogUtil.loadEncryptionManagerFactory(properties);
+        initializeFileIO(properties));
   }
 
   private FileIO initializeFileIO(Map<String, String> properties) {
@@ -126,25 +119,17 @@ public class GlueCatalog extends BaseMetastoreCatalog
 
   @VisibleForTesting
   void initialize(String name, String path, AwsProperties properties, GlueClient client, LockManager lock, FileIO io) {
-    initialize(name, path, properties, client, lock, io, EncryptionManagerFactory.NO_ENCRYPTION);
-  }
-
-  @VisibleForTesting
-  void initialize(String name, String path, AwsProperties properties, GlueClient client, LockManager lock, FileIO io,
-                  EncryptionManagerFactory encryption) {
     this.catalogName = name;
     this.awsProperties = properties;
     this.warehousePath = cleanWarehousePath(path);
     this.glue = client;
     this.lockManager = lock;
     this.fileIO = io;
-    this.encryptionManagerFactory = encryption;
 
     this.closeableGroup = new CloseableGroup();
     closeableGroup.addCloseable(glue);
     closeableGroup.addCloseable(lockManager);
     closeableGroup.addCloseable(fileIO);
-    closeableGroup.addCloseable(encryption);
     closeableGroup.setSuppressCloseFailure(true);
   }
 
@@ -161,8 +146,7 @@ public class GlueCatalog extends BaseMetastoreCatalog
 
   @Override
   protected TableOperations newTableOps(TableIdentifier tableIdentifier) {
-    return new GlueTableOperations(glue, lockManager, catalogName, awsProperties, fileIO, encryptionManagerFactory,
-            tableIdentifier);
+    return new GlueTableOperations(glue, lockManager, catalogName, awsProperties, fileIO, tableIdentifier);
   }
 
   /**

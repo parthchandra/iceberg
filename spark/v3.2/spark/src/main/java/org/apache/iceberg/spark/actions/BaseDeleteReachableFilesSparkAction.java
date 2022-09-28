@@ -19,26 +19,20 @@
 
 package org.apache.iceberg.spark.actions;
 
-import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import org.apache.iceberg.CatalogProperties;
-import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.actions.BaseDeleteReachableFilesActionResult;
 import org.apache.iceberg.actions.DeleteReachableFiles;
-import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.JobGroupInfo;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.Tasks;
@@ -75,24 +69,10 @@ public class BaseDeleteReachableFilesSparkAction
   private Consumer<String> deleteFunc = defaultDelete;
   private ExecutorService deleteExecutorService = null;
   private FileIO io = new HadoopFileIO(spark().sessionState().newHadoopConf());
-  private final EncryptionManagerFactory encryptionManagerFactory =
-          CatalogUtil.loadEncryptionManagerFactory(encryptionManagerConfPropsFromSparkConf());
 
   public BaseDeleteReachableFilesSparkAction(SparkSession spark, String metadataFileLocation) {
     super(spark);
     this.metadataFileLocation = metadataFileLocation;
-  }
-
-  private Map<String, String> encryptionManagerConfPropsFromSparkConf() {
-    Map<String, String> props = Maps.newHashMap();
-    Arrays.stream(spark().sparkContext().getConf().getAll()).forEach(kv -> {
-      if (kv._1().contains(CatalogProperties.ENCRYPTION_MANAGER_FACTORY_IMPL)) {
-        props.put(CatalogProperties.ENCRYPTION_MANAGER_FACTORY_IMPL, kv._2());
-      } else if (kv._1().contains(CatalogProperties.ENCRYPTION_KMS_CLIENT_IMPL)) {
-        props.put(CatalogProperties.ENCRYPTION_KMS_CLIENT_IMPL, kv._2());
-      }
-    });
-    return props;
   }
 
   @Override
@@ -144,7 +124,7 @@ public class BaseDeleteReachableFilesSparkAction
   }
 
   private Dataset<Row> buildReachableFileDF(TableMetadata metadata) {
-    Table staticTable = newStaticTable(metadata, io, encryptionManagerFactory);
+    Table staticTable = newStaticTable(metadata, io);
     return withFileType(buildValidContentFileDF(staticTable), CONTENT_FILE)
         .union(withFileType(buildManifestFileDF(staticTable), MANIFEST))
         .union(withFileType(buildManifestListDF(staticTable), MANIFEST_LIST))

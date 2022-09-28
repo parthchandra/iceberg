@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import org.apache.iceberg.AssertHelpers;
+import org.apache.iceberg.encryption.EnvelopeEncryptionManager;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.spark.SparkCatalogTestBase;
 import org.apache.spark.SparkException;
@@ -38,15 +39,16 @@ public class TestTableEncryption extends SparkCatalogTestBase {
   @Before
   public void createTables() throws IOException {
     sql("CREATE TABLE %s (id bigint, data string, float float) USING iceberg " +
-            "TBLPROPERTIES ( " +
-            "'encryption.table.key.id'='%s' , " +
-            "'encryption.kms.client-impl'='org.apache.iceberg.spark.sql.MockKMS' )",
+        "TBLPROPERTIES ( " +
+        "'encryption.table.key.id'='%s' , " +
+        "'encryption.kms.client-impl'='org.apache.iceberg.spark.sql.MockKMS' )",
         tableName, MockKMS.MASTER_KEY_NAME1);
     sql("INSERT INTO %s VALUES (1, 'a', 1.0), (2, 'b', 2.0), (3, 'c', float('NaN'))", tableName);
   }
 
   @After
   public void removeTables() {
+    System.clearProperty(EnvelopeEncryptionManager.clientSideEncryptionConfigFile);
     sql("DROP TABLE IF EXISTS %s", tableName);
   }
 
@@ -62,11 +64,23 @@ public class TestTableEncryption extends SparkCatalogTestBase {
   public void testSelectWithoutKeys() {
     sql("ALTER TABLE %s UNSET TBLPROPERTIES ('encryption.table.key.id')", tableName);
 
-    AssertHelpers.assertThrows(
-        "Must fail to read encrypted data files without key",
+    AssertHelpers.assertThrows("Must fail to read encrypted data files without key",
         SparkException.class,
         "ParquetCryptoRuntimeException: Trying to read file with encrypted footer. No keys available",
         () -> sql("SELECT * FROM %s", tableName));
+  }
+
+  @Test
+  public void testClientSideVerification() {
+    String encryptionConfigPath = getClass().getClassLoader().getResource("encryption.properties").getPath();
+    System.setProperty(EnvelopeEncryptionManager.clientSideEncryptionConfigFile, encryptionConfigPath);
+
+    sql("ALTER TABLE %s UNSET TBLPROPERTIES ('encryption.table.key.id')", tableName);
+
+    AssertHelpers.assertThrows("Must fail to write unencrypted files",
+        RuntimeException.class,
+        "Property encryption.table.key.id not found in table properties",
+        () -> sql("INSERT INTO %s VALUES (1, 'a', 1.0), (2, 'b', 2.0), (3, 'c', float('NaN'))", tableName));
   }
 
   @Test
@@ -84,8 +98,7 @@ public class TestTableEncryption extends SparkCatalogTestBase {
   public void testDeleteWithoutKeys() {
     sql("ALTER TABLE %s UNSET TBLPROPERTIES ('encryption.table.key.id')", tableName);
 
-    AssertHelpers.assertThrows(
-        "Must fail to modify encrypted table without key",
+    AssertHelpers.assertThrows("Must fail to modify encrypted table without key",
         SparkException.class,
         () -> sql("DELETE FROM %s WHERE id == '2'", tableName));
   }

@@ -108,7 +108,7 @@ public class BaseCheckSnapshotIntegritySparkAction
   }
 
   private CheckSnapshotIntegrity.Result doExecute() {
-    targetTable = newStaticTable(targetVersion, table.io(), tableMetadata -> table.encryption());
+    targetTable = newStaticTable(targetVersion, table.io());
 
     List<String> filesToCheck = filesToCheck();
 
