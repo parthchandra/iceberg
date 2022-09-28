@@ -242,6 +242,8 @@ public class TestHiveMetastore {
     conf.set(HiveConf.ConfVars.METASTORE_TRY_DIRECT_SQL.varname, "false");
     conf.set(HiveConf.ConfVars.METASTORE_DISALLOW_INCOMPATIBLE_COL_TYPE_CHANGES.varname, "false");
     conf.set("iceberg.hive.client-pool-size", "2");
+    // Setting this to avoid thrift exception during running Iceberg tests in Spark.
+    conf.set(HiveConf.ConfVars.HIVE_IN_TEST.varname, HiveConf.ConfVars.HIVE_IN_TEST.getDefaultValue());
   }
 
   private static void setupMetastoreDB(String dbURL) throws SQLException, IOException {
