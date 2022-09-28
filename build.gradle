@@ -549,6 +549,7 @@ project(':iceberg-orc') {
     compileOnly "io.dropwizard.metrics:metrics-core"
 
     testImplementation project(path: ':iceberg-api', configuration: 'testArtifacts')
+    testImplementation project(path: ':iceberg-core', configuration: 'testArtifacts')
     testImplementation project(':iceberg-common')
   }
 }
