@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 if (project.hasProperty('release') && jdkVersion != '8') {
   throw new GradleException("Releases must be built with Java 8")
 }
@@ -27,6 +29,7 @@ buildscript {
     maven { url "https://artifacts.apple.com/plugins-release" }
   }
   dependencies {
+    classpath 'gradle.plugin.com.github.jengelman.gradle.plugins:shadow:7.0.0'
     classpath "com.apple.cie.rio:gradle-build-plugin:3.+"
   }
 }
@@ -50,10 +53,51 @@ subprojects {
       from sourceSets.test.output
     }
 
+    task testShadowJar(type: ShadowJar) {
+      zip64 = true
+      archiveClassifier = 'shadow-tests'
+      from sourceSets.main.output, sourceSets.test.output
+      configurations = [project.configurations.testRuntimeClasspath]
+
+      // Note: Relocate dependencies as :iceberg-spark:iceberg-spark-3.2 does.
+      // When we run Iceberg tests in Spark, some tests refer to shaded classes
+      // in Iceberg Spark subproject and cause conflict. We shade same classes
+      // in the shaded test jar to resolve it.
+      relocate 'com.google', 'org.apache.iceberg.shaded.com.google'
+      relocate 'com.fasterxml', 'org.apache.iceberg.shaded.com.fasterxml'
+      relocate 'com.github.benmanes', 'org.apache.iceberg.shaded.com.github.benmanes'
+      relocate 'org.checkerframework', 'org.apache.iceberg.shaded.org.checkerframework'
+      relocate 'org.apache.avro', 'org.apache.iceberg.shaded.org.apache.avro'
+      relocate 'avro.shaded', 'org.apache.iceberg.shaded.org.apache.avro.shaded'
+      relocate 'com.thoughtworks.paranamer', 'org.apache.iceberg.shaded.com.thoughtworks.paranamer'
+      relocate 'org.apache.parquet', 'org.apache.iceberg.shaded.org.apache.parquet'
+      relocate 'shaded.parquet', 'org.apache.iceberg.shaded.org.apache.parquet.shaded'
+      relocate 'org.apache.orc', 'org.apache.iceberg.shaded.org.apache.orc'
+      relocate 'io.airlift', 'org.apache.iceberg.shaded.io.airlift'
+      // relocate Arrow and related deps to shade Iceberg specific version
+      relocate 'io.netty.buffer', 'org.apache.iceberg.shaded.io.netty.buffer'
+      relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
+      relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
+      relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
+      // relocate Antlr runtime and related deps to shade Iceberg specific version
+      relocate 'org.antlr.v4', 'org.apache.iceberg.shaded.org.antlr.v4'
+      relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
+
+      minimize {
+        // We need to exclude jar signatures when shading test-jars. Otherwise
+        // when Java reads that JAR, it verifies the signature and sees it being
+        // not valid.
+        exclude "META-INF/*.SF"
+        exclude "META-INF/*.DSA"
+        exclude "META-INF/*.RSA"
+      }
+    }
+
     artifacts {
       archives sourceJar
       archives javadocJar
       archives testJar
+      archives testShadowJar
       testArtifacts testJar
     }
 
@@ -69,6 +113,7 @@ subprojects {
           artifact sourceJar
           artifact javadocJar
           artifact testJar
+          artifact testShadowJar
 
           versionMapping {
             allVariants {
