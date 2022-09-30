@@ -44,7 +44,7 @@ configure(sparkProjects) {
         force 'org.apache.parquet:parquet-jackson:1.12.0.16-apple'
         // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
         // We can remove this once Hive version is upgraded in Spark.
-        force 'org.apache.hive:hive-metastore:2.3.9.2-apple'
+        force 'org.apache.hive:hive-metastore:2.3.9.4-apple'
       }
     }
   }
