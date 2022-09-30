@@ -35,7 +35,7 @@ configure(sparkProjects) {
         force 'com.fasterxml.jackson.module:jackson-module-paranamer:2.12.3'
         // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
         // We can remove this once Hive version is upgraded in Spark.
-        force 'org.apache.hive:hive-metastore:2.3.9.2-apple'
+        force 'org.apache.hive:hive-metastore:2.3.9.4-apple'
       }
     }
   }
