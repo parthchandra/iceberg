@@ -163,6 +163,14 @@ public class SparkTable
     return icebergTable.toString();
   }
 
+  public Long snapshotId() {
+    return snapshotId;
+  }
+
+  public SparkTable copyWithSnapshotId(long newSnapshotId) {
+    return new SparkTable(icebergTable, newSnapshotId, refreshEagerly);
+  }
+
   private Schema snapshotSchema() {
     return SnapshotUtil.schemaFor(icebergTable, snapshotId, null);
   }

@@ -30,7 +30,6 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
-import org.apache.iceberg.spark.source.SparkScan.ReadTask;
 import org.apache.iceberg.spark.source.SparkScan.ReaderFactory;
 import org.apache.iceberg.util.TableScanUtil;
 import org.apache.iceberg.util.Tasks;
@@ -83,22 +82,22 @@ abstract class SparkBatch implements Batch {
         sparkContext.broadcast(SerializableTableWithSize.copyOf(table));
     String expectedSchemaString = SchemaParser.toJson(expectedSchema);
 
-    InputPartition[] readTasks = new InputPartition[tasks().size()];
+    InputPartition[] partitions = new InputPartition[tasks().size()];
 
-    Tasks.range(readTasks.length)
+    Tasks.range(partitions.length)
         .stopOnFailure()
         .executeWith(localityEnabled ? ThreadPools.getWorkerPool() : null)
         .run(
             index ->
-                readTasks[index] =
-                    new ReadTask(
+                partitions[index] =
+                    new SparkInputPartition(
                         tasks().get(index),
                         tableBroadcast,
                         expectedSchemaString,
                         caseSensitive,
                         localityEnabled));
 
-    return readTasks;
+    return partitions;
   }
 
   protected abstract List<CombinedScanTask> tasks();
