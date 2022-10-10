@@ -24,9 +24,11 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Function;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataOperations;
 import org.apache.iceberg.HistoryEntry;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
+import org.apache.iceberg.SnapshotSummary;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.io.FileIO;
@@ -393,5 +395,25 @@ public class SnapshotUtil {
     }
 
     return table.schema();
+  }
+
+  public static boolean isOverwriteFiles(Snapshot snapshot) {
+    return DataOperations.OVERWRITE.equalsIgnoreCase(snapshot.operation())
+        && !snapshot.summary().containsKey(SnapshotSummary.ADDED_DELETE_FILES_PROP);
+  }
+
+  public static boolean isRowDelta(Snapshot snapshot) {
+    return DataOperations.OVERWRITE.equalsIgnoreCase(snapshot.operation())
+        && snapshot.summary().containsKey(SnapshotSummary.ADDED_DELETE_FILES_PROP);
+  }
+
+  public static boolean isDataRewrite(Snapshot snapshot) {
+    return DataOperations.REPLACE.equals(snapshot.operation())
+        && snapshot.summary().containsKey(SnapshotSummary.DELETED_FILES_PROP);
+  }
+
+  public static boolean isDeleteRewrite(Snapshot snapshot) {
+    return DataOperations.REPLACE.equals(snapshot.operation())
+        && snapshot.summary().containsKey(SnapshotSummary.REMOVED_DELETE_FILES_PROP);
   }
 }

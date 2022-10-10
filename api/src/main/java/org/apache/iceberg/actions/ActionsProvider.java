@@ -82,4 +82,10 @@ public interface ActionsProvider {
     throw new UnsupportedOperationException(
         this.getClass().getName() + " does not implement removeExpiredFiles");
   }
+
+  /** Instantiates an action to analyze a table. */
+  default AnalyzeTable analyzeTable(Table table) {
+    throw new UnsupportedOperationException(
+        this.getClass().getName() + " does not implement analyzeTable");
+  }
 }
