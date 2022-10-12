@@ -241,7 +241,7 @@ public class HadoopTableOperations implements TableOperations {
 
       @Override
       public EncryptionManager encryption() {
-        return HadoopTableOperations.this.encryption();
+        return encryptionManagerFactory.create(uncommittedMetadata);
       }
 
       @Override
