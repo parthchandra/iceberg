@@ -107,7 +107,10 @@ public interface TableOperations {
     if (null == tableMetadata) {
       return new PlaintextEncryptionManager();
     }
+    return createEncryptionManager(tableMetadata);
+  }
 
+  static EncryptionManager createEncryptionManager(TableMetadata tableMetadata) {
     Properties clientSideEncryptionProperties = null;
     String clientSideEncryptionConfigFile = System.getenv(EnvelopeEncryptionManager.CLIENT_SIDE_CRYPTO_CONFIG_FILE);
     String clientSideEncrPropSource = "System environment variable " +

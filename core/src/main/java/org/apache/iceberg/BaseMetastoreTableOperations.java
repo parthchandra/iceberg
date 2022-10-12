@@ -253,7 +253,7 @@ public abstract class BaseMetastoreTableOperations implements TableOperations {
 
       @Override
       public EncryptionManager encryption() {
-        return BaseMetastoreTableOperations.this.encryption();
+        return TableOperations.createEncryptionManager(uncommittedMetadata);
       }
 
       @Override
