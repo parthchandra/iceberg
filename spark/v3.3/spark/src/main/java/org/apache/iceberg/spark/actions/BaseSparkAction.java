@@ -26,6 +26,7 @@ import com.google.errorprone.annotations.FormatMethod;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,6 +34,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.apache.iceberg.AllManifestsTable;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.DataFile;
@@ -159,14 +161,17 @@ abstract class BaseSparkAction<ThisT> {
     return new BaseTable(ops, metadataFileLocation);
   }
 
-  // builds a DF of delete and data file path and type by reading all manifests
   protected Dataset<FileInfo> contentFileDS(Table table) {
+    return contentFileDS(table, null);
+  }
+
+  protected Dataset<FileInfo> contentFileDS(Table table, Set<Long> snapshotIds) {
     Table serializableTable = SerializableTableWithSize.copyOf(table);
     Broadcast<Table> tableBroadcast = sparkContext.broadcast(serializableTable);
     int numShufflePartitions = spark.sessionState().conf().numShufflePartitions();
 
-    Dataset<ManifestFileBean> allManifests =
-        loadMetadataTable(table, ALL_MANIFESTS)
+    Dataset<ManifestFileBean> manifestBeanDS =
+        manifestDF(table, snapshotIds)
             .selectExpr(
                 "content",
                 "path",
@@ -177,7 +182,7 @@ abstract class BaseSparkAction<ThisT> {
             .repartition(numShufflePartitions) // avoid adaptive execution combining tasks
             .as(ManifestFileBean.ENCODER);
 
-    return allManifests.flatMap(new ReadManifest(tableBroadcast), FileInfo.ENCODER);
+    return manifestBeanDS.flatMap(new ReadManifest(tableBroadcast), FileInfo.ENCODER);
   }
 
   protected Dataset<Row> buildValidDataFileDFWithSnapshotId(Table table) {
@@ -204,13 +209,31 @@ abstract class BaseSparkAction<ThisT> {
   }
 
   protected Dataset<FileInfo> manifestDS(Table table) {
-    return loadMetadataTable(table, ALL_MANIFESTS)
+    return manifestDS(table, null);
+  }
+
+  protected Dataset<FileInfo> manifestDS(Table table, Set<Long> snapshotIds) {
+    return manifestDF(table, snapshotIds)
         .select(col("path"), lit(MANIFEST).as("type"))
         .as(FileInfo.ENCODER);
   }
 
+  private Dataset<Row> manifestDF(Table table, Set<Long> snapshotIds) {
+    Dataset<Row> manifestDF = loadMetadataTable(table, ALL_MANIFESTS);
+    if (snapshotIds != null) {
+      Column filterCond = col(AllManifestsTable.REF_SNAPSHOT_ID.name()).isInCollection(snapshotIds);
+      return manifestDF.filter(filterCond);
+    } else {
+      return manifestDF;
+    }
+  }
+
   protected Dataset<FileInfo> manifestListDS(Table table) {
-    List<String> manifestLists = ReachableFileUtil.manifestListLocations(table);
+    return manifestListDS(table, null);
+  }
+
+  protected Dataset<FileInfo> manifestListDS(Table table, Set<Long> snapshotIds) {
+    List<String> manifestLists = ReachableFileUtil.manifestListLocations(table, snapshotIds);
     return toFileInfoDS(manifestLists, MANIFEST_LIST);
   }
 
