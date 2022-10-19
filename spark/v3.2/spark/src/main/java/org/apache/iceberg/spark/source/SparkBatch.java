@@ -21,6 +21,7 @@ package org.apache.iceberg.spark.source;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import java.util.List;
+import java.util.Objects;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileFormat;
@@ -36,29 +37,38 @@ import org.apache.iceberg.util.Tasks;
 import org.apache.iceberg.util.ThreadPools;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.read.Batch;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 
-abstract class SparkBatch implements Batch {
+class SparkBatch implements Batch {
 
   private static final String QUERY_PLAN_TIME = "query.plan.time";
 
   private final JavaSparkContext sparkContext;
   private final Table table;
   private final SparkReadConf readConf;
+  private final List<CombinedScanTask> taskGroups;
   private final Schema expectedSchema;
   private final boolean caseSensitive;
   private final boolean localityEnabled;
+  private final int scanHashCode;
 
-  SparkBatch(SparkSession spark, Table table, SparkReadConf readConf, Schema expectedSchema) {
-    this.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
+  SparkBatch(
+      JavaSparkContext sparkContext,
+      Table table,
+      SparkReadConf readConf,
+      List<CombinedScanTask> taskGroups,
+      Schema expectedSchema,
+      int scanHashCode) {
+    this.sparkContext = sparkContext;
     this.table = table;
     this.readConf = readConf;
+    this.taskGroups = taskGroups;
     this.expectedSchema = expectedSchema;
     this.caseSensitive = readConf.caseSensitive();
     this.localityEnabled = readConf.localityEnabled();
+    this.scanHashCode = scanHashCode;
   }
 
   @Override
@@ -82,7 +92,7 @@ abstract class SparkBatch implements Batch {
         sparkContext.broadcast(SerializableTableWithSize.copyOf(table));
     String expectedSchemaString = SchemaParser.toJson(expectedSchema);
 
-    InputPartition[] partitions = new InputPartition[tasks().size()];
+    InputPartition[] partitions = new InputPartition[taskGroups.size()];
 
     Tasks.range(partitions.length)
         .stopOnFailure()
@@ -91,19 +101,13 @@ abstract class SparkBatch implements Batch {
             index ->
                 partitions[index] =
                     new SparkInputPartition(
-                        tasks().get(index),
+                        taskGroups.get(index),
                         tableBroadcast,
                         expectedSchemaString,
                         caseSensitive,
                         localityEnabled));
 
     return partitions;
-  }
-
-  protected abstract List<CombinedScanTask> tasks();
-
-  protected JavaSparkContext sparkContext() {
-    return sparkContext;
   }
 
   @Override
@@ -122,7 +126,7 @@ abstract class SparkBatch implements Batch {
   }
 
   private boolean parquetOnly() {
-    return tasks().stream()
+    return taskGroups.stream()
         .allMatch(task -> !task.isDataTask() && onlyFileFormat(task, FileFormat.PARQUET));
   }
 
@@ -136,18 +140,37 @@ abstract class SparkBatch implements Batch {
   }
 
   private boolean orcOnly() {
-    return tasks().stream()
+    return taskGroups.stream()
         .allMatch(task -> !task.isDataTask() && onlyFileFormat(task, FileFormat.ORC));
   }
 
   private boolean orcBatchReadsEnabled() {
     return readConf.orcVectorizationEnabled()
         && // vectorization enabled
-        tasks().stream().noneMatch(TableScanUtil::hasDeletes); // no delete files
+        taskGroups.stream().noneMatch(TableScanUtil::hasDeletes); // no delete files
   }
 
   private boolean onlyFileFormat(CombinedScanTask task, FileFormat fileFormat) {
     return task.files().stream()
         .allMatch(fileScanTask -> fileScanTask.file().format().equals(fileFormat));
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    SparkBatch that = (SparkBatch) o;
+    return table.name().equals(that.table.name()) && scanHashCode == that.scanHashCode;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(table.name(), scanHashCode);
   }
 }
