@@ -134,6 +134,11 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
   }
 
   @Override
+  public boolean distributionStrictlyRequired() {
+    return false;
+  }
+
+  @Override
   public SortOrder[] requiredOrdering() {
     return requiredOrdering;
   }
