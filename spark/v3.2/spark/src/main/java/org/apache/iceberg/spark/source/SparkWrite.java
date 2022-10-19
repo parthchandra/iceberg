@@ -143,6 +143,11 @@ abstract class SparkWrite implements Write, RequiresDistributionAndOrdering {
   }
 
   @Override
+  public boolean distributionStrictlyRequired() {
+    return false;
+  }
+
+  @Override
   public SortOrder[] requiredOrdering() {
     return requiredOrdering;
   }
