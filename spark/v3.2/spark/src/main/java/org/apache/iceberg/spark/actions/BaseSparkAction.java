@@ -22,6 +22,7 @@ import static org.apache.iceberg.MetadataTableType.ALL_MANIFESTS;
 import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.lit;
 
+import com.google.errorprone.annotations.FormatMethod;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.apache.iceberg.BaseTable;
@@ -52,6 +54,7 @@ import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.relocated.com.google.common.base.Splitter;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Streams;
@@ -65,11 +68,14 @@ import org.apache.iceberg.util.Tasks;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.internal.SQLConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
@@ -224,7 +230,38 @@ abstract class BaseSparkAction<ThisT> {
   }
 
   protected Dataset<Row> loadMetadataTable(Table table, MetadataTableType type) {
-    return SparkTableUtil.loadMetadataTable(spark, table, type);
+    return loadMetadataTable(table, type, ImmutableMap.of());
+  }
+
+  protected Dataset<Row> loadMetadataTable(
+      Table table, MetadataTableType type, Map<String, String> extraOptions) {
+    return SparkTableUtil.loadMetadataTable(spark, table, type, extraOptions);
+  }
+
+  protected <T, U> U withReusableDS(
+      Dataset<T> ds, boolean useCaching, Function<Dataset<T>, U> func) {
+
+    Dataset<T> reusableDS;
+
+    if (useCaching) {
+      reusableDS = ds.cache();
+    } else {
+      int parallelism = SQLConf.get().numShufflePartitions();
+      reusableDS = ds.repartition(parallelism).map((MapFunction<T, T>) v -> v, ds.exprEnc());
+    }
+
+    try {
+      return func.apply(reusableDS);
+    } finally {
+      if (useCaching) {
+        reusableDS.unpersist(false);
+      }
+    }
+  }
+
+  @FormatMethod
+  protected Column expr(String exprAsString, Object... args) {
+    return org.apache.spark.sql.functions.expr(String.format(exprAsString, args));
   }
 
   private Dataset<FileInfo> toFileInfoDS(List<String> paths, String type) {

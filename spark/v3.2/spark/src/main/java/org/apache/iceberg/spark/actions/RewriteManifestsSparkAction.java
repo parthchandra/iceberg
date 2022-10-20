@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.hadoop.fs.Path;
@@ -56,7 +55,6 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.Tasks;
 import org.apache.iceberg.util.ThreadPools;
-import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Column;
@@ -65,7 +63,6 @@ import org.apache.spark.sql.Encoder;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -234,6 +231,7 @@ public class RewriteManifestsSparkAction
 
     return withReusableDS(
         manifestEntryDF,
+        useCaching(),
         df -> {
           Column partitionColumn = df.col("data_file.partition");
           return df.repartitionByRange(numManifests, partitionColumn)
@@ -246,25 +244,8 @@ public class RewriteManifestsSparkAction
         });
   }
 
-  private <T, U> U withReusableDS(Dataset<T> ds, Function<Dataset<T>, U> func) {
-    Dataset<T> reusableDS;
-    boolean useCaching =
-        PropertyUtil.propertyAsBoolean(options(), USE_CACHING, USE_CACHING_DEFAULT);
-    if (useCaching) {
-      reusableDS = ds.cache();
-    } else {
-      int parallelism = SQLConf.get().numShufflePartitions();
-      reusableDS =
-          ds.repartition(parallelism).map((MapFunction<T, T>) value -> value, ds.exprEnc());
-    }
-
-    try {
-      return func.apply(reusableDS);
-    } finally {
-      if (useCaching) {
-        reusableDS.unpersist(false);
-      }
-    }
+  private boolean useCaching() {
+    return PropertyUtil.propertyAsBoolean(options(), USE_CACHING, USE_CACHING_DEFAULT);
   }
 
   private List<ManifestFile> findMatchingManifests() {
