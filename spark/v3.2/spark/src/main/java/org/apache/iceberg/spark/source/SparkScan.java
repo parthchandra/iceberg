@@ -166,9 +166,11 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
 
   static class ReaderFactory implements PartitionReaderFactory {
     private final int batchSize;
+    private final boolean useBoson;
 
-    ReaderFactory(int batchSize) {
+    ReaderFactory(int batchSize, boolean useBoson) {
       this.batchSize = batchSize;
+      this.useBoson = useBoson;
     }
 
     @Override
@@ -183,7 +185,12 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
     @Override
     public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
       if (partition instanceof ReadTask) {
-        return new BatchReader((ReadTask) partition, batchSize);
+        BatchReader batchReader = new BatchReader((ReadTask) partition, batchSize);
+        if (useBoson) {
+          batchReader.setUseBoson(true);
+        }
+        return batchReader;
+
       } else {
         throw new UnsupportedOperationException("Incorrect input partition type: " + partition);
       }

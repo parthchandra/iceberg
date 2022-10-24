@@ -84,7 +84,7 @@ class SparkBatch implements Batch {
 
   @Override
   public PartitionReaderFactory createReaderFactory() {
-    return new ReaderFactory(batchSize());
+    return new ReaderFactory(batchSize(), readConf.enableBoson());
   }
 
   private int batchSize() {

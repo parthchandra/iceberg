@@ -19,6 +19,7 @@
 
 package org.apache.iceberg.spark;
 
+import com.apple.boson.BosonConf;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.Table;
@@ -222,6 +223,14 @@ public class SparkReadConf {
     return confParser.longConf()
         .option(SparkReadOptions.STREAM_FROM_TIMESTAMP)
         .defaultValue(Long.MIN_VALUE)
+        .parse();
+  }
+
+  public boolean enableBoson() {
+    return confParser
+        .booleanConf()
+        .sessionConf(BosonConf.BOSON_ENABLED().key())
+        .defaultValue(BosonConf.BOSON_ENABLED().defaultValueString())
         .parse();
   }
 }

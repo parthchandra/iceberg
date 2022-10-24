@@ -35,13 +35,13 @@ configure(sparkProjects) {
         force 'com.fasterxml.jackson.module:jackson-module-paranamer:2.12.3'
         // Required to avoid us using the parquet version provided by spark in tests
         // can be removed when we upgrade parquet to match spark
-        force 'org.apache.parquet:parquet-avro:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-column:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-common:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-encoding:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-format-structures:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-hadoop:1.12.0.16-apple'
-        force 'org.apache.parquet:parquet-jackson:1.12.0.16-apple'
+        force 'org.apache.parquet:parquet-avro:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-column:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-common:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-encoding:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-format-structures:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-hadoop:1.12.0.22-apple'
+        force 'org.apache.parquet:parquet-jackson:1.12.0.22-apple'
         // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
         // We can remove this once Hive version is upgraded in Spark.
         force 'org.apache.hive:hive-metastore:2.3.9.4-apple'
@@ -80,6 +80,16 @@ project(':iceberg-spark:iceberg-spark-3.2') {
       // to make sure io.netty.buffer only comes from project(':iceberg-arrow')
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'org.roaringbitmap'
+      // use the parquet lib from boson
+      exclude group: 'org.apache.parquet'
+    }
+
+    implementation("com.apple.pie.boson:boson-iceberg:0.2.2-beta") {
+      exclude group: 'org.apache.arrow', module: 'arrow-vector'
+      exclude group: 'org.apache.spark', module: 'spark-sql_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-catalyst_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-core_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-hadoop-cloud_2.12'
     }
 
     implementation("org.apache.orc:orc-core::nohive") {
@@ -154,6 +164,8 @@ project(":iceberg-spark:iceberg-spark-extensions-3.2") {
       // to make sure io.netty.buffer only comes from project(':iceberg-arrow')
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'org.roaringbitmap'
+      // use the parquet lib from boson
+      exclude group: 'org.apache.parquet'
     }
 
     testImplementation project(path: ':iceberg-hive-metastore')

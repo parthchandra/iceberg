@@ -53,6 +53,7 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
   private final String nameMapping;
   private final boolean caseSensitive;
   private final int batchSize;
+  private boolean useBoson;
 
   BatchDataReader(CombinedScanTask task, Table table, Schema expectedSchema, boolean caseSensitive, int size) {
     super(table, task);
@@ -60,6 +61,10 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
     this.nameMapping = table.properties().get(TableProperties.DEFAULT_NAME_MAPPING);
     this.caseSensitive = caseSensitive;
     this.batchSize = size;
+  }
+
+  protected void setUseBoson(boolean useBoson) {
+    this.useBoson = useBoson;
   }
 
   @Override
