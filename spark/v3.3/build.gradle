@@ -17,7 +17,7 @@
  * under the License.
  */
 
-String sparkVersion = '3.3.0.19-apple-SNAPSHOT'
+String sparkVersion = '3.3.0.23-apple-SNAPSHOT'
 String sparkMajorVersion = '3.3'
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
 
@@ -33,7 +33,12 @@ configure(sparkProjects) {
       resolutionStrategy {
         // Forced to use the Hive metastore version which has `setCurrentCatalog` API.
         // We can remove this once Hive version is upgraded in Spark.
-        force 'org.apache.hive:hive-metastore:2.3.9.2-apple'
+        force 'org.apache.hive:hive-metastore:2.3.9.4-apple'
+        // Forced jackson-core and jackson-bom versions because Gradle wrongly resolves
+        // them to non-existing 2.13.4.1 after Spark 3.3 upgrades jackson-databind to
+        // 2.13.4.1.
+        force 'com.fasterxml.jackson.core:jackson-core:2.13.4'
+        force 'com.fasterxml.jackson:jackson-bom:2.13.4'
       }
     }
   }
