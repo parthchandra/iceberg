@@ -135,11 +135,7 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
   }
 
   private Schema requiredSchema(DeleteFilter deleteFilter) {
-    if (deleteFilter != null && deleteFilter.hasEqDeletes()) {
-      return deleteFilter.requiredSchema();
-    } else {
-      return expectedSchema;
-    }
+    return deleteFilter != null ? deleteFilter.requiredSchema() : expectedSchema;
   }
 
   private class SparkDeleteFilter extends DeleteFilter<InternalRow> {
