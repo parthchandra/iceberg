@@ -125,11 +125,9 @@ public class TestParquetVectorizedReads extends AvroDataTest {
       throws IOException {
     Parquet.ReadBuilder readBuilder = Parquet.read(Files.localInput(testFile))
         .project(schema)
-        .recordsPerBatch(batchSize)
-        .createBatchedReaderFunc(type -> VectorizedSparkParquetReaders.buildReader(
-            schema,
-            type,
-            setAndCheckArrowValidityBuffer));
+        .recordsPerBatch(batchSize);
+    createBatchedReaderFunc(readBuilder, schema, setAndCheckArrowValidityBuffer);
+
     if (reuseContainers) {
       readBuilder.reuseContainers();
     }
@@ -141,10 +139,24 @@ public class TestParquetVectorizedReads extends AvroDataTest {
       while (batches.hasNext()) {
         ColumnarBatch batch = batches.next();
         numRowsRead += batch.numRows();
-        TestHelpers.assertEqualsBatch(schema.asStruct(), expectedIter, batch, setAndCheckArrowValidityBuffer);
+        TestHelpers.assertEqualsBatch(
+                schema.asStruct(), expectedIter, batch, checkArrowValidityBuffer(setAndCheckArrowValidityBuffer));
       }
       Assert.assertEquals(expectedSize, numRowsRead);
     }
+  }
+
+  void createBatchedReaderFunc(Parquet.ReadBuilder readBuilder,
+                               Schema schema,
+                               boolean setAndCheckArrowValidityBuffer) {
+    readBuilder.createBatchedReaderFunc(type -> VectorizedSparkParquetReaders.buildReader(
+            schema,
+            type,
+            setAndCheckArrowValidityBuffer));
+  }
+
+  boolean checkArrowValidityBuffer(boolean arrowValidityBuffer) {
+    return arrowValidityBuffer;
   }
 
   @Override
@@ -200,7 +212,7 @@ public class TestParquetVectorizedReads extends AvroDataTest {
             TypeUtil.assignIncreasingFreshIds(new Schema(required(
                 1,
                 "struct",
-                SUPPORTED_PRIMITIVES))),
+                schema()))),
             new MessageType("struct", new GroupType(Type.Repetition.OPTIONAL, "struct").withId(1)),
             false));
   }
@@ -208,7 +220,7 @@ public class TestParquetVectorizedReads extends AvroDataTest {
   @Test
   public void testMostlyNullsForOptionalFields() throws IOException {
     writeAndValidate(
-        TypeUtil.assignIncreasingFreshIds(new Schema(SUPPORTED_PRIMITIVES.fields())),
+        TypeUtil.assignIncreasingFreshIds(new Schema(schema().fields())),
         getNumRows(),
         0L,
         0.99f,
@@ -219,13 +231,13 @@ public class TestParquetVectorizedReads extends AvroDataTest {
   @Test
   public void testSettingArrowValidityVector() throws IOException {
     writeAndValidate(new Schema(
-            Lists.transform(SUPPORTED_PRIMITIVES.fields(), Types.NestedField::asOptional)),
+            Lists.transform(schema().fields(), Types.NestedField::asOptional)),
         getNumRows(), 0L, RandomData.DEFAULT_NULL_PERCENTAGE, true, true);
   }
 
   @Test
   public void testVectorizedReadsWithNewContainers() throws IOException {
-    writeAndValidate(TypeUtil.assignIncreasingFreshIds(new Schema(SUPPORTED_PRIMITIVES.fields())),
+    writeAndValidate(TypeUtil.assignIncreasingFreshIds(new Schema(schema().fields())),
         getNumRows(), 0L, RandomData.DEFAULT_NULL_PERCENTAGE, true, false);
   }
 
@@ -235,8 +247,8 @@ public class TestParquetVectorizedReads extends AvroDataTest {
     // length 512, the vector will need to be reallocated for storing the batch.
     writeAndValidate(new Schema(
             Lists.newArrayList(
-                SUPPORTED_PRIMITIVES.field("id"),
-                SUPPORTED_PRIMITIVES.field("data"))),
+                    schema().field("id"),
+                    schema().field("data"))),
         10, 0L, RandomData.DEFAULT_NULL_PERCENTAGE,
         true, true, 2,
         record -> {
@@ -298,7 +310,7 @@ public class TestParquetVectorizedReads extends AvroDataTest {
   @Test
   public void testUnsupportedReadsForParquetV2() throws Exception {
     // Longs, ints, string types etc use delta encoding and which are not supported for vectorized reads
-    Schema schema = new Schema(SUPPORTED_PRIMITIVES.fields());
+    Schema schema = new Schema(schema().fields());
     File dataFile = temp.newFile();
     Assert.assertTrue("Delete should succeed", dataFile.delete());
     Iterable<GenericData.Record> data = generateData(schema, 30000, 0L,

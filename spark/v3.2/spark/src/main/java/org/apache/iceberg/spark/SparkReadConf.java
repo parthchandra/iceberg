@@ -230,7 +230,7 @@ public class SparkReadConf {
     return confParser
         .booleanConf()
         .sessionConf(BosonConf.BOSON_ENABLED().key())
-        .defaultValue(BosonConf.BOSON_ENABLED().defaultValueString())
+        .defaultValue(false)
         .parse();
   }
 }

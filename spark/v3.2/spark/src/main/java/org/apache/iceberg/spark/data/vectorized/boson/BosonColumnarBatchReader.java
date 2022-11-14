@@ -17,12 +17,11 @@
  * under the License.
  */
 
-package org.apache.iceberg.spark.data.vectorized;
+package org.apache.iceberg.spark.data.vectorized.boson;
 
+import com.apple.boson.parquet.BosonIcebergColumnReader;
 import java.util.List;
 import java.util.Map;
-import org.apache.iceberg.arrow.vectorized.BaseBatchReader;
-import org.apache.iceberg.arrow.vectorized.VectorizedArrowReader;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.parquet.column.page.PageReadStore;
@@ -34,13 +33,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 /**
  * {@link VectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized read path. The
  * {@link ColumnarBatch} returned is created by passing in the Arrow vectors populated via delegated read calls to
- * {@linkplain VectorizedArrowReader VectorReader(s)}.
+ * {@linkplain BosonIcebergColumnReader VectorReader(s)}.
  */
-public class ColumnarBatchReader extends BaseBatchReader<ColumnarBatch> {
+public class BosonColumnarBatchReader extends BosonBaseBatchReader<ColumnarBatch> {
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
 
-  public ColumnarBatchReader(List<VectorizedReader<?>> readers) {
+  public BosonColumnarBatchReader(List<VectorizedReader<?>> readers) {
     super(readers);
   }
 
@@ -57,12 +56,8 @@ public class ColumnarBatchReader extends BaseBatchReader<ColumnarBatch> {
 
   @Override
   public final ColumnarBatch read(ColumnarBatch reuse, int numRowsToRead) {
-    if (reuse == null) {
-      closeVectors();
-    }
-
-    ColumnBatchLoader batchLoader =
-        new ColumnBatchLoader(readers, vectorHolders, numRowsToRead, deletes, rowStartPosInBatch);
+    BosonColumnBatchLoader batchLoader =
+        new BosonColumnBatchLoader(getReaders(), numRowsToRead, deletes, rowStartPosInBatch);
     rowStartPosInBatch += numRowsToRead;
     return batchLoader.getColumnarBatch();
   }
