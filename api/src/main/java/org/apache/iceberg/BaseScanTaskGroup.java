@@ -24,14 +24,34 @@ import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.relocated.com.google.common.base.MoreObjects;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
+import org.apache.iceberg.types.Types.StructType;
 
 public class BaseScanTaskGroup<T extends ScanTask> implements ScanTaskGroup<T> {
+  private final StructType groupingKeyType;
+  private final StructLike groupingKey;
   private final Object[] tasks;
   private transient volatile List<T> taskList;
 
-  public BaseScanTaskGroup(Collection<T> tasks) {
+  public BaseScanTaskGroup(
+      StructType groupingKeyType, StructLike groupingKey, Collection<T> tasks) {
     Preconditions.checkNotNull(tasks, "tasks cannot be null");
+    this.groupingKeyType = groupingKeyType;
+    this.groupingKey = groupingKey;
     this.tasks = tasks.toArray();
+  }
+
+  public BaseScanTaskGroup(Collection<T> tasks) {
+    this(StructType.of(), EmptyStructLike.get(), tasks);
+  }
+
+  @Override
+  public StructType groupingKeyType() {
+    return groupingKeyType;
+  }
+
+  @Override
+  public StructLike groupingKey() {
+    return groupingKey;
   }
 
   @Override

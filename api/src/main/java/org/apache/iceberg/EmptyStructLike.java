@@ -18,39 +18,30 @@
  */
 package org.apache.iceberg;
 
-import java.util.Collection;
-import org.apache.iceberg.types.Types.StructType;
+import java.io.Serializable;
 
-/**
- * A scan task that may include partial input files, multiple input files or both.
- *
- * @param <T> the type of scan tasks
- */
-public interface ScanTaskGroup<T extends ScanTask> extends ScanTask {
+class EmptyStructLike implements StructLike, Serializable {
 
-  default StructType groupingKeyType() {
-    return StructType.of();
-  }
+  private static final EmptyStructLike INSTANCE = new EmptyStructLike();
 
-  default StructLike groupingKey() {
-    return EmptyStructLike.get();
-  };
+  private EmptyStructLike() {}
 
-  /** Returns scan tasks in this group. */
-  Collection<T> tasks();
-
-  @Override
-  default long sizeBytes() {
-    return tasks().stream().mapToLong(ScanTask::sizeBytes).sum();
+  static EmptyStructLike get() {
+    return INSTANCE;
   }
 
   @Override
-  default long estimatedRowsCount() {
-    return tasks().stream().mapToLong(ScanTask::estimatedRowsCount).sum();
+  public int size() {
+    return 0;
   }
 
   @Override
-  default int filesCount() {
-    return tasks().stream().mapToInt(ScanTask::filesCount).sum();
+  public <T> T get(int pos, Class<T> javaClass) {
+    throw new UnsupportedOperationException("Can't retrieve values from an empty struct");
+  }
+
+  @Override
+  public <T> void set(int pos, T value) {
+    throw new UnsupportedOperationException("Can't modify an empty struct");
   }
 }

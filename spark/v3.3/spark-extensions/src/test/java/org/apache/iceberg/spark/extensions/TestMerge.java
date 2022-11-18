@@ -22,6 +22,9 @@ import static org.apache.iceberg.TableProperties.MERGE_ISOLATION_LEVEL;
 import static org.apache.iceberg.TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.SPLIT_SIZE;
 import static org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE;
+import static org.apache.spark.sql.functions.current_date;
+import static org.apache.spark.sql.functions.date_add;
+import static org.apache.spark.sql.functions.expr;
 import static org.apache.spark.sql.functions.lit;
 
 import java.util.Arrays;
@@ -47,14 +50,19 @@ import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.util.concurrent.MoreExecutors;
+import org.apache.iceberg.spark.SparkSQLProperties;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.spark.SparkException;
 import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.internal.SQLConf;
+import org.apache.spark.sql.types.StructType;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Assert;
@@ -82,6 +90,7 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
   @After
   public void removeTables() {
     sql("DROP TABLE IF EXISTS %s", tableName);
+    sql("DROP TABLE IF EXISTS %s", tableName("temp_table"));
     sql("DROP TABLE IF EXISTS source");
   }
 
@@ -2244,5 +2253,108 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
 
     List<Object[]> result = sql("SELECT * FROM %s ORDER BY id", tableName);
     assertEquals("Should correctly add the non-matching rows", expectedRows, result);
+  }
+
+  @Test
+  public void testNoShuffleMergeWithIdentityTransforms() throws NoSuchTableException {
+    Assume.assumeTrue(fileFormat.equalsIgnoreCase("parquet"));
+
+    String schema =
+        "id BIGINT, intCol INT, floatCol FLOAT, doubleCol DOUBLE, decimalCol DECIMAL(20, 5), dateCol DATE, timestampCol TIMESTAMP, stringCol STRING, dep STRING, subDep STRING";
+    sql("CREATE TABLE %s (%s) USING iceberg PARTITIONED BY (dep, subDep)", tableName, schema);
+    initTable();
+
+    long numRows = 10_000;
+
+    for (int i = 0; i < 5; i++) {
+      appendFiles(2, numRows, String.valueOf(i), "A");
+      appendFiles(2, numRows, String.valueOf(i), "B");
+      appendFiles(2, numRows, String.valueOf(i), "C");
+      appendFiles(2, numRows, String.valueOf(i), "D");
+    }
+
+    createOrReplaceView(
+        "source",
+        "id INT, dep STRING, subDep STRING",
+        "{ \"id\": 2, \"dep\": \"1\", \"subDep\": \"D\"}\n"
+            + "{ \"id\": 1, \"dep\": \"4\", \"subDep\": \"B\"}\n"
+            + "{ \"id\": 6, \"dep\": \"3\", \"subDep\": \"A\"}");
+
+    sql(
+        "CREATE TABLE %s (id INT, dep STRING, subDep STRING) USING iceberg PARTITIONED BY (dep, subDep)",
+        tableName("temp_table"));
+
+    spark
+        .sql("SELECT * FROM source")
+        .orderBy("dep", "subDep", "id")
+        .writeTo(tableName("temp_table"))
+        .append();
+
+    sql("ALTER TABLE %s SET TBLPROPERTIES ('write.merge.distribution-mode' 'none')", tableName);
+    sql("ALTER TABLE %s SET TBLPROPERTIES ('read.split.open-file-cost' '134217728')", tableName);
+    sql(
+        "ALTER TABLE %s SET TBLPROPERTIES ('read.split.open-file-cost' '134217728')",
+        tableName("temp_table"));
+
+    spark
+        .sql(String.format("SELECT * FROM %s", tableName("temp_table")))
+        .createOrReplaceTempView("source_on_tmp_table");
+
+    Map<String, String> sqlConf = Maps.newHashMap();
+    sqlConf.put(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD().key(), "-1");
+    sqlConf.put(SQLConf.V2_BUCKETING_ENABLED().key(), "true");
+    sqlConf.put(SQLConf.REQUIRE_ALL_CLUSTER_KEYS_FOR_CO_PARTITION().key(), "false");
+    sqlConf.put(SparkSQLProperties.PRESERVE_DATA_GROUPING, "true");
+
+    withSQLConf(
+        sqlConf,
+        () -> {
+          sql(
+              "MERGE INTO %s AS t USING source_on_tmp_table AS s "
+                  + "ON t.dep = s.dep AND t.subDep = s.subDep AND t.id = s.id AND ((t.dep = '1' AND t.subDep = 'D') OR (t.dep = '4' AND t.subDep = 'B') OR (t.dep = '3' AND t.subDep = 'A')) "
+                  + "WHEN MATCHED THEN "
+                  + "  UPDATE SET t.id = s.id, t.intCol = -1 "
+                  + "WHEN NOT MATCHED THEN "
+                  + "  INSERT (t.id, t.intCol, t.floatCol, t.doubleCol, t.decimalCol, t.dateCol, t.timestampCol, t.stringCol, t.dep, t.subDep) VALUES (s.id, null, null, null, null, null, null, null, s.dep, s.subDep)",
+              tableName);
+        });
+
+    Assert.assertEquals(
+        "Updated record count must match",
+        6L,
+        scalarSql("SELECT COUNT(*) FROM %s WHERE intCol = -1", tableName));
+    Assert.assertEquals(
+        "Total record count must match", 400000L, scalarSql("SELECT COUNT(*) FROM %s", tableName));
+  }
+
+  private void appendFiles(int numFiles, long numRows, String dep, String subDep) {
+    for (int fileNum = 1; fileNum <= numFiles; fileNum++) {
+      Dataset<Row> df =
+          spark
+              .range(numRows)
+              .withColumn("intCol", expr("CAST(id AS INT)"))
+              .withColumn("floatCol", expr("CAST(id AS FLOAT)"))
+              .withColumn("doubleCol", expr("CAST(id AS DOUBLE)"))
+              .withColumn("decimalCol", expr("CAST(id AS DECIMAL(20, 5))"))
+              .withColumn("dateCol", date_add(current_date(), fileNum))
+              .withColumn("timestampCol", expr("TO_TIMESTAMP(dateCol)"))
+              .withColumn("stringCol", expr("CAST(dateCol AS STRING)"))
+              .withColumn("dep", lit(dep))
+              .withColumn("subDep", lit(subDep));
+      appendAsFile(df);
+    }
+  }
+
+  private void appendAsFile(Dataset<Row> ds) {
+    // ensure the schema is precise (including nullability)
+    Table table = validationCatalog.loadTable(tableIdent);
+    StructType sparkSchema = SparkSchemaUtil.convert(table.schema());
+    spark
+        .createDataFrame(ds.rdd(), sparkSchema)
+        .coalesce(1)
+        .write()
+        .format("iceberg")
+        .mode(SaveMode.Append)
+        .save(tableName);
   }
 }

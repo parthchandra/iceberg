@@ -27,10 +27,12 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.hadoop.Util;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.connector.read.HasPartitionKey;
 import org.apache.spark.sql.connector.read.InputPartition;
 
-class SparkInputPartition implements InputPartition, Serializable {
-  private final ScanTaskGroup<?> taskGroup;
+class SparkInputPartition implements InputPartition, HasPartitionKey, Serializable {
+  private final ScanTaskGroup<? extends ScanTask> taskGroup;
   private final Broadcast<Table> tableBroadcast;
   private final String expectedSchemaString;
   private final boolean caseSensitive;
@@ -39,7 +41,7 @@ class SparkInputPartition implements InputPartition, Serializable {
   private transient String[] preferredLocations = null;
 
   SparkInputPartition(
-      ScanTaskGroup<?> taskGroup,
+      ScanTaskGroup<? extends ScanTask> taskGroup,
       Broadcast<Table> tableBroadcast,
       String expectedSchemaString,
       boolean caseSensitive,
@@ -59,6 +61,11 @@ class SparkInputPartition implements InputPartition, Serializable {
   @Override
   public String[] preferredLocations() {
     return preferredLocations;
+  }
+
+  @Override
+  public InternalRow partitionKey() {
+    return new StructInternalRow(taskGroup.groupingKeyType()).setStruct(taskGroup.groupingKey());
   }
 
   @SuppressWarnings("unchecked")

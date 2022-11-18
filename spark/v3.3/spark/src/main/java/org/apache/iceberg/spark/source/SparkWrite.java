@@ -388,7 +388,7 @@ abstract class SparkWrite implements Write, RequiresDistributionAndOrdering {
     }
 
     private List<DataFile> overwrittenFiles() {
-      return scan.files().stream().map(FileScanTask::file).collect(Collectors.toList());
+      return scan.tasks().stream().map(FileScanTask::file).collect(Collectors.toList());
     }
 
     private Expression conflictDetectionFilter() {

@@ -28,11 +28,13 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileContent;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.MergeableScanTask;
+import org.apache.iceberg.PartitionData;
 import org.apache.iceberg.PartitionScanTask;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.ScanTask;
 import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.SplittableScanTask;
+import org.apache.iceberg.StructLike;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.FluentIterable;
@@ -79,6 +81,7 @@ public class TableScanUtil {
 
   public static CloseableIterable<CombinedScanTask> planTasks(
       CloseableIterable<FileScanTask> splitFiles, long splitSize, int lookback, long openFileCost) {
+
     Preconditions.checkArgument(splitSize > 0, "Invalid split size (negative or 0): %s", splitSize);
     Preconditions.checkArgument(
         lookback > 0, "Invalid split planning lookback (negative or 0): %s", lookback);
@@ -140,7 +143,7 @@ public class TableScanUtil {
       long splitSize,
       int lookback,
       long openFileCost,
-      Types.StructType projectedPartitionType) {
+      Types.StructType groupingKeyType) {
 
     Preconditions.checkArgument(splitSize > 0, "Invalid split size (negative or 0): %s", splitSize);
     Preconditions.checkArgument(
@@ -153,36 +156,62 @@ public class TableScanUtil {
 
     Map<Integer, StructProjection> projectionsBySpec = Maps.newHashMap();
 
-    // Group tasks by their partition values
-    StructLikeMap<List<T>> tasksByPartition = StructLikeMap.create(projectedPartitionType);
+    // group tasks by keys derived from their partition tuples
+    StructLikeMap<List<T>> tasksByKey = StructLikeMap.create(groupingKeyType);
 
     for (T task : tasks) {
       PartitionSpec spec = task.spec();
-      StructProjection projectedStruct =
+      StructProjection projection =
           projectionsBySpec.computeIfAbsent(
               spec.specId(),
-              specId -> StructProjection.create(spec.partitionType(), projectedPartitionType));
-      List<T> taskList =
-          tasksByPartition.computeIfAbsent(
-              projectedStruct.copyFor(task.partition()), k -> Lists.newArrayList());
+              specId -> StructProjection.create(spec.partitionType(), groupingKeyType));
+      StructLike groupingKey = projectGroupingKey(projection, groupingKeyType, task);
+      List<T> combinableTasks = tasksByKey.computeIfAbsent(groupingKey, k -> Lists.newArrayList());
       if (task instanceof SplittableScanTask<?>) {
-        ((SplittableScanTask<? extends T>) task).split(splitSize).forEach(taskList::add);
+        ((SplittableScanTask<? extends T>) task).split(splitSize).forEach(combinableTasks::add);
       } else {
-        taskList.add(task);
+        combinableTasks.add(task);
       }
     }
 
-    // Now apply task combining within each partition
-    return FluentIterable.from(tasksByPartition.values())
-        .transformAndConcat(ts -> toTaskGroupIterable(ts, splitSize, lookback, weightFunc))
-        .toList();
+    List<ScanTaskGroup<T>> taskGroups = Lists.newArrayList();
+
+    for (StructLike groupingKey : tasksByKey.keySet()) {
+      List<T> combinableTasks = tasksByKey.get(groupingKey);
+      Iterables.addAll(
+          taskGroups,
+          toTaskGroupIterable(
+              groupingKeyType, groupingKey, combinableTasks, splitSize, lookback, weightFunc));
+    }
+
+    return taskGroups;
+  }
+
+  private static StructLike projectGroupingKey(
+      StructProjection projection, Types.StructType groupingKeyType, PartitionScanTask task) {
+
+    PartitionData groupingKey = new PartitionData(groupingKeyType);
+
+    projection.wrap(task.partition());
+
+    for (int pos = 0; pos < projection.size(); pos++) {
+      groupingKey.set(pos, projection.get(pos, Object.class));
+    }
+
+    return groupingKey;
   }
 
   private static <T extends ScanTask> Iterable<ScanTaskGroup<T>> toTaskGroupIterable(
-      Iterable<T> tasks, long splitSize, int lookback, Function<T, Long> weightFunc) {
+      Types.StructType keyType,
+      StructLike key,
+      Iterable<T> tasks,
+      long splitSize,
+      int lookback,
+      Function<T, Long> weightFunc) {
+
     return Iterables.transform(
         new BinPacking.PackingIterable<>(tasks, splitSize, lookback, weightFunc, true),
-        combinedTasks -> new BaseScanTaskGroup<>(mergeTasks(combinedTasks)));
+        combinedTasks -> new BaseScanTaskGroup<>(keyType, key, mergeTasks(combinedTasks)));
   }
 
   @SuppressWarnings("unchecked")
