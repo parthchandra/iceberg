@@ -20,13 +20,13 @@ reports:
 pipelines:
 
 # prb builds
-- name: apple-1.0.x-preview-scala-2.12-prb
-  branchName: apple-1.0.x-preview
+- name: apple-1.0.x-preview-spj-scala-2.12-prb
+  branchName: apple-1.0.x-preview-spj
   build:
     template: buildozer:v4:prb
 
-- name: apple-1.0.x-preview-scala-2.13-prb
-  branchName: apple-1.0.x-preview
+- name: apple-1.0.x-preview-spj-scala-2.13-prb
+  branchName: apple-1.0.x-preview-spj
   build:
     template: freestyle:v4:prb
     steps:
@@ -34,13 +34,13 @@ pipelines:
   machine:
     baseImage: docker.apple.com/base-images/ubi8/java11-builder
 
-- name: apple-1.0.x-preview-release-scala-2.12-prb
-  branchName: apple-1.0.x-preview-release
+- name: apple-1.0.x-preview-spj-release-scala-2.12-prb
+  branchName: apple-1.0.x-preview-spj-release
   build:
     template: buildozer:v4:prb
 
-- name: apple-1.0.x-preview-release-scala-2.13-prb
-  branchName: apple-1.0.x-preview-release
+- name: apple-1.0.x-preview-spj-release-scala-2.13-prb
+  branchName: apple-1.0.x-preview-spj-release
   build:
     template: freestyle:v4:prb
     steps:
@@ -49,8 +49,8 @@ pipelines:
     baseImage: docker.apple.com/base-images/ubi8/java11-builder
 
 # publish pipelines
-- name: apple-1.0.x-preview-scala-2.12-snapshot
-  branchName: apple-1.0.x-preview
+- name: apple-1.0.x-preview-spj-scala-2.12-snapshot
+  branchName: apple-1.0.x-preview-spj
   build:
     template: buildozer:v4:publish
   package:
@@ -61,8 +61,8 @@ pipelines:
     radar:
       annotate: true
 
-- name: apple-1.0.x-preview-scala-2.13-snapshot
-  branchName: apple-1.0.x-preview
+- name: apple-1.0.x-preview-spj-scala-2.13-snapshot
+  branchName: apple-1.0.x-preview-spj
   build:
     template: freestyle:v4:publish
     steps:
@@ -81,8 +81,8 @@ pipelines:
   machine:
     baseImage: docker.apple.com/base-images/ubi8/java11-builder
 
-- name: apple-1.0.x-preview-scala-2.12-release
-  branchName: apple-1.0.x-preview-release
+- name: apple-1.0.x-preview-spj-scala-2.12-release
+  branchName: apple-1.0.x-preview-spj-release
   build:
     template: buildozer:v4:publish
   package:
@@ -96,8 +96,8 @@ pipelines:
     tag:
       expression: ${CODE_VERSION}
 
-- name: apple-1.0.x-preview-scala-2.13-release
-  branchName: apple-1.0.x-preview-release
+- name: apple-1.0.x-preview-spj-scala-2.13-release
+  branchName: apple-1.0.x-preview-spj-release
   build:
     template: freestyle:v4:publish
     steps:
