@@ -116,7 +116,8 @@ public class Parquet {
 
   private static final Logger LOG = LoggerFactory.getLogger(Parquet.class);
   private static final Collection<String> READ_PROPERTIES_TO_REMOVE = Sets.newHashSet(
-      "parquet.read.filter", "parquet.private.read.filter.predicate", "parquet.read.support.class");
+      "parquet.read.filter", "parquet.private.read.filter.predicate", "parquet.read.support.class",
+      "parquet.crypto.factory.class");
 
   public static WriteBuilder write(OutputFile file) {
     return new WriteBuilder(file);
