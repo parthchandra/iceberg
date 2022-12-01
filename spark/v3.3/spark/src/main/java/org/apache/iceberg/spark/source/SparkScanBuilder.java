@@ -21,6 +21,8 @@ package org.apache.iceberg.spark.source;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.iceberg.BatchScan;
+import org.apache.iceberg.IncrementalAppendScan;
 import org.apache.iceberg.IncrementalChangelogScan;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Schema;
@@ -209,11 +211,19 @@ public class SparkScanBuilder
         SparkReadOptions.END_SNAPSHOT_ID,
         SparkReadOptions.START_SNAPSHOT_ID);
 
+    if (startSnapshotId != null) {
+      return buildIncrementalAppendScan(startSnapshotId, endSnapshotId);
+    } else {
+      return buildBatchScan(snapshotId, asOfTimestamp);
+    }
+  }
+
+  private Scan buildBatchScan(Long snapshotId, Long asOfTimestamp) {
     Schema expectedSchema = schemaWithMetadataColumns();
 
-    TableScan scan =
+    BatchScan scan =
         table
-            .newScan()
+            .newBatchScan()
             .caseSensitive(caseSensitive)
             .filter(filterExpression())
             .project(expectedSchema);
@@ -226,12 +236,24 @@ public class SparkScanBuilder
       scan = scan.asOfTime(asOfTimestamp);
     }
 
-    if (startSnapshotId != null) {
-      if (endSnapshotId != null) {
-        scan = scan.appendsBetween(startSnapshotId, endSnapshotId);
-      } else {
-        scan = scan.appendsAfter(startSnapshotId);
-      }
+    scan = configureSplitPlanning(scan);
+
+    return new SparkBatchQueryScan(spark, table, scan, readConf, expectedSchema, filterExpressions);
+  }
+
+  private Scan buildIncrementalAppendScan(long startSnapshotId, Long endSnapshotId) {
+    Schema expectedSchema = schemaWithMetadataColumns();
+
+    IncrementalAppendScan scan =
+        table
+            .newIncrementalAppendScan()
+            .fromSnapshotExclusive(startSnapshotId)
+            .caseSensitive(caseSensitive)
+            .filter(filterExpression())
+            .project(expectedSchema);
+
+    if (endSnapshotId != null) {
+      scan = scan.toSnapshot(endSnapshotId);
     }
 
     scan = configureSplitPlanning(scan);
@@ -300,9 +322,9 @@ public class SparkScanBuilder
 
     Schema expectedSchema = schemaWithMetadataColumns();
 
-    TableScan scan =
+    BatchScan scan =
         table
-            .newScan()
+            .newBatchScan()
             .useSnapshot(snapshotId)
             .caseSensitive(caseSensitive)
             .filter(filterExpression())
