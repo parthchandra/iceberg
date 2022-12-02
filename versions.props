@@ -28,6 +28,7 @@ org.scala-lang:scala-library = 2.12.10
 org.projectnessie:* = 0.18.0
 com.google.cloud:libraries-bom = 24.1.0
 io.dropwizard.metrics:* = 4.2.0
+com.apple.pie.boson:boson-iceberg = 0.2.10-beta
 
 # test deps
 org.junit.vintage:junit-vintage-engine = 5.7.2

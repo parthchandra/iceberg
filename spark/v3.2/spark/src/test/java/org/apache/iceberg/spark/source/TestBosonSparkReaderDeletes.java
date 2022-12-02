@@ -64,8 +64,16 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
       Types.NestedField.required(2, "fixed", Types.FixedType.ofLength(3))
   );
 
+  public static final Schema SCHEMA_FOR_POS_TEST = new Schema(
+      Types.NestedField.required(1, "id", Types.IntegerType.get()),
+      Types.NestedField.required(2, "data", Types.StringType.get())
+  );
+
   private Table fixedTypeTable = null;
   private List<Record> fixedTypeRecords = null;
+
+  private Table posTestTable = null;
+  private List<Record> posTestRecords = null;
 
   public TestBosonSparkReaderDeletes(boolean vectorized) {
     super(true);
@@ -100,6 +108,7 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
     dropTable("test");
     dropTable("test2");
     dropTable("test3");
+    dropTable("test4");
   }
 
   private void initFixedTypeTable() throws IOException {
@@ -123,6 +132,23 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
         .commit();
   }
 
+  private void initPosTestTable() throws IOException {
+    this.posTestTable = createTable("test4", SCHEMA_FOR_POS_TEST, null);
+    GenericRecord record = GenericRecord.create(posTestTable.schema());
+
+    this.posTestRecords = Lists.newArrayList();
+    for (int i = 0; i < 5; i++) {
+      this.posTestRecords.add(record.copy("id", i, "data", "test" + i));
+    }
+
+    DataFile dataFile = FileHelpers
+        .writeDataFile(posTestTable, Files.localOutput(temp.newFile()), TestHelpers.Row.of(0), posTestRecords);
+
+    posTestTable.newAppend()
+        .appendFile(dataFile)
+        .commit();
+  }
+
   @Test
   public void testFixedType() throws IOException {
     initFixedTypeTable();
@@ -139,5 +165,22 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
     });
 
     Assert.assertEquals("Table should contain 5 rows", 5, actual.size());
+  }
+
+  @Test
+  public void testPositionMetadataColumn() throws IOException {
+    initPosTestTable();
+    List<Long> expected = Lists.newArrayList(0L, 1L, 2L, 3L, 4L);
+
+    Dataset<Row> df = spark.read()
+        .format("iceberg")
+        .load(TableIdentifier.of("default", "test4").toString())
+        .selectExpr("_pos");
+    List<Long> actual = Lists.newArrayList();
+    df.collectAsList().forEach(row -> {
+      actual.add(row.getLong(0));
+    });
+
+    Assert.assertTrue(actual.containsAll(expected));
   }
 }

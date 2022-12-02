@@ -19,10 +19,8 @@
 
 package org.apache.iceberg.spark.source;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.apache.arrow.vector.NullCheckingForGet;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
@@ -46,9 +44,7 @@ import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
 import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
-import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
-import org.apache.iceberg.types.Types;
 import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
@@ -85,26 +81,6 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
 
     Map<Integer, ?> idToConstant = constantsMap(task, expectedSchema);
 
-    if (useBoson) {
-      List colNames = expectedSchema.columns().stream().map(Types.NestedField::name).collect(Collectors.toList());
-      for (Object colName : colNames) {
-        if (MetadataColumns.isMetadataColumn(colName.toString())) {
-          useBoson = false;
-          LOG.info("Boson is enabled but found metadata columns, falling back to non-Boson path.");
-          break;
-        }
-      }
-
-      List types = expectedSchema.columns().stream().map(Types.NestedField::type).collect(Collectors.toList());
-      for (Object type : types) {
-        if (((Type) type).typeId().equals(Type.TypeID.FIXED)) {
-          useBoson = false;
-          LOG.info("Boson is enabled but found fixed type, falling back to non-Boson path.");
-          break;
-        }
-      }
-    }
-
     CloseableIterable<ColumnarBatch> iter;
     InputFile location = getInputFile(task);
     Preconditions.checkNotNull(location, "Could not find InputFile associated with FileScanTask");
@@ -116,7 +92,8 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
 
       Parquet.ReadBuilder builder = Parquet.read(location)
           .project(requiredSchema)
-          .split(task.start(), task.length());
+          .split(task.start(), task.length())
+          .enableBoson(useBoson);
       if (useBoson) {
         LOG.info("Boson is enabled.");
         builder = builder.createBatchedReaderFunc(

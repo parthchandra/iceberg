@@ -21,6 +21,7 @@ package org.apache.iceberg.spark.data.vectorized.boson;
 
 import com.apple.boson.parquet.BosonIcebergColumnReader;
 import com.apple.boson.parquet.BosonIcebergConstantColumnReader;
+import com.apple.boson.parquet.BosonIcebergPositionColumnReader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
@@ -53,7 +54,8 @@ public abstract class BosonBaseBatchReader<T> implements VectorizedReader<T> {
     for (int i = 0; i < readers.length; i++) {
       if (readers[i] != null) {
         try {
-          if (!(readers[i] instanceof BosonIcebergConstantColumnReader)) {
+          if (!(readers[i] instanceof BosonIcebergConstantColumnReader) &&
+              !(readers[i] instanceof BosonIcebergPositionColumnReader)) {
             readers[i].reset();
             readers[i].setPageReader(pageStore.getPageReader(readers[i].getDescriptor()));
           }

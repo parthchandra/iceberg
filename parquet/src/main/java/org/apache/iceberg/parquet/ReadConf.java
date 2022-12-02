@@ -159,6 +159,10 @@ class ReadConf<T> {
     return newReader;
   }
 
+  InputFile file() {
+    return file;
+  }
+
   ParquetValueReader<T> model() {
     return model;
   }
@@ -169,6 +173,10 @@ class ReadConf<T> {
 
   boolean[] shouldSkip() {
     return shouldSkip;
+  }
+
+  MessageType projection() {
+    return projection;
   }
 
   private Map<Long, Long> generateOffsetToStartPos(Schema schema) {
