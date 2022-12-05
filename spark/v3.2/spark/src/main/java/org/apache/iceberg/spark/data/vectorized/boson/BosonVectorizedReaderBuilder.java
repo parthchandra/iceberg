@@ -41,7 +41,6 @@ import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
-import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -85,29 +84,19 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       int id = field.fieldId();
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
-        DataType dataType = SparkSchemaUtil.convert(field.type());
-        StructField structField = new StructField(field.name(), dataType, false, Metadata.empty());
-        ColumnDescriptor descriptor = TypeUtil.convertToParquet(structField);
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(idToConstant.get(id),
-            dataType, descriptor);
+        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(idToConstant.get(id), field);
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
-        StructField structField = new StructField(field.name(), DataTypes.LongType, false, Metadata.empty());
-        reorderedFields.add(new BosonIcebergPositionColumnReader<>(TypeUtil.convertToParquet(structField)));
+        reorderedFields.add(new BosonIcebergPositionColumnReader<>(field));
       } else if (id == MetadataColumns.IS_DELETED.fieldId()) {
         StructField structField = new StructField(field.name(), DataTypes.BooleanType, false, Metadata.empty());
         ColumnDescriptor descriptor = TypeUtil.convertToParquet(structField);
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(false,
-            DataTypes.BooleanType, descriptor);
+        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(false, field);
         reorderedFields.add(constantReader);
       } else if (reader != null) {
         reorderedFields.add(reader);
       } else {
-        DataType dataType = SparkSchemaUtil.convert(field.type());
-        StructField structField = new StructField(field.name(), dataType, true, Metadata.empty());
-        ColumnDescriptor descriptor = TypeUtil.convertToParquet(structField);
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(null,
-            dataType, descriptor);
+        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(null, field);
         reorderedFields.add(constantReader);
       }
     }

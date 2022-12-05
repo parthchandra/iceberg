@@ -20,6 +20,7 @@
 package org.apache.iceberg.parquet;
 
 import com.apple.boson.parquet.FileReader;
+import com.apple.boson.parquet.ReadOptions;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
@@ -126,7 +127,8 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
 
     private FileReader newBosonReader(ParquetReadOptions options, InputFile file, MessageType projection) {
       try {
-        FileReader fileReader = new FileReader(ParquetIO.file(file), options);
+        ReadOptions bosonOptions = ReadOptions.builder().build();
+        FileReader fileReader = new FileReader(ParquetIO.file(file), options, bosonOptions);
         fileReader.setRequestedSchema(projection.getColumns());
         return fileReader;
       } catch (IOException e) {
