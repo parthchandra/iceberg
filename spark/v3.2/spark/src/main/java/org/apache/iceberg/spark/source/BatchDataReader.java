@@ -43,12 +43,17 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
+import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class BatchDataReader extends BaseDataReader<ColumnarBatch> {
+  private static final Logger LOG = LoggerFactory.getLogger(BatchDataReader.class);
+
   private final Schema expectedSchema;
   private final String nameMapping;
   private final boolean caseSensitive;
@@ -88,10 +93,21 @@ class BatchDataReader extends BaseDataReader<ColumnarBatch> {
       Parquet.ReadBuilder builder = Parquet.read(location)
           .project(requiredSchema)
           .split(task.start(), task.length())
-          .createBatchedReaderFunc(fileSchema -> VectorizedSparkParquetReaders.buildReader(requiredSchema,
-              fileSchema, /* setArrowValidityVector */ NullCheckingForGet.NULL_CHECKING_ENABLED, idToConstant,
-              deleteFilter))
-          .recordsPerBatch(batchSize)
+          .enableBoson(useBoson);
+      if (useBoson) {
+        LOG.info("Boson is enabled.");
+        builder = builder.createBatchedReaderFunc(
+                fileSchema -> BosonVectorizedSparkParquetReaders.buildReader(requiredSchema,
+                        fileSchema, idToConstant, deleteFilter));
+
+      } else {
+        builder = builder.createBatchedReaderFunc(
+                fileSchema -> VectorizedSparkParquetReaders.buildReader(requiredSchema,
+                        fileSchema, /* setArrowValidityVector */ NullCheckingForGet.NULL_CHECKING_ENABLED, idToConstant,
+                        deleteFilter));
+
+      }
+      builder = builder.recordsPerBatch(batchSize)
           .filter(task.residual())
           .caseSensitive(caseSensitive)
           // Spark eagerly consumes the batches. So the underlying memory allocated could be reused

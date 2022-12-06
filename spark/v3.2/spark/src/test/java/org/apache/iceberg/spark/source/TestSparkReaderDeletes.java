@@ -69,7 +69,7 @@ import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTOREURIS;
 @RunWith(Parameterized.class)
 public class TestSparkReaderDeletes extends DeleteReadTests {
 
-  private static TestHiveMetastore metastore = null;
+  protected static TestHiveMetastore metastore = null;
   protected static SparkSession spark = null;
   protected static HiveCatalog catalog = null;
   protected final boolean vectorized;

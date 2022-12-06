@@ -85,7 +85,7 @@ project(':iceberg-spark:iceberg-spark-3.2') {
       exclude group: 'org.apache.parquet'
     }
 
-    implementation("com.apple.pie.boson:boson-iceberg:0.2.2-beta") {
+    implementation("com.apple.pie.boson:boson-iceberg") {
       exclude group: 'org.apache.arrow', module: 'arrow-vector'
       exclude group: 'org.apache.spark', module: 'spark-sql_2.12'
       exclude group: 'org.apache.spark', module: 'spark-catalyst_2.12'
@@ -284,12 +284,25 @@ project(':iceberg-spark:iceberg-spark-runtime-3.2') {
     relocate 'io.airlift', 'org.apache.iceberg.shaded.io.airlift'
     // relocate Arrow and related deps to shade Iceberg specific version
     relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
-    relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
+    relocate('org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow') {
+      // Boson uses `org.apache.arrow.c` module, but we shouldn't relocate `JniWrapper` since it
+      // contains native JNI methods
+      exclude 'org.apache.arrow.c.jni.JniWrapper'
+    }
     relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
     relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
     // relocate Antlr runtime and related deps to shade Iceberg specific version
     relocate 'org.antlr.v4', 'org.apache.iceberg.shaded.org.antlr.v4'
     relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
+    // We need to relocate Boson since both Iceberg and Spark depends on `boson-common` and thus there'll be
+    // two copies for every class in `boson-common`. Since Iceberg shades Parquet, this will cause conflicts
+    // at class loading time.
+    relocate('com.apple.boson', 'org.apache.iceberg.shaded.com.apple.boson') {
+      exclude 'com.apple.boson.NativeBase'
+      exclude 'com.apple.boson.Native'
+      exclude 'com.apple.boson.parquet.Native'
+    }
+    relocate 'org.apache.spark.sql.boson', 'org.apache.iceberg.shaded.org.apache.spark.sql.boson'
 
     classifier null
   }

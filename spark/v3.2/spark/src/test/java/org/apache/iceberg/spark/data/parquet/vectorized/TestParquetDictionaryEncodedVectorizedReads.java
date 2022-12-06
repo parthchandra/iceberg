@@ -55,7 +55,7 @@ public class TestParquetDictionaryEncodedVectorizedReads extends TestParquetVect
 
   @Test
   public void testMixedDictionaryNonDictionaryReads() throws IOException {
-    Schema schema = new Schema(SUPPORTED_PRIMITIVES.fields());
+    Schema schema = new Schema(schema().fields());
     File dictionaryEncodedFile = temp.newFile();
     Assert.assertTrue("Delete should succeed", dictionaryEncodedFile.delete());
     Iterable<GenericData.Record> dictionaryEncodableData = RandomData.generateDictionaryEncodableData(

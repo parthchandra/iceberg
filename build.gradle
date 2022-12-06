@@ -500,6 +500,15 @@ project(':iceberg-parquet') {
       exclude group: 'org.codehaus.jackson'
     }
 
+    implementation("com.apple.pie.boson:boson-iceberg") {
+      exclude group: 'org.apache.arrow'
+      exclude group: 'org.apache.parquet'
+      exclude group: 'org.apache.spark', module: 'spark-sql_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-catalyst_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-core_2.12'
+      exclude group: 'org.apache.spark', module: 'spark-hadoop-cloud_2.12'
+    }
+
     compileOnly "org.apache.avro:avro"
     compileOnly("org.apache.hadoop:hadoop-client") {
       exclude group: 'org.apache.avro', module: 'avro'
