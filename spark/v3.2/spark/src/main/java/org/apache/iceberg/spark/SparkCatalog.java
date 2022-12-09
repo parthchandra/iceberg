@@ -178,14 +178,15 @@ public class SparkCatalog extends BaseCatalog {
     DistributionMode icebergDistributionMode = DistributionMode.fromName(distributionMode);
     try {
       Catalog.TableBuilder builder = newBuilder(ident, icebergSchema);
-      Table icebergTable = builder
+      builder
           .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
           .withLocation(properties.get("location"))
           .withProperties(Spark3Util.rebuildCreateProperties(properties))
-          .withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName())
-          .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering))
-          .create();
-      return new SparkTable(icebergTable, !cacheEnabled);
+          .withSortOrder(SparkDistributionAndOrderingUtil.toSortOrder(icebergSchema, ordering));
+      if (!properties.containsKey(WRITE_DISTRIBUTION_MODE)) {
+        builder.withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName());
+      }
+      return new SparkTable(builder.create(), !cacheEnabled);
     } catch (AlreadyExistsException e) {
       throw new TableAlreadyExistsException(ident);
     }
