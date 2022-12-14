@@ -222,6 +222,14 @@ public class SparkReadConf {
         .parse();
   }
 
+  public Long startTimestamp() {
+    return confParser.longConf().option(SparkReadOptions.START_TIMESTAMP).parseOptional();
+  }
+
+  public Long endTimestamp() {
+    return confParser.longConf().option(SparkReadOptions.END_TIMESTAMP).parseOptional();
+  }
+
   public boolean preserveDataGrouping() {
     return confParser
         .booleanConf()
