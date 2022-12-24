@@ -220,4 +220,12 @@ public class SparkReadConf {
         .defaultValue(Long.MIN_VALUE)
         .parse();
   }
+
+  public boolean preserveDataGrouping() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.PRESERVE_DATA_GROUPING)
+        .defaultValue(SparkSQLProperties.PRESERVE_DATA_GROUPING_DEFAULT)
+        .parse();
+  }
 }

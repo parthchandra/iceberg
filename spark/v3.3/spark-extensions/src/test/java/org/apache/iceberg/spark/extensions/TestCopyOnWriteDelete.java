@@ -19,8 +19,17 @@
 package org.apache.iceberg.spark.extensions;
 
 import java.util.Map;
+import org.apache.iceberg.Snapshot;
+import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
+import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
+import org.apache.iceberg.spark.SparkSQLProperties;
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.internal.SQLConf;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class TestCopyOnWriteDelete extends TestDelete {
 
@@ -37,5 +46,33 @@ public class TestCopyOnWriteDelete extends TestDelete {
   @Override
   protected Map<String, String> extraTableProperties() {
     return ImmutableMap.of(TableProperties.DELETE_MODE, "copy-on-write");
+  }
+
+  @Test
+  public void testRuntimeFilteringWithPreservedDataGrouping() throws NoSuchTableException {
+    createAndInitPartitionedTable();
+
+    append(new Employee(1, "hr"), new Employee(3, "hr"));
+    append(new Employee(1, "hardware"), new Employee(2, "hardware"));
+
+    Map<String, String> sqlConf =
+        ImmutableMap.of(
+            SQLConf.V2_BUCKETING_ENABLED().key(),
+            "true",
+            SparkSQLProperties.PRESERVE_DATA_GROUPING,
+            "true");
+
+    withSQLConf(sqlConf, () -> sql("DELETE FROM %s WHERE id = 2", tableName));
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    Assert.assertEquals("Should have 3 snapshots", 3, Iterables.size(table.snapshots()));
+
+    Snapshot currentSnapshot = table.currentSnapshot();
+    validateCopyOnWrite(currentSnapshot, "1", "1", "1");
+
+    assertEquals(
+        "Should have expected rows",
+        ImmutableList.of(row(1, "hardware"), row(1, "hr"), row(3, "hr")),
+        sql("SELECT * FROM %s ORDER BY id, dep", tableName));
   }
 }
