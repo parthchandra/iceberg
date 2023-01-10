@@ -373,4 +373,9 @@ public class TableProperties {
 
   /** Table and configuration properties, containing this string, will be passed to KMS client */
   public static final String ENCRYPTION_KMS_CLIENT_CUSTOM_PROPERTIES_PREFIX = "kms.client";
+
+  /** Plaintext (unencrypted) data files allowed in encrypted tables */
+  public static final String PLAINTEXT_ALLOWED = "encryption.plaintext.data.files.allowed";
+
+  public static final boolean PLAINTEXT_ALLOWED_DEFAULT = true;
 }

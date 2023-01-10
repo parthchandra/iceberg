@@ -24,6 +24,8 @@ import static org.apache.iceberg.TableProperties.ENCRYPTION_DEK_LENGTH;
 import static org.apache.iceberg.TableProperties.ENCRYPTION_DEK_LENGTH_DEFAULT;
 import static org.apache.iceberg.TableProperties.ENCRYPTION_PUSHDOWN_ENABLED;
 import static org.apache.iceberg.TableProperties.ENCRYPTION_PUSHDOWN_ENABLED_DEFAULT;
+import static org.apache.iceberg.TableProperties.PLAINTEXT_ALLOWED;
+import static org.apache.iceberg.TableProperties.PLAINTEXT_ALLOWED_DEFAULT;
 
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
@@ -32,6 +34,8 @@ import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.util.PropertyUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Encryption manager which in conjunction with a KMS can encrypt {@link OutputFile} and decrypt
@@ -44,11 +48,15 @@ import org.apache.iceberg.util.PropertyUtil;
  * pulling bytes from a {@link SecureRandom} on the JVM writing the file.
  */
 public class EnvelopeEncryptionManager implements EncryptionManager {
+
+  private static final Logger LOG = LoggerFactory.getLogger(EnvelopeEncryptionManager.class);
+
   private final EnvelopeConfiguration dataEncryptionConfig;
   private final boolean nativeFormatEncryption;
   private final KmsClient kmsClient;
   private final int dataKeyLength;
   private final boolean kmsGeneratedKeys;
+  private final boolean allowUnencryptedFiles;
 
   private transient volatile SecureRandom workerRNG = null;
 
@@ -82,6 +90,10 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
     this.dataKeyLength =
         PropertyUtil.propertyAsInt(
             tableProperties, ENCRYPTION_DEK_LENGTH, ENCRYPTION_DEK_LENGTH_DEFAULT);
+
+    this.allowUnencryptedFiles =
+        PropertyUtil.propertyAsBoolean(
+            tableProperties, PLAINTEXT_ALLOWED, PLAINTEXT_ALLOWED_DEFAULT);
 
     Preconditions.checkNotNull(
         dataEncryptionConfig,
@@ -127,7 +139,16 @@ public class EnvelopeEncryptionManager implements EncryptionManager {
   @Override
   public InputFile decrypt(EncryptedInputFile encrypted) {
     if (encrypted.keyMetadata().buffer() == null) { // unencrypted file
-      return encrypted.encryptedInputFile();
+      if (allowUnencryptedFiles) {
+        LOG.warn(
+            "Unencrypted file {} in encrypted table", encrypted.encryptedInputFile().location());
+        return encrypted.encryptedInputFile();
+      } else {
+        throw new RuntimeException(
+            "Unencrypted file "
+                + encrypted.encryptedInputFile().location()
+                + " in encrypted table");
+      }
     }
     EnvelopeMetadata metadata = EnvelopeMetadataParser.fromJson(encrypted.keyMetadata().buffer());
     ByteBuffer fileDek = kmsClient.unwrapKey(metadata.wrappedDek(), metadata.kekId());
