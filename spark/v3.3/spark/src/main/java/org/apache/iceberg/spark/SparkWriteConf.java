@@ -282,7 +282,8 @@ public class SparkWriteConf {
     return confParser
         .booleanConf()
         .option(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING)
-        .defaultValue(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING_DEFAULT)
+        .tableProperty(TableProperties.USE_TABLE_DISTRIBUTION_AND_ORDERING)
+        .defaultValue(TableProperties.USE_TABLE_DISTRIBUTION_AND_ORDERING_DEFAULT)
         .parse();
   }
 

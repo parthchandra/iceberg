@@ -21,6 +21,8 @@ package org.apache.iceberg.spark.source;
 import org.apache.iceberg.IsolationLevel;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.NamedReference;
@@ -100,5 +102,13 @@ class SparkPositionDeltaOperation implements RowLevelOperation, SupportsDelta {
     NamedReference file = Expressions.column(MetadataColumns.FILE_PATH.name());
     NamedReference pos = Expressions.column(MetadataColumns.ROW_POSITION.name());
     return new NamedReference[] {file, pos};
+  }
+
+  @Override
+  public boolean performCardinalityCheck() {
+    return PropertyUtil.propertyAsBoolean(
+        table.properties(),
+        TableProperties.MERGE_CARDINALITY_CHECK_ENABLED,
+        TableProperties.MERGE_CARDINALITY_CHECK_ENABLED_DEFAULT);
   }
 }

@@ -46,6 +46,7 @@ import org.apache.iceberg.RowLevelOperationMode;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.SnapshotSummary;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.data.GenericRecord;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
@@ -89,6 +90,53 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
   public void removeTables() {
     sql("DROP TABLE IF EXISTS %s", tableName);
     sql("DROP TABLE IF EXISTS source");
+  }
+
+  @Test
+  public void testMergeWithoutCardinalityCheckAndSort() {
+    createAndInitTable(
+        "id INT, salary INT, dep STRING, sub_dep STRING",
+        "PARTITIONED BY (dep, sub_dep)",
+        "{ \"id\": 1, \"salary\": 100, \"dep\": \"d1\", \"sub_dep\": \"sd1\" }\n"
+            + "{ \"id\": 6, \"salary\": 600, \"dep\": \"d6\", \"sub_dep\": \"sd6\" }");
+
+    sql(
+        "ALTER TABLE %s SET TBLPROPERTIES('%s' '%s')",
+        tableName, TableProperties.USE_TABLE_DISTRIBUTION_AND_ORDERING, "false");
+    sql(
+        "ALTER TABLE %s SET TBLPROPERTIES('%s' '%s')",
+        tableName, TableProperties.MERGE_CARDINALITY_CHECK_ENABLED, "false");
+
+    createOrReplaceView(
+        "source",
+        "id INT, salary INT, dep STRING, sub_dep STRING",
+        "{ \"id\": 1, \"salary\": 101, \"dep\": \"d1\", \"sub_dep\": \"sd1\" }\n"
+            + "{ \"id\": 2, \"salary\": 200, \"dep\": \"d2\", \"sub_dep\": \"sd2\" }\n"
+            + "{ \"id\": 3, \"salary\": 300, \"dep\": \"d3\", \"sub_dep\": \"sd3\"  }");
+
+    SparkPlan sparkPlan =
+        executeAndKeepPlan(
+            "MERGE INTO %s AS t USING source AS s "
+                + "ON t.id == s.id AND ((t.dep = 'd1' AND t.sub_dep IN ('sd1', 'sd3')) OR (t.dep = 'd6' AND t.sub_dep IN ('sd2', 'sd6'))) "
+                + "WHEN MATCHED THEN "
+                + "  UPDATE SET salary = s.salary "
+                + "WHEN NOT MATCHED THEN "
+                + "  INSERT *",
+            tableName);
+    String sparkPlanAsString = sparkPlan.toString();
+
+    Assert.assertFalse("Should be no sort by row ID", sparkPlanAsString.contains("Sort [__row_id"));
+    Assert.assertFalse("Should be no sort by _file", sparkPlanAsString.contains("Sort [_file"));
+    Assert.assertFalse("Should be no sort by dep", sparkPlanAsString.contains("Sort [dep"));
+
+    assertEquals(
+        "Should have expected rows",
+        ImmutableList.of(
+            row(1, 101, "d1", "sd1"), // updated
+            row(2, 200, "d2", "sd2"), // new
+            row(3, 300, "d3", "sd3"), // new
+            row(6, 600, "d6", "sd6")), // existing
+        sql("SELECT * FROM %s ORDER BY id", tableName));
   }
 
   @Test
