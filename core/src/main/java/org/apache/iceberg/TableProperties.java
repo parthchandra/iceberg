@@ -380,6 +380,6 @@ public class TableProperties {
   public static final boolean PLAINTEXT_ALLOWED_DEFAULT = true;
 
   public static final String USE_TABLE_DISTRIBUTION_AND_ORDERING =
-      "use-table-distribution-and-ordering";
+      "write.use-table-distribution-and-ordering";
   public static final boolean USE_TABLE_DISTRIBUTION_AND_ORDERING_DEFAULT = true;
 }
