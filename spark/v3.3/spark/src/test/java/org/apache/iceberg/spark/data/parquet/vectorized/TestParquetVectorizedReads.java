@@ -158,13 +158,9 @@ public class TestParquetVectorizedReads extends AvroDataTest {
       int batchSize)
       throws IOException {
     Parquet.ReadBuilder readBuilder =
-        Parquet.read(Files.localInput(testFile))
-            .project(schema)
-            .recordsPerBatch(batchSize)
-            .createBatchedReaderFunc(
-                type ->
-                    VectorizedSparkParquetReaders.buildReader(
-                        schema, type, setAndCheckArrowValidityBuffer));
+        Parquet.read(Files.localInput(testFile)).project(schema).recordsPerBatch(batchSize);
+    createBatchedReaderFunc(readBuilder, schema, setAndCheckArrowValidityBuffer);
+
     if (reuseContainers) {
       readBuilder.reuseContainers();
     }
@@ -176,10 +172,29 @@ public class TestParquetVectorizedReads extends AvroDataTest {
         ColumnarBatch batch = batches.next();
         numRowsRead += batch.numRows();
         TestHelpers.assertEqualsBatch(
-            schema.asStruct(), expectedIter, batch, setAndCheckArrowValidityBuffer);
+            schema.asStruct(),
+            expectedIter,
+            batch,
+            checkArrowValidityBuffer(setAndCheckArrowValidityBuffer));
       }
       Assert.assertEquals(expectedSize, numRowsRead);
     }
+  }
+
+  void createBatchedReaderFunc(
+      Parquet.ReadBuilder readBuilder, Schema schema, boolean setAndCheckArrowValidityBuffer) {
+    readBuilder.createBatchedReaderFunc(
+        type ->
+            VectorizedSparkParquetReaders.buildReader(
+                schema, type, setAndCheckArrowValidityBuffer));
+  }
+
+  boolean checkArrowValidityBuffer(boolean arrowValidityBuffer) {
+    return arrowValidityBuffer;
+  }
+
+  String containsMessage() {
+    return "Cannot support vectorized reads for column";
   }
 
   @Override
@@ -353,7 +368,7 @@ public class TestParquetVectorizedReads extends AvroDataTest {
     AssertHelpers.assertThrows(
         "Vectorized reads not supported",
         UnsupportedOperationException.class,
-        "Cannot support vectorized reads for column",
+        containsMessage(),
         () -> {
           assertRecordsMatch(schema, 30000, data, dataFile, false, true, BATCH_SIZE);
           return null;

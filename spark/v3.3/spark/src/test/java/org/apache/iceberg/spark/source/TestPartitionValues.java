@@ -96,7 +96,7 @@ public class TestPartitionValues {
   private static final PartitionSpec SPEC =
       PartitionSpec.builderFor(SIMPLE_SCHEMA).identity("data").build();
 
-  private static SparkSession spark = null;
+  protected static SparkSession spark = null;
 
   @BeforeClass
   public static void startSpark() {
@@ -112,8 +112,8 @@ public class TestPartitionValues {
 
   @Rule public TemporaryFolder temp = new TemporaryFolder();
 
-  private final String format;
-  private final boolean vectorized;
+  protected final String format;
+  protected final boolean vectorized;
 
   public TestPartitionValues(String format, boolean vectorized) {
     this.format = format;
