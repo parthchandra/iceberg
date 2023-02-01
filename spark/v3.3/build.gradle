@@ -77,6 +77,14 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'io.netty', module: 'netty-common'
       exclude group: 'org.roaringbitmap'
+      // use the parquet lib from boson
+      exclude group: 'org.apache.parquet'
+    }
+
+    implementation("com.apple.pie.boson:boson-iceberg-spark${sparkMajorVersion}_${scalaVersion}") {
+      exclude group: 'org.apache.arrow', module: 'arrow-vector'
+      exclude group: 'org.apache.spark'
+      exclude group: 'org.apache.iceberg'
     }
 
     implementation("org.apache.parquet:parquet-column")
@@ -152,6 +160,8 @@ project(":iceberg-spark:iceberg-spark-extensions-${sparkMajorVersion}_${scalaVer
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'io.netty', module: 'netty-common'
       exclude group: 'org.roaringbitmap'
+      // use the parquet lib from boson
+      exclude group: 'org.apache.parquet'
     }
 
     testImplementation project(path: ':iceberg-data')
@@ -269,10 +279,23 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     relocate 'org.apache.httpcomponents.client5', 'org.apache.iceberg.shaded.org.apache.httpcomponents.client5'
     // relocate Arrow and related deps to shade Iceberg specific version
     relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
-    relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
+    relocate('org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow') {
+      // Boson uses `org.apache.arrow.c` module, but we shouldn't relocate `JniWrapper` since it
+      // contains native JNI methods
+      exclude 'org.apache.arrow.c.jni.JniWrapper'
+    }
     relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
     relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
     relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
+    // We need to relocate Boson since both Iceberg and Spark depends on `boson-common` and thus there'll be
+    // two copies for every class in `boson-common`. Since Iceberg shades Parquet, this will cause conflicts
+    // at class loading time.
+    relocate('com.apple.boson', 'org.apache.iceberg.shaded.com.apple.boson') {
+      exclude 'com.apple.boson.NativeBase'
+      exclude 'com.apple.boson.Native'
+      exclude 'com.apple.boson.parquet.Native'
+    }
+    relocate 'org.apache.spark.sql.boson', 'org.apache.iceberg.shaded.org.apache.spark.sql.boson'
 
     classifier null
   }

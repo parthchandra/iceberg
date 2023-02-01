@@ -54,6 +54,10 @@ try {
   project.logger.error(e.getMessage())
 }
 
+String sparkMajorVersion = '3.3'
+String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
+
+
 if (JavaVersion.current() == JavaVersion.VERSION_1_8) {
   project.ext.jdkVersion = '8'
 } else if (JavaVersion.current() == JavaVersion.VERSION_11) {
@@ -560,6 +564,13 @@ project(':iceberg-parquet') {
     api project(':iceberg-api')
     implementation project(':iceberg-core')
     implementation project(':iceberg-common')
+
+    implementation("com.apple.pie.boson:boson-iceberg-spark${sparkMajorVersion}_${scalaVersion}") {
+      exclude group: 'org.apache.arrow'
+      exclude group: 'org.apache.parquet'
+      exclude group: 'org.apache.spark'
+      exclude group: 'org.apache.iceberg'
+    }
 
     implementation("org.apache.parquet:parquet-avro") {
       exclude group: 'org.apache.avro', module: 'avro'

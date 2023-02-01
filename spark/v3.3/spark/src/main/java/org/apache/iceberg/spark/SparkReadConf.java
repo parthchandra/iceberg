@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark;
 
+import com.apple.boson.BosonConf;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.Table;
@@ -226,6 +227,14 @@ public class SparkReadConf {
         .booleanConf()
         .sessionConf(SparkSQLProperties.PRESERVE_DATA_GROUPING)
         .defaultValue(SparkSQLProperties.PRESERVE_DATA_GROUPING_DEFAULT)
+        .parse();
+  }
+
+  public boolean enableBoson() {
+    return confParser
+        .booleanConf()
+        .sessionConf(BosonConf.BOSON_ENABLED().key())
+        .defaultValue(false)
         .parse();
   }
 }

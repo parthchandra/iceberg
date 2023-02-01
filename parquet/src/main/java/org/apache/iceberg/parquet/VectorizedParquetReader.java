@@ -18,7 +18,10 @@
  */
 package org.apache.iceberg.parquet;
 
+import com.apple.boson.parquet.FileReader;
+import com.apple.boson.parquet.ReadOptions;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -49,6 +52,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
   private final boolean caseSensitive;
   private final int batchSize;
   private final NameMapping nameMapping;
+  private final boolean useBoson;
 
   public VectorizedParquetReader(
       InputFile input,
@@ -59,7 +63,8 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       Expression filter,
       boolean reuseContainers,
       boolean caseSensitive,
-      int maxRecordsPerBatch) {
+      int maxRecordsPerBatch,
+      boolean useBoson) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -70,6 +75,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     this.caseSensitive = caseSensitive;
     this.batchSize = maxRecordsPerBatch;
     this.nameMapping = nameMapping;
+    this.useBoson = useBoson;
   }
 
   private ReadConf conf = null;
@@ -96,13 +102,14 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
 
   @Override
   public CloseableIterator<T> iterator() {
-    FileIterator<T> iter = new FileIterator<>(init());
+    FileIterator<T> iter = new FileIterator<>(init(), options, useBoson);
     addCloseable(iter);
     return iter;
   }
 
   private static class FileIterator<T> implements CloseableIterator<T> {
     private final ParquetFileReader reader;
+    private final FileReader bosonReader;
     private final boolean[] shouldSkip;
     private final VectorizedReader<T> model;
     private final long totalValues;
@@ -115,8 +122,14 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private T last = null;
     private final long[] rowGroupsStartRowPos;
 
-    FileIterator(ReadConf conf) {
-      this.reader = conf.reader();
+    FileIterator(ReadConf conf, ParquetReadOptions options, boolean useBoson) {
+      if (useBoson) {
+        this.reader = null;
+        this.bosonReader = newBosonReader(options, conf.file(), conf.projection());
+      } else {
+        this.reader = conf.reader();
+        this.bosonReader = null;
+      }
       this.shouldSkip = conf.shouldSkip();
       this.totalValues = conf.totalValues();
       this.reuseContainers = conf.reuseContainers();
@@ -125,6 +138,18 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       this.model.setBatchSize(this.batchSize);
       this.columnChunkMetadata = conf.columnChunkMetadataForRowGroups();
       this.rowGroupsStartRowPos = conf.startRowPositions();
+    }
+
+    private FileReader newBosonReader(
+        ParquetReadOptions options, InputFile file, MessageType projection) {
+      try {
+        ReadOptions bosonOptions = ReadOptions.builder().build();
+        FileReader fileReader = new FileReader(ParquetIO.file(file), options, bosonOptions);
+        fileReader.setRequestedSchema(projection.getColumns());
+        return fileReader;
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to open Parquet file: " + file.location(), e);
+      }
     }
 
     @Override
@@ -156,11 +181,19 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private void advance() {
       while (shouldSkip[nextRowGroup]) {
         nextRowGroup += 1;
-        reader.skipNextRowGroup();
+        if (reader != null) {
+          reader.skipNextRowGroup();
+        } else {
+          bosonReader.skipNextRowGroup();
+        }
       }
       PageReadStore pages;
       try {
-        pages = reader.readNextRowGroup();
+        if (reader != null) {
+          pages = reader.readNextRowGroup();
+        } else {
+          pages = bosonReader.readNextRowGroup();
+        }
       } catch (IOException e) {
         throw new RuntimeIOException(e);
       }
@@ -174,7 +207,12 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     @Override
     public void close() throws IOException {
       model.close();
-      reader.close();
+      if (reader != null) {
+        reader.close();
+      }
+      if (bosonReader != null) {
+        bosonReader.close();
+      }
     }
   }
 }

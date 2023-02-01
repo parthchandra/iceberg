@@ -34,11 +34,17 @@ import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
+import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBatch, T> {
+  private static final Logger LOG = LoggerFactory.getLogger(BaseBatchReader.class);
+
   private final int batchSize;
+  private boolean useBoson;
 
   BaseBatchReader(
       Table table,
@@ -48,6 +54,10 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
       int batchSize) {
     super(table, taskGroup, expectedSchema, caseSensitive);
     this.batchSize = batchSize;
+  }
+
+  protected void setUseBoson(boolean useBoson) {
+    this.useBoson = useBoson;
   }
 
   protected CloseableIterable<ColumnarBatch> newBatchIterable(
@@ -81,13 +91,25 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     // get required schema if there are deletes
     Schema requiredSchema = deleteFilter != null ? deleteFilter.requiredSchema() : expectedSchema();
 
-    return Parquet.read(inputFile)
-        .project(requiredSchema)
-        .split(start, length)
-        .createBatchedReaderFunc(
-            fileSchema ->
-                VectorizedSparkParquetReaders.buildReader(
-                    requiredSchema, fileSchema, idToConstant, deleteFilter))
+    Parquet.ReadBuilder builder =
+        Parquet.read(inputFile).project(requiredSchema).split(start, length).enableBoson(useBoson);
+
+    if (useBoson) {
+      LOG.info("Boson is enabled.");
+      builder =
+          builder.createBatchedReaderFunc(
+              fileSchema ->
+                  BosonVectorizedSparkParquetReaders.buildReader(
+                      requiredSchema, fileSchema, idToConstant, deleteFilter));
+
+    } else {
+      builder =
+          builder.createBatchedReaderFunc(
+              fileSchema ->
+                  VectorizedSparkParquetReaders.buildReader(
+                      requiredSchema, fileSchema, idToConstant, deleteFilter));
+    }
+    return builder
         .recordsPerBatch(batchSize)
         .filter(residual)
         .caseSensitive(caseSensitive())

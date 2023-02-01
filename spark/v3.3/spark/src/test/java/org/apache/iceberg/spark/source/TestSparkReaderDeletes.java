@@ -92,7 +92,7 @@ import org.junit.runners.Parameterized;
 @RunWith(Parameterized.class)
 public class TestSparkReaderDeletes extends DeleteReadTests {
 
-  private static TestHiveMetastore metastore = null;
+  protected static TestHiveMetastore metastore = null;
   protected static SparkSession spark = null;
   protected static HiveCatalog catalog = null;
   private final String format;

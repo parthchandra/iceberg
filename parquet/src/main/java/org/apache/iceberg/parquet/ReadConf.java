@@ -173,12 +173,20 @@ class ReadConf<T> {
     return model;
   }
 
+  InputFile file() {
+    return file;
+  }
+
   VectorizedReader<T> vectorizedModel() {
     return vectorizedModel;
   }
 
   boolean[] shouldSkip() {
     return shouldSkip;
+  }
+
+  MessageType projection() {
+    return projection;
   }
 
   private Map<Long, Long> generateOffsetToStartPos(Schema schema) {

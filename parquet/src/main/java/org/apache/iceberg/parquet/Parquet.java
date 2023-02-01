@@ -968,6 +968,7 @@ public class Parquet {
     private int maxRecordsPerBatch = 10000;
     private NameMapping nameMapping = null;
     private FileDecryptionProperties fileDecryptionProperties = null;
+    private boolean useBoson = false;
 
     private ReadBuilder(InputFile file) {
       this.file = file;
@@ -1064,6 +1065,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder enableBoson(boolean enableBoson) {
+      this.useBoson = enableBoson;
+      return this;
+    }
+
     private FileDecryptionProperties createDecryptionProperties(
         NativeFileCryptoParameters nativeParameters) {
       Preconditions.checkArgument(nativeParameters != null, "Null native crypto parameters");
@@ -1120,7 +1126,8 @@ public class Parquet {
               filter,
               reuseContainers,
               caseSensitive,
-              maxRecordsPerBatch);
+              maxRecordsPerBatch,
+              useBoson);
         } else {
           return new org.apache.iceberg.parquet.ParquetReader<>(
               file,
