@@ -871,7 +871,7 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
         .olderThan(System.currentTimeMillis() + 1000).execute();
     Assert.assertTrue("trash file should be removed",
         StreamSupport.stream(result.orphanFileLocations().spliterator(), false)
-            .anyMatch(file -> file.contains("file:" + location + "data/trashfile")));
+            .anyMatch(file -> file.contains("file:" + location + "/data/trashfile")));
   }
 
   @Test
