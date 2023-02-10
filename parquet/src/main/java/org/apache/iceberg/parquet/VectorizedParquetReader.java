@@ -108,11 +108,10 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private final long[] rowGroupsStartRowPos;
 
     FileIterator(ReadConf conf, ParquetReadOptions options, boolean useBoson) {
+      this.reader = conf.reader();
       if (useBoson) {
-        this.reader = null;
         this.bosonReader = newBosonReader(options, conf.file(), conf.projection());
       } else {
-        this.reader = conf.reader();
         this.bosonReader = null;
       }
       this.shouldSkip = conf.shouldSkip();
@@ -165,18 +164,18 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private void advance() {
       while (shouldSkip[nextRowGroup]) {
         nextRowGroup += 1;
-        if (reader != null) {
-          reader.skipNextRowGroup();
-        } else {
+        if (bosonReader != null) {
           bosonReader.skipNextRowGroup();
+        } else {
+          reader.skipNextRowGroup();
         }
       }
       PageReadStore pages;
       try {
-        if (reader != null) {
-          pages = reader.readNextRowGroup();
-        } else {
+        if (bosonReader != null) {
           pages = bosonReader.readNextRowGroup();
+        } else {
+          pages = reader.readNextRowGroup();
         }
       } catch (IOException e) {
         throw new RuntimeIOException(e);
