@@ -85,12 +85,13 @@ project(':iceberg-spark:iceberg-spark-3.2') {
       exclude group: 'org.apache.parquet'
     }
 
-    implementation("com.apple.pie.boson:boson-iceberg") {
+    implementation("com.apple.pie.boson:boson-iceberg-spark3.2_2.12") {
       exclude group: 'org.apache.arrow', module: 'arrow-vector'
       exclude group: 'org.apache.spark', module: 'spark-sql_2.12'
       exclude group: 'org.apache.spark', module: 'spark-catalyst_2.12'
       exclude group: 'org.apache.spark', module: 'spark-core_2.12'
       exclude group: 'org.apache.spark', module: 'spark-hadoop-cloud_2.12'
+      exclude group: 'org.apache.iceberg'
     }
 
     implementation("org.apache.orc:orc-core::nohive") {

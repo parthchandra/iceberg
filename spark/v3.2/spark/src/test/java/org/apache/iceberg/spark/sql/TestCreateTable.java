@@ -290,4 +290,19 @@ public class TestCreateTable extends SparkCatalogTestBase {
         "Cannot downgrade v2 table to v1",
         () -> sql("ALTER TABLE %s SET TBLPROPERTIES ('format-version'='1')", tableName));
   }
+
+  @Test
+  public void testCreateTableMode() {
+    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+
+    sql("CREATE TABLE %s " +
+            "(id BIGINT NOT NULL, data STRING) " +
+            "USING iceberg " +
+            "TBLPROPERTIES ('format-version'='2'," +
+            "'write.distribution-mode' = 'hash')",
+        tableName);
+    Table table = validationCatalog.loadTable(tableIdent);
+    Assert.assertEquals("write distribution mode should be set", "hash",
+        table.properties().get(TableProperties.WRITE_DISTRIBUTION_MODE));
+  }
 }
