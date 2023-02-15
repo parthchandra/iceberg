@@ -291,7 +291,7 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     // two copies for every class in `boson-common`. Since Iceberg shades Parquet, this will cause conflicts
     // at class loading time.
     relocate('com.apple.boson', 'org.apache.iceberg.shaded.com.apple.boson') {
-      exclude 'com.apple.boson.NativeBase'
+      exclude 'com.apple.boson.NativeBase*'
       exclude 'com.apple.boson.Native'
       exclude 'com.apple.boson.parquet.Native'
     }
