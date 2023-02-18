@@ -50,6 +50,7 @@ project(':hive-metastore').name = 'iceberg-hive-metastore'
 project(':nessie').name = 'iceberg-nessie'
 project(':gcp').name = 'iceberg-gcp'
 
+
 List<String> knownFlinkVersions = System.getProperty("knownFlinkVersions").split(",")
 String flinkVersionsString = System.getProperty("flinkVersions") != null ? System.getProperty("flinkVersions") : System.getProperty("defaultFlinkVersions")
 List<String> flinkVersions = flinkVersionsString != null && !flinkVersionsString.isEmpty() ? flinkVersionsString.split(",") : []
@@ -110,6 +111,8 @@ if (sparkVersions.contains("3.2") && JavaVersion.current() == JavaVersion.VERSIO
   include ':iceberg-spark:spark-3.2'
   include ':iceberg-spark:spark-extensions-3.2'
   include ':iceberg-spark:spark-runtime-3.2'
+  include 'apple'
+  project(':apple').name = 'iceberg-apple'
   project(':iceberg-spark:spark-3.2').projectDir = file('spark/v3.2/spark')
   project(':iceberg-spark:spark-3.2').name = 'iceberg-spark-3.2'
   project(':iceberg-spark:spark-extensions-3.2').projectDir = file('spark/v3.2/spark-extensions')
