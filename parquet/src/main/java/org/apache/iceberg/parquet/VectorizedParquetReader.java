@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.parquet;
 
+import com.apple.boson.parquet.BosonInputFile;
 import com.apple.boson.parquet.FileReader;
 import com.apple.boson.parquet.ReadOptions;
 import java.io.IOException;
@@ -30,6 +31,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.CloseableIterator;
@@ -143,7 +145,16 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
         ParquetReadOptions options, InputFile file, MessageType projection) {
       try {
         ReadOptions bosonOptions = ReadOptions.builder().build();
-        FileReader fileReader = new FileReader(ParquetIO.file(file), options, bosonOptions);
+
+        org.apache.parquet.io.InputFile parquetFile;
+        if (file instanceof HadoopInputFile) {
+          // Use BosonInputFile which contains extra optimizations
+          HadoopInputFile hInputFile = (HadoopInputFile) file;
+          parquetFile = BosonInputFile.fromPath(hInputFile.getPath(), hInputFile.getConf());
+        } else {
+          parquetFile = ParquetIO.file(file);
+        }
+        FileReader fileReader = new FileReader(parquetFile, options, bosonOptions);
         fileReader.setRequestedSchema(projection.getColumns());
         return fileReader;
       } catch (IOException e) {
