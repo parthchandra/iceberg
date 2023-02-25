@@ -164,6 +164,10 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
     return String.format("%s [filters=%s]", table, filters);
   }
 
+  public SparkReadConf getReadConf() {
+    return this.readConf;
+  }
+
   static class ReaderFactory implements PartitionReaderFactory {
     private final int batchSize;
     private final boolean useBoson;
