@@ -171,4 +171,8 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
   public CustomMetric[] supportedCustomMetrics() {
     return new CustomMetric[] {new NumSplits(), new NumDeletes()};
   }
+
+  public SparkReadConf getReadConf() {
+    return this.readConf;
+  }
 }
