@@ -37,6 +37,7 @@ import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.SupportsBulkOperations;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.JobGroupInfo;
@@ -60,15 +61,8 @@ public class DeleteReachableFilesSparkAction
   private static final Logger LOG = LoggerFactory.getLogger(DeleteReachableFilesSparkAction.class);
 
   private final String metadataFileLocation;
-  private final Consumer<String> defaultDelete =
-      new Consumer<String>() {
-        @Override
-        public void accept(String file) {
-          io.deleteFile(file);
-        }
-      };
 
-  private Consumer<String> deleteFunc = defaultDelete;
+  private Consumer<String> deleteFunc = null;
   private ExecutorService deleteExecutorService = null;
   private FileIO io = new HadoopFileIO(spark().sessionState().newHadoopConf());
   private final EncryptionManagerFactory encryptionManagerFactory =
@@ -154,7 +148,22 @@ public class DeleteReachableFilesSparkAction
   }
 
   private DeleteReachableFiles.Result deleteFiles(Iterator<FileInfo> files) {
-    DeleteSummary summary = deleteFiles(deleteExecutorService, deleteFunc, files);
+    DeleteSummary summary;
+    if (deleteFunc == null && io instanceof SupportsBulkOperations) {
+      summary = deleteFiles((SupportsBulkOperations) io, files);
+    } else {
+
+      if (deleteFunc == null) {
+        LOG.info(
+            "Table IO {} does not support bulk operations. Using non-bulk deletes.",
+            io.getClass().getName());
+        summary = deleteFiles(deleteExecutorService, io::deleteFile, files);
+      } else {
+        LOG.info("Custom delete function provided. Using non-bulk deletes");
+        summary = deleteFiles(deleteExecutorService, deleteFunc, files);
+      }
+    }
+
     LOG.info("Deleted {} total files", summary.totalFilesCount());
 
     return new BaseDeleteReachableFilesActionResult(
