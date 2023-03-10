@@ -42,7 +42,7 @@ import org.apache.spark.sql.connector.read.Batch;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 
-class SparkBatch implements Batch {
+public class SparkBatch implements Batch {
 
   private static final String QUERY_PLAN_TIME = "query.plan.time";
 
@@ -134,7 +134,7 @@ class SparkBatch implements Batch {
   // - at least one column is projected
   // - only primitives are projected
   // - all tasks are of FileScanTask type and read only Parquet files
-  private boolean useParquetBatchReads() {
+  public boolean useParquetBatchReads() {
     return readConf.parquetVectorizationEnabled()
         && expectedSchema.columns().size() > 0
         && expectedSchema.columns().stream().allMatch(c -> c.type().isPrimitiveType())

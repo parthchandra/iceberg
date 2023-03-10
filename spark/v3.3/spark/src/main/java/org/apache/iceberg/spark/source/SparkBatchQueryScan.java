@@ -54,7 +54,7 @@ import org.apache.spark.sql.sources.Filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class SparkBatchQueryScan extends SparkPartitioningAwareScan<PartitionScanTask>
+public class SparkBatchQueryScan extends SparkPartitioningAwareScan<PartitionScanTask>
     implements SupportsRuntimeFiltering {
 
   private static final Logger LOG = LoggerFactory.getLogger(SparkBatchQueryScan.class);
