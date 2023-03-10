@@ -43,7 +43,7 @@ import org.apache.spark.sql.connector.read.Batch;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 
-class SparkBatch implements Batch {
+public class SparkBatch implements Batch {
 
   private final JavaSparkContext sparkContext;
   private final Table table;
@@ -97,11 +97,11 @@ class SparkBatch implements Batch {
     }
   }
 
-  private boolean parquetOnly() {
+  public boolean parquetOnly() {
     return tasks.stream().allMatch(task -> !task.isDataTask() && onlyFileFormat(task, FileFormat.PARQUET));
   }
 
-  private boolean parquetBatchReadsEnabled() {
+  public boolean parquetBatchReadsEnabled() {
     return readConf.parquetVectorizationEnabled() && // vectorization enabled
         expectedSchema.columns().size() > 0 && // at least one column is projected
         expectedSchema.columns().stream().allMatch(c -> c.type().isPrimitiveType()); // only primitives
