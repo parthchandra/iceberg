@@ -19,6 +19,9 @@
 
 package org.apache.iceberg.spark.actions;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -45,6 +48,7 @@ import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.SparkTestBase;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
 import org.apache.iceberg.types.Types;
+import org.apache.spark.SparkException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
@@ -669,6 +673,78 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testV2Table() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.delete.mode", "merge-on-read");
+    String tableName = "v2tbl";
+    Table sourceTable = createMetastoreTable(sourceTableLocation, properties, tableName, 0);
+    // ingest data
+    List<ThreeColumnRecord> records = Lists.newArrayList(
+        new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"),
+        new ThreeColumnRecord(2, "AAAAAAAAAA", "AAAA"),
+        new ThreeColumnRecord(3, "AAAAAAAAAA", "AAAA")
+    );
+
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+    df.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .saveAsTable("hive.default." + tableName);
+    sourceTable.refresh();
+
+    // copy table and check the results
+    CopyTable.Result result = actions().copyTable(sourceTable)
+        .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+        .execute();
+
+    checkMetadataFileNum(2, 1, 1, result);
+    checkDataFileNum(1, result);
+
+    // test statistics field
+    writeStatisticsFiledToVersionFile(sourceTable);
+
+    Assert.assertThrows("Should fail to copy a table with the statistics field", IllegalArgumentException.class, () -> {
+      actions().copyTable(sourceTable)
+          .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+          .execute();
+    });
+
+    // generate position delete files
+    spark.sql(String.format("delete from hive.default.%s where c1 = 1", tableName));
+    sourceTable.refresh();
+
+    // copy table
+    Assert.assertThrows("Should fail to copy a table with delete files", SparkException.class, () -> {
+      actions().copyTable(sourceTable)
+          .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+          .execute();
+    });
+  }
+
+  private void writeStatisticsFiledToVersionFile(Table sourceTable) throws IOException {
+    TableMetadata metadata = currentMetadata(sourceTable);
+    File file = new File(metadata.metadataFileLocation().replace("file:", ""));
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode data = (ObjectNode) mapper.readTree(file);
+
+    ObjectNode newNode = mapper.createObjectNode();
+    newNode.put("statistics-path", "s3://a/b/stats.puffin");
+    ArrayNode arrayNode = mapper.createArrayNode().add(newNode);
+    data.set("statistics", arrayNode);
+
+    mapper.writerWithDefaultPrettyPrinter().writeValue(file, data);
+
+    // remove the checksum file, otherwise the metadata file can not be read
+    String fileName = file.getName();
+    File crcFile = new File(file.getAbsolutePath().replace(fileName, "." + fileName + ".crc"));
+    crcFile.delete();
+  }
+
+  @Test
   public void testMetadataCompressionWithMetastoreTable() throws Exception {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();
@@ -780,6 +856,7 @@ public class TestCopyTableAction extends SparkTestBase {
     properties.forEach((k, v) -> propertiesStr.append("'" + k + "'='" + v + "',"));
     String tblProperties = propertiesStr.substring(0, propertiesStr.length() > 0 ? propertiesStr.length() - 1 : 0);
 
+    sql("DROP TABLE IF EXISTS hive.default.%s", tableName);
     if (tblProperties.isEmpty()) {
       sql("CREATE TABLE hive.default.%s (c1 bigint, c2 string, c3 string) USING iceberg LOCATION '%s'",
           tableName, location);
@@ -789,7 +866,7 @@ public class TestCopyTableAction extends SparkTestBase {
     }
 
     for (int i = 0; i < snapshotNumber; i++) {
-      sql("insert into hive.default.%s values (1, 'AAAAAAAAAA', 'AAAA')", tableName);
+      sql("insert into hive.default.%s values (%s, 'AAAAAAAAAA', 'AAAA')", tableName, i);
     }
     return catalog.loadTable(TableIdentifier.of("default", tableName));
   }

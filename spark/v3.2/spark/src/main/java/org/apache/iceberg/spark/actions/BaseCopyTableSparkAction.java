@@ -19,8 +19,10 @@
 
 package org.apache.iceberg.spark.actions;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,9 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestEntry;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
@@ -51,12 +55,14 @@ import org.apache.iceberg.actions.CopyTable;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
 import org.apache.iceberg.spark.SparkUtil;
+import org.apache.iceberg.util.JsonUtil;
 import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
@@ -167,7 +173,6 @@ public class BaseCopyTableSparkAction
     endStaticTable = newStaticTable(endVersion, table.io());
 
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
-    Preconditions.checkArgument(tableMetadata.formatVersion() == 1, "Support Iceberg format version 1 only.");
 
     validateAndSetStartVersion(tableMetadata);
 
@@ -259,6 +264,8 @@ public class BaseCopyTableSparkAction
   private void rebuildMetaData() {
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
 
+    Preconditions.checkArgument(!hasStatisticFiles(tableMetadata), "Statistic files are not supported yet.");
+
     // rebuild version files
     Set<Long> allSnapshotIds = rewriteVersionFiles(tableMetadata);
 
@@ -279,6 +286,21 @@ public class BaseCopyTableSparkAction
 
     Dataset<Row> dataFiles = getDiffDataFiles(diffSnapshotIds);
     saveDataFileList(dataFiles);
+  }
+
+  private boolean hasStatisticFiles(TableMetadata tableMetadata) {
+    // read metadata.json file directly to check if there is statistics,
+    // it is a workaround for now since we don't have statistics related API in this branch
+    String location = tableMetadata.metadataFileLocation();
+    InputFile file = table.io().newInputFile(location);
+    TableMetadataParser.Codec codec = TableMetadataParser.Codec.fromFileName(file.location());
+    try (InputStream is = codec == TableMetadataParser.Codec.GZIP ? new GZIPInputStream(file.newStream()) :
+        file.newStream()) {
+      JsonNode node = JsonUtil.mapper().readValue(is, JsonNode.class);
+      return node.has("statistics");
+    } catch (IOException e) {
+      throw new RuntimeIOException("Failed to read metadata.json file: " + location, e);
+    }
   }
 
   private void saveMetadataFileList() {
@@ -467,6 +489,10 @@ public class BaseCopyTableSparkAction
     String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
     OutputFile outputFile = io.value().newOutputFile(stagingPath);
     PartitionSpec spec = specsById.getValue().get(manifestFile.partitionSpecId());
+
+    Preconditions.checkArgument(manifestFile.content() == ManifestContent.DATA,
+        "Delete files(Position delete files and Equality delete files) are not supported yet");
+
     ManifestWriter<DataFile> writer = ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
 
     try (ManifestReader<DataFile> reader = ManifestFiles.read(manifestFile, io.getValue(), specsById.getValue())
