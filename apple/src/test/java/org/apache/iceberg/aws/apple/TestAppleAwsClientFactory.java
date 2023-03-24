@@ -19,6 +19,9 @@
 
 package org.apache.iceberg.aws.apple;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -26,22 +29,50 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.Collections;
-import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.SparkTestBase;
+import org.apache.spark.SparkConf;
+import org.apache.spark.serializer.KryoSerializer;
 import org.apache.spark.sql.SparkSession;
-import org.junit.Assert;
+import org.assertj.core.api.Assertions;
 import org.junit.Before;
 import org.junit.Test;
 import software.amazon.awssdk.http.apache.ProxyConfiguration;
 
+import static org.apache.iceberg.aws.apple.AppleAwsClientFactory.AWS_REGION;
+import static org.apache.iceberg.aws.apple.AppleAwsClientFactory.S3A_PROXY_HOST;
+import static org.apache.iceberg.aws.apple.AppleAwsClientFactory.S3A_PROXY_PORT;
+import static org.apache.iceberg.aws.apple.AppleAwsClientFactory.S3A_PROXY_SECURED;
+
 public class TestAppleAwsClientFactory extends SparkTestBase {
+
+  private static final String REGION = "us_west";
+  private static final Map<String, String> PROPERTIES =
+      ImmutableMap.<String, String>builder()
+          .put(AWS_REGION, REGION)
+          .build();
+
+  private static final Map<String, String> PROXY_CONFIG =
+      ImmutableMap.<String, String>builder()
+          .put(S3A_PROXY_HOST, "my.proxy.com")
+          .put(S3A_PROXY_PORT, "10")
+          .build();
+
+  private static final Map<String, String> PROXY_SECURED_CONFIG =
+      ImmutableMap.<String, String>builder()
+          .put(S3A_PROXY_HOST, "my.proxy.com")
+          .put(S3A_PROXY_PORT, "10")
+          .put(S3A_PROXY_SECURED, "true")
+          .build();
+
+  private static final Map<String, String> LATE_PROPERTY =
+      ImmutableMap.<String, String>builder()
+          .put("delegatetoken", "newvalue")
+          .build();
 
   private static final Map<String, String> USER_SET =
       ImmutableMap.<String, String>builder()
@@ -67,6 +98,22 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
     SparkSession.setActiveSession(spark);
     PATH_SET.keySet().forEach(spark.sparkContext().hadoopConfiguration()::unset);
     USER_SET.keySet().forEach(spark.sparkContext().hadoopConfiguration()::unset);
+    PROXY_CONFIG.keySet().forEach(spark.sparkContext().hadoopConfiguration()::unset);
+    LATE_PROPERTY.keySet().forEach(spark.sparkContext().hadoopConfiguration()::unset);
+  }
+
+  @SuppressWarnings("checkstyle:RegexpSingleline")
+  private static void setHadoopConf(Map<String, String> conf) {
+    conf.entrySet().forEach(entry ->
+        spark.sparkContext().hadoopConfiguration().set(entry.getKey(), entry.getValue()));
+  }
+
+  private static <T extends Serializable> byte[] serializeKryo(T obj, Kryo kryo) {
+    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+    Output output = new Output(byteArrayOutputStream);
+    kryo.writeObject(output, obj);
+    output.close();
+    return byteArrayOutputStream.toByteArray();
   }
 
   private static <T extends Serializable> byte[] serialize(T obj) throws IOException {
@@ -76,7 +123,6 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
     oos.close();
     return baos.toByteArray();
   }
-
   private static <T extends Serializable> T deserialize(byte[] bytes, Class<T> classTarget)
       throws IOException, ClassNotFoundException {
     ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
@@ -85,12 +131,24 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
     return classTarget.cast(obj);
   }
 
-  @Test
-  public void testSerialization() {
-    Map<String, String> expectedConfig = USER_SET;
+  private static <T extends Serializable> T deserializeKryo(byte[] bytes, Class<T> classTarget, Kryo kryo) {
+    ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+    Input input = new Input(byteArrayInputStream);
+    T deserializedObject = kryo.readObject(input, classTarget);
+    input.close();
+    return deserializedObject;
+  }
 
+  @Test
+  @SuppressWarnings("checkstyle:RegexpSingleline")
+  public void testSerialization() {
+    SparkSession activeSession = spark.newSession();
+    SparkSession.setActiveSession(activeSession);
+    PROXY_CONFIG.entrySet().forEach(entry ->
+        activeSession.conf().set(entry.getKey(), entry.getValue()));
+    setHadoopConf(USER_SET);
     AppleAwsClientFactory factory = new AppleAwsClientFactory();
-    factory.initialize(expectedConfig);
+    factory.initialize(PROPERTIES);
 
     AppleAwsClientFactory serializedFactory;
 
@@ -100,45 +158,64 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
       throw new RuntimeException(e);
     }
 
-    Configuration actual = serializedFactory.config();
-
-    expectedConfig.forEach((k, v) -> Assert.assertEquals("Missing config key", v, actual.get(k)));
+    Assertions.assertThat(serializedFactory.config())
+        .isNotSameAs(activeSession.sparkContext().hadoopConfiguration());
+    Assertions.assertThat(serializedFactory.config()).containsAll(USER_SET.entrySet());
+    Assertions.assertThat(serializedFactory.config()).containsAll(PROPERTIES.entrySet());
+    Assertions.assertThat(serializedFactory.config()).containsAll(PROXY_CONFIG.entrySet());
   }
 
   @Test
-  public void testLowerCasedParams() {
-    Map<String, String> expectedConfig = USER_SET;
-
-    Map<String, String> lowerCaseConfig =
-        USER_SET.entrySet().stream()
-            .collect(
-                Collectors.toMap(k -> k.getKey().toLowerCase(Locale.ROOT), Map.Entry::getValue));
-
+  @SuppressWarnings("checkstyle:RegexpSingleline")
+  public void testSerializationKryo() {
+    SparkSession activeSession = spark.newSession();
+    SparkSession.setActiveSession(activeSession);
+    PROXY_CONFIG.entrySet().forEach(entry ->
+        activeSession.conf().set(entry.getKey(), entry.getValue()));
+    setHadoopConf(USER_SET);
     AppleAwsClientFactory factory = new AppleAwsClientFactory();
-    factory.initialize(lowerCaseConfig);
-    expectedConfig.forEach(
-        (k, v) -> Assert.assertEquals("Missing config key", v, factory.config().get(k)));
+    factory.initialize(PROPERTIES);
+
+    AppleAwsClientFactory serializedFactory;
+
+    Kryo kryo = new KryoSerializer(new SparkConf()).newKryo();
+
+    try {
+      serializedFactory = deserializeKryo(serializeKryo(factory, kryo), AppleAwsClientFactory.class, kryo);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+
+    Assertions.assertThat(serializedFactory.config())
+        .isNotSameAs(spark.sparkContext().hadoopConfiguration());
+    Assertions.assertThat(serializedFactory.config()).containsAll(USER_SET.entrySet());
+    Assertions.assertThat(serializedFactory.config()).containsAll(PROPERTIES.entrySet());
+    Assertions.assertThat(serializedFactory.config()).containsAll(PROXY_CONFIG.entrySet());
   }
 
   @Test
   public void testDynamicCredentialProvider() {
-    Map<String, String> expectedConfig = USER_SET;
-
     ImmutableList<String> classNames =
         ImmutableList.of(
-            "com.apple.awsappleconnect.java.provider.STSAssumeRoleCredentialsProvider",
+            "com.apple.awsappleconnect.java.provider.CachedAWSAppleConnectCredentialsProvider",
+            "com.apple.awsappleconnect.java.provider.STSAssumeRoleFromCredentialsCacheProvider",
             "com.apple.awsappleconnect.java.provider.STSAssumeRoleCredentialsProvider",
             "com.apple.awsappleconnect.java.provider.AWSAppleConnectCredentialsProvider");
 
     classNames.forEach(
         className -> {
           AppleAwsClientFactory factory = new AppleAwsClientFactory();
-          Map<String, String> conf = Maps.newHashMap(expectedConfig);
+          Map<String, String> conf = Maps.newHashMap(USER_SET);
           conf.put("fs.s3a.aws.credentials.provider", className);
+          setHadoopConf(conf);
           factory.initialize(conf);
-          String providerName =
-              factory.getCredentialProviderConstructor().getConstructedClass().getName();
-          Assert.assertEquals(className, providerName);
+
+          try {
+            Assertions.assertThat(factory.getCredentialProviderConstructor().getConstructedClass())
+                    .isAssignableFrom(Class.forName(className));
+          } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+          }
         });
   }
 
@@ -147,29 +224,21 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
     AppleAwsClientFactory factory = new AppleAwsClientFactory();
 
     // Should work with User Config Set
-    factory.initialize(USER_SET);
+    setHadoopConf(USER_SET);
+    factory.initialize(Collections.emptyMap());
+    clearHadoopConf();
+
+    factory = new AppleAwsClientFactory();
 
     // Should work with identity Config set
+    setHadoopConf(PATH_SET);
     factory.initialize(PATH_SET);
+    clearHadoopConf();
 
-    AssertHelpers.assertThrows(
-        "Should report missing properties",
-        IllegalArgumentException.class,
-        "Cannot initialize AppleAwsClientFactory missing properties:",
-        () -> factory.initialize(Collections.emptyMap()));
-  }
-
-  @Test
-  public void testGetConfigFromSparkEnv() {
-    SparkSession freshSession = spark.newSession();
-    USER_SET.entrySet().forEach(kv -> freshSession.conf().set(kv.getKey(), kv.getValue()));
-    SparkSession.setActiveSession(freshSession);
-
-    AppleAwsClientFactory factory = new AppleAwsClientFactory();
-    factory.initialize(Collections.emptyMap());
-
-    USER_SET.forEach(
-        (k, v) -> Assert.assertEquals("Missing config key", v, factory.config().get(k)));
+    Assertions.assertThatThrownBy(
+        () -> new AppleAwsClientFactory().initialize(Collections.emptyMap()),
+        "Should report missing properties"
+    ).hasMessageContaining("Cannot initialize AppleAwsClientFactory missing properties:");
   }
 
   @SuppressWarnings("RegexpSingleline")
@@ -183,25 +252,34 @@ public class TestAppleAwsClientFactory extends SparkTestBase {
     AppleAwsClientFactory factory = new AppleAwsClientFactory();
     factory.initialize(Collections.emptyMap());
 
-    USER_SET.forEach(
-        (k, v) -> Assert.assertEquals("Missing config key", v, factory.config().get(k)));
+    Assertions.assertThat(factory.config()).containsAll(USER_SET.entrySet());
   }
 
   @Test
-  public void testProxyConfig() throws IOException {
-    SparkSession freshSession = spark.newSession();
-    USER_SET.entrySet().forEach(kv -> freshSession.conf().set(kv.getKey(), kv.getValue()));
+  public void testUnsecuredProxyConfig() {
+    setHadoopConf(USER_SET);
+    setHadoopConf(PROXY_CONFIG);
 
-    freshSession.conf().set(AppleAwsClientFactory.AWS_REGION, "us-west-2");
-    freshSession.conf().set(AppleAwsClientFactory.PROXY_HOST, "my.proxy.com");
-    freshSession.conf().set(AppleAwsClientFactory.PROXY_PORT, 10);
-
-    SparkSession.setActiveSession(freshSession);
     AppleAwsClientFactory factory = new AppleAwsClientFactory();
     factory.initialize(Collections.emptyMap());
     ProxyConfiguration proxy = factory.getProxy();
 
-    Assert.assertEquals("my.proxy.com", proxy.host());
-    Assert.assertEquals(10, proxy.port());
+    Assertions.assertThat(proxy.host()).isEqualTo("my.proxy.com");
+    Assertions.assertThat(proxy.port()).isEqualTo(10);
+    Assertions.assertThat(proxy.scheme()).contains("http");
+  }
+
+  @Test
+  public void testSecuredProxyConfig() {
+    setHadoopConf(USER_SET);
+    setHadoopConf(PROXY_SECURED_CONFIG);
+
+    AppleAwsClientFactory factory = new AppleAwsClientFactory();
+    factory.initialize(Collections.emptyMap());
+    ProxyConfiguration proxy = factory.getProxy();
+
+    Assertions.assertThat(proxy.host()).isEqualTo("my.proxy.com");
+    Assertions.assertThat(proxy.port()).isEqualTo(10);
+    Assertions.assertThat(proxy.scheme()).contains("https");
   }
 }
