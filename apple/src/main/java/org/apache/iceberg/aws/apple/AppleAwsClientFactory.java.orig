@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iceberg.aws.apple;
 
 import com.apple.awsappleconnect.java.credentials.AWSAppleCredentials;
@@ -165,13 +166,17 @@ public class AppleAwsClientFactory implements AwsClientFactory, KryoSerializable
     if (proxyHost != null) {
       int proxyPort = config().getInt(S3A_PROXY_PORT, PROXY_PORT_DEFAULT);
 
-      boolean proxySecured = config().getBoolean(S3A_PROXY_SECURED, PROXY_SECURED_DEFAULT);
+      boolean proxySecured =  config().getBoolean(S3A_PROXY_SECURED, PROXY_SECURED_DEFAULT);
 
       String scheme = proxySecured ? HTTPS : HTTP;
 
       // ProxyConfig will ignore everything but host and port
       return ProxyConfiguration.builder()
+<<<<<<< HEAD
+          .endpoint(URI.create("https://" + proxyHost + ":" + proxyPort))
+=======
           .endpoint(URI.create(scheme + proxyHost + ":" + proxyPort))
+>>>>>>> 91fb79f25 (Internal: Fix Scheme in AppleAwsClient Factory (#889))
           .build();
     }
     return null;
