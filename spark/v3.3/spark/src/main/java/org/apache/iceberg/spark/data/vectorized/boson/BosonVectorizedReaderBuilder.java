@@ -18,10 +18,6 @@
  */
 package org.apache.iceberg.spark.data.vectorized.boson;
 
-import com.apple.boson.parquet.BosonIcebergColumnReader;
-import com.apple.boson.parquet.BosonIcebergConstantColumnReader;
-import com.apple.boson.parquet.BosonIcebergDeleteColumnReader;
-import com.apple.boson.parquet.BosonIcebergPositionColumnReader;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -79,19 +75,18 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       int id = field.fieldId();
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
-        BosonIcebergColumnReader constantReader =
-            new BosonIcebergConstantColumnReader<>(idToConstant.get(id), field);
+        BosonColumnReader constantReader =
+            new BosonConstantColumnReader<>(idToConstant.get(id), field);
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
-        reorderedFields.add(new BosonIcebergPositionColumnReader<>(field));
+        reorderedFields.add(new BosonPositionColumnReader(field));
       } else if (id == MetadataColumns.IS_DELETED.fieldId()) {
-        BosonIcebergColumnReader deleteReader = new BosonIcebergDeleteColumnReader<>(field);
+        BosonColumnReader deleteReader = new BosonDeleteColumnReader<>(field);
         reorderedFields.add(deleteReader);
       } else if (reader != null) {
         reorderedFields.add(reader);
       } else {
-        BosonIcebergColumnReader constantReader =
-            new BosonIcebergConstantColumnReader<>(null, field);
+        BosonColumnReader constantReader = new BosonConstantColumnReader<>(null, field);
         reorderedFields.add(constantReader);
       }
     }
@@ -130,6 +125,6 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       return null;
     }
 
-    return new BosonIcebergColumnReader(SparkSchemaUtil.convert(icebergField.type()), desc);
+    return new BosonColumnReader(SparkSchemaUtil.convert(icebergField.type()), desc);
   }
 }
