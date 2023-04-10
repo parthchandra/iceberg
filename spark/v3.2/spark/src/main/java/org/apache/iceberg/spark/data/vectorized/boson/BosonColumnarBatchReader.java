@@ -19,7 +19,8 @@
 
 package org.apache.iceberg.spark.data.vectorized.boson;
 
-import com.apple.boson.parquet.BosonIcebergColumnReader;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import org.apache.iceberg.data.DeleteFilter;
@@ -33,20 +34,34 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 /**
  * {@link VectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized read path. The
  * {@link ColumnarBatch} returned is created by passing in the Arrow vectors populated via delegated read calls to
- * {@linkplain BosonIcebergColumnReader VectorReader(s)}.
+ * {@linkplain BosonColumnReader VectorReader(s)}.
  */
-public class BosonColumnarBatchReader extends BosonBaseBatchReader<ColumnarBatch> {
+public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
+  private final BosonColumnReader[] readers;
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
 
   public BosonColumnarBatchReader(List<VectorizedReader<?>> readers) {
-    super(readers);
+    this.readers = readers.stream()
+        .map(BosonColumnReader.class::cast)
+        .toArray(BosonColumnReader[]::new);
   }
 
   @Override
   public void setRowGroupInfo(PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData,
                               long rowPosition) {
-    super.setRowGroupInfo(pageStore, metaData, rowPosition);
+    for (int i = 0; i < readers.length; i++) {
+      if (readers[i] != null) {
+        try {
+          if (!(readers[i] instanceof BosonConstantColumnReader) &&
+                !(readers[i] instanceof BosonPositionColumnReader)) {
+            readers[i].setPageReader(pageStore.getPageReader(readers[i].getDescriptor()));
+          }
+        } catch (IOException e) {
+          throw new UncheckedIOException("Failed to setRowGroupInfo for Boson vectorization", e);
+        }
+      }
+    }
     this.rowStartPosInBatch = rowPosition;
   }
 
@@ -57,8 +72,26 @@ public class BosonColumnarBatchReader extends BosonBaseBatchReader<ColumnarBatch
   @Override
   public final ColumnarBatch read(ColumnarBatch reuse, int numRowsToRead) {
     BosonColumnBatchLoader batchLoader =
-        new BosonColumnBatchLoader(getReaders(), numRowsToRead, deletes, rowStartPosInBatch);
+        new BosonColumnBatchLoader(readers, numRowsToRead, deletes, rowStartPosInBatch);
     rowStartPosInBatch += numRowsToRead;
     return batchLoader.getColumnarBatch();
+  }
+
+  @Override
+  public void close() {
+    for (BosonColumnReader reader : readers) {
+      if (reader != null) {
+        reader.close();
+      }
+    }
+  }
+
+  @Override
+  public void setBatchSize(int batchSize) {
+    for (BosonColumnReader reader : readers) {
+      if (reader != null) {
+        reader.setBatchSize(batchSize);
+      }
+    }
   }
 }

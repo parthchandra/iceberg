@@ -19,17 +19,15 @@
 
 package org.apache.iceberg.spark.data.vectorized.boson;
 
-import com.apple.boson.parquet.BosonIcebergColumnReader;
-import com.apple.boson.vector.BosonIcebergVector;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.spark.data.vectorized.BaseColumnBatchLoader;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.vectorized.ColumnVector;
 
 class BosonColumnBatchLoader extends BaseColumnBatchLoader {
-  private final BosonIcebergColumnReader[] readers;
+  private final BosonColumnReader[] readers;
 
-  BosonColumnBatchLoader(BosonIcebergColumnReader[] readers, int numRowsToRead,
+  BosonColumnBatchLoader(BosonColumnReader[] readers, int numRowsToRead,
                          DeleteFilter<InternalRow> deletes, long rowStartPosInBatch) {
     super(deletes, rowStartPosInBatch);
     this.readers = readers;
