@@ -18,8 +18,10 @@
  */
 package org.apache.iceberg.spark.actions;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,9 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestEntry;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
@@ -50,12 +54,14 @@ import org.apache.iceberg.actions.CopyTable;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
 import org.apache.iceberg.spark.SparkUtil;
+import org.apache.iceberg.util.JsonUtil;
 import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
@@ -177,8 +183,6 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     endStaticTable = newStaticTable(endVersion, table.io(), tableMetadata -> table.encryption());
 
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
-    Preconditions.checkArgument(
-        tableMetadata.formatVersion() == 1, "Support Iceberg format version 1 only.");
 
     validateAndSetStartVersion(tableMetadata);
 
@@ -280,6 +284,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
    */
   private void rebuildMetadata() {
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
+
+    Preconditions.checkArgument(
+        tableMetadata.statisticsFiles() == null || tableMetadata.statisticsFiles().size() == 0,
+        "Statistic files are not supported yet.");
 
     // rebuild version files
     Set<Long> allSnapshotIds = rewriteVersionFiles(tableMetadata);
@@ -538,6 +546,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     PartitionSpec spec = specsById.getValue().get(manifestFile.partitionSpecId());
     ManifestWriter<DataFile> writer =
         ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
+
+    Preconditions.checkArgument(
+        manifestFile.content() == ManifestContent.DATA,
+        "Delete files(Position delete files and Equality delete files) are not supported yet");
 
     try (ManifestReader<DataFile> reader =
         ManifestFiles.read(manifestFile, io.getValue(), specsById.getValue())
