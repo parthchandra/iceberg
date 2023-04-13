@@ -19,8 +19,7 @@
 
 package org.apache.iceberg.spark.data.vectorized.boson;
 
-import com.apple.boson.vector.BosonVector;
-import org.apache.arrow.vector.ValueVector;
+import com.apple.boson.vector.BosonDelegateVector;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.UTF8String;
@@ -30,7 +29,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * vectorization through Boson
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
-public class BosonIcebergVector extends BosonVector {
+public class BosonIcebergVector extends BosonDelegateVector {
 
   // the rowId mapping to skip deleted rows for all column vectors inside a batch
   // Here is an example:
@@ -41,46 +40,14 @@ public class BosonIcebergVector extends BosonVector {
   // [0,4,5,7,-,-,-,-] -- After applying equality deletes [Set Num records to 4]
   protected int[] rowIdMapping;
 
-  /** The delegate Boson vector containing the actual data. */
-  private BosonVector delegate;
-
   public BosonIcebergVector(DataType type) {
     // FIXME: infer the following boolean flag (from 'spark.boson.use.decimal128') once native
     //  execution is enabled for Iceberg
-    super(type, false);
-  }
-
-  public void setDelegate(BosonVector delegate) {
-    this.delegate = delegate;
+    super(type);
   }
 
   public void setRowIdMapping(int[] rowIdMapping) {
     this.rowIdMapping = rowIdMapping;
-  }
-
-  @Override
-  public ValueVector getValueVector() {
-    return delegate.getValueVector();
-  }
-
-  @Override
-  public void setNumNulls(int numNulls) {
-    delegate.setNumNulls(numNulls);
-  }
-
-  @Override
-  public void setNumValues(int numValues) {
-    delegate.setNumValues(numValues);
-  }
-
-  @Override
-  public boolean hasNull() {
-    return delegate.hasNull();
-  }
-
-  @Override
-  public int numNulls() {
-    return delegate.numNulls();
   }
 
   @Override
@@ -89,7 +56,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.isNullAt(newRowId);
+    return super.isNullAt(newRowId);
   }
 
   @Override
@@ -98,7 +65,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getBoolean(newRowId);
+    return super.getBoolean(newRowId);
   }
 
   @Override
@@ -107,7 +74,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getByte(newRowId);
+    return super.getByte(newRowId);
   }
 
   @Override
@@ -116,7 +83,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getShort(newRowId);
+    return super.getShort(newRowId);
   }
 
   @Override
@@ -125,7 +92,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getInt(newRowId);
+    return super.getInt(newRowId);
   }
 
   @Override
@@ -134,7 +101,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getLong(newRowId);
+    return super.getLong(newRowId);
   }
 
   @Override
@@ -143,7 +110,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getFloat(newRowId);
+    return super.getFloat(newRowId);
   }
 
   @Override
@@ -152,7 +119,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getDouble(newRowId);
+    return super.getDouble(newRowId);
   }
 
   @Override
@@ -164,7 +131,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getDecimal(newRowId, precision, scale);
+    return super.getDecimal(newRowId, precision, scale);
   }
 
   @Override
@@ -176,7 +143,7 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getUTF8String(newRowId);
+    return super.getUTF8String(newRowId);
   }
 
   @Override
@@ -188,6 +155,6 @@ public class BosonIcebergVector extends BosonVector {
     if (rowIdMapping != null) {
       newRowId = rowIdMapping[rowId];
     }
-    return delegate.getBinary(newRowId);
+    return super.getBinary(newRowId);
   }
 }
