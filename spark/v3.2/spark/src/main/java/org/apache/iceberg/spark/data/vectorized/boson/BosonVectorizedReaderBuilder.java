@@ -19,10 +19,6 @@
 
 package org.apache.iceberg.spark.data.vectorized.boson;
 
-import com.apple.boson.parquet.BosonIcebergColumnReader;
-import com.apple.boson.parquet.BosonIcebergConstantColumnReader;
-import com.apple.boson.parquet.BosonIcebergPositionColumnReader;
-import com.apple.boson.parquet.TypeUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -41,9 +37,6 @@ import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.Metadata;
-import org.apache.spark.sql.types.StructField;
 
 public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<VectorizedReader<?>> {
   private final MessageType parquetSchema;
@@ -84,19 +77,17 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       int id = field.fieldId();
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(idToConstant.get(id), field);
+        BosonColumnReader constantReader = new BosonConstantColumnReader<>(idToConstant.get(id), field);
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
-        reorderedFields.add(new BosonIcebergPositionColumnReader<>(field));
+        reorderedFields.add(new BosonPositionColumnReader(field));
       } else if (id == MetadataColumns.IS_DELETED.fieldId()) {
-        StructField structField = new StructField(field.name(), DataTypes.BooleanType, false, Metadata.empty());
-        ColumnDescriptor descriptor = TypeUtil.convertToParquet(structField);
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(false, field);
+        BosonColumnReader constantReader = new BosonConstantColumnReader<>(false, field);
         reorderedFields.add(constantReader);
       } else if (reader != null) {
         reorderedFields.add(reader);
       } else {
-        BosonIcebergColumnReader constantReader = new BosonIcebergConstantColumnReader<>(null, field);
+        BosonColumnReader constantReader = new BosonConstantColumnReader<>(null, field);
         reorderedFields.add(constantReader);
       }
     }
@@ -136,6 +127,6 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       return null;
     }
 
-    return new BosonIcebergColumnReader(SparkSchemaUtil.convert(icebergField.type()), desc);
+    return new BosonColumnReader(SparkSchemaUtil.convert(icebergField.type()), desc);
   }
 }

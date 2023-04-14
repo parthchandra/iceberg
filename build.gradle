@@ -500,7 +500,7 @@ project(':iceberg-parquet') {
       exclude group: 'org.codehaus.jackson'
     }
 
-    implementation("com.apple.pie.boson:boson-iceberg-spark3.2_2.12") {
+    implementation("com.apple.pie.boson:boson-common-spark3.2_2.12") {
       exclude group: 'org.apache.arrow'
       exclude group: 'org.apache.parquet'
       exclude group: 'org.apache.spark', module: 'spark-sql_2.12'
