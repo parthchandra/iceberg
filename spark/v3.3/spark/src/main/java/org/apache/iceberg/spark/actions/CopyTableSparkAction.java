@@ -30,6 +30,7 @@ import java.util.UUID;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestEntry;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
@@ -177,8 +178,6 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     endStaticTable = newStaticTable(endVersion, table.io(), tableMetadata -> table.encryption());
 
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
-    Preconditions.checkArgument(
-        tableMetadata.formatVersion() == 1, "Support Iceberg format version 1 only.");
 
     validateAndSetStartVersion(tableMetadata);
 
@@ -280,6 +279,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
    */
   private void rebuildMetadata() {
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
+
+    Preconditions.checkArgument(
+        tableMetadata.statisticsFiles() == null || tableMetadata.statisticsFiles().size() == 0,
+        "Statistic files are not supported yet.");
 
     // rebuild version files
     Set<Long> allSnapshotIds = rewriteVersionFiles(tableMetadata);
@@ -538,6 +541,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     PartitionSpec spec = specsById.getValue().get(manifestFile.partitionSpecId());
     ManifestWriter<DataFile> writer =
         ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
+
+    Preconditions.checkArgument(
+        manifestFile.content() == ManifestContent.DATA,
+        "Delete files(Position delete files and Equality delete files) are not supported yet");
 
     try (ManifestReader<DataFile> reader =
         ManifestFiles.read(manifestFile, io.getValue(), specsById.getValue())

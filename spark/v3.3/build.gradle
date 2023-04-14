@@ -81,7 +81,7 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'org.apache.parquet'
     }
 
-    implementation("com.apple.pie.boson:boson-iceberg-spark${sparkMajorVersion}_${scalaVersion}") {
+    implementation("com.apple.pie.boson:boson-common-spark${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'org.apache.arrow', module: 'arrow-vector'
       exclude group: 'org.apache.spark'
       exclude group: 'org.apache.iceberg'
