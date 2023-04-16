@@ -316,6 +316,12 @@ public class TableProperties {
   public static final String DELETE_TARGET_FILE_SIZE_BYTES = "write.delete.target-file-size-bytes";
   public static final long DELETE_TARGET_FILE_SIZE_BYTES_DEFAULT = 64 * 1024 * 1024; // 64 MB
 
+  public static final String FLINK_WATERMARK_ENABLED = "write.flink.watermark.enabled";
+  public static final boolean FLINK_WATERMARK_ENABLED_DEFAULT = false;
+
+  public static final String FLINK_WATERMARK = "write.flink.watermark";
+  public static final long FLINK_WATERMARK_DEFAULT = -1;
+
   public static final String SPARK_WRITE_PARTITIONED_FANOUT_ENABLED = "write.spark.fanout.enabled";
   public static final boolean SPARK_WRITE_PARTITIONED_FANOUT_ENABLED_DEFAULT = false;
 

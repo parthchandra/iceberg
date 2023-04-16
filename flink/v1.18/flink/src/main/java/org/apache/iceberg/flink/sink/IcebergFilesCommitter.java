@@ -18,6 +18,11 @@
  */
 package org.apache.iceberg.flink.sink;
 
+import static org.apache.iceberg.TableProperties.FLINK_WATERMARK;
+import static org.apache.iceberg.TableProperties.FLINK_WATERMARK_DEFAULT;
+import static org.apache.iceberg.TableProperties.FLINK_WATERMARK_ENABLED;
+import static org.apache.iceberg.TableProperties.FLINK_WATERMARK_ENABLED_DEFAULT;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -37,6 +42,7 @@ import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.BoundedOneInput;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.runtime.typeutils.SortedMapTypeInfo;
 import org.apache.iceberg.AppendFiles;
@@ -93,6 +99,7 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
   // table. So we keep the finished files <1, <file0, file1>> in memory and retry to commit iceberg
   // table when the next checkpoint happen.
   private final NavigableMap<Long, byte[]> dataFilesPerCheckpoint = Maps.newTreeMap();
+  private final NavigableMap<Long, Long> watermarkPerCheckpoint = Maps.newTreeMap();
 
   // The completed files cache for current checkpoint. Once the snapshot barrier received, it will
   // be flushed to the 'dataFilesPerCheckpoint'.
@@ -106,8 +113,10 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
   private transient IcebergFilesCommitterMetrics committerMetrics;
   private transient ManifestOutputFileFactory manifestOutputFileFactory;
   private transient long maxCommittedCheckpointId;
+  private transient long currentWatermark;
   private transient int continuousEmptyCheckpoints;
   private transient int maxContinuousEmptyCommits;
+  private transient boolean flinkWatermarkEnabled;
   // There're two cases that we restore from flink checkpoints: the first case is restoring from
   // snapshot created by the same flink job; another case is restoring from snapshot created by
   // another different job. For the second case, we need to maintain the old flink job's id in flink
@@ -155,6 +164,9 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
         PropertyUtil.propertyAsInt(table.properties(), MAX_CONTINUOUS_EMPTY_COMMITS, 10);
     Preconditions.checkArgument(
         maxContinuousEmptyCommits > 0, MAX_CONTINUOUS_EMPTY_COMMITS + " must be positive");
+    this.flinkWatermarkEnabled =
+        PropertyUtil.propertyAsBoolean(
+            table.properties(), FLINK_WATERMARK_ENABLED, FLINK_WATERMARK_ENABLED_DEFAULT);
 
     int subTaskId = getRuntimeContext().getIndexOfThisSubtask();
     int attemptId = getRuntimeContext().getAttemptNumber();
@@ -162,6 +174,7 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
         FlinkManifestUtil.createOutputFileFactory(
             () -> table, table.properties(), flinkJobId, operatorUniqueId, subTaskId, attemptId);
     this.maxCommittedCheckpointId = INITIAL_CHECKPOINT_ID;
+    this.currentWatermark = FLINK_WATERMARK_DEFAULT;
 
     this.checkpointsState = context.getOperatorStateStore().getListState(STATE_DESCRIPTOR);
     this.jobIdState = context.getOperatorStateStore().getListState(JOB_ID_DESCRIPTOR);
@@ -181,6 +194,13 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
       Preconditions.checkState(
           !Strings.isNullOrEmpty(restoredFlinkJobId),
           "Flink job id parsed from checkpoint snapshot shouldn't be null or empty");
+
+      // We didn't restore watermark from the restored snapshot id because we don't want watermark
+      // to move backward. Eg: Table has snapshot 1, 2, 3 and restored to snapshot 1.
+      // Watermark will be read from the latest, id 3.
+      if (flinkWatermarkEnabled) {
+        this.currentWatermark = getLatestWatermarkFromSnapshots(table, branch);
+      }
 
       // Since flink's checkpoint id will start from the max-committed-checkpoint-id + 1 in the new
       // flink job even if it's restored from a snapshot created by another different flink job, so
@@ -217,6 +237,7 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
     // Reset the snapshot state to the latest state.
     checkpointsState.clear();
     checkpointsState.add(dataFilesPerCheckpoint);
+    watermarkPerCheckpoint.put(checkpointId, currentWatermark);
 
     jobIdState.clear();
     jobIdState.add(flinkJobId);
@@ -411,6 +432,17 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
     operation.set(OPERATOR_ID, operatorId);
     operation.toBranch(branch);
 
+    // Setting watermark in snapshot
+    NavigableMap<Long, Long> watermarkMapUpToCurrentCheckpoint =
+        watermarkPerCheckpoint.headMap(checkpointId, true);
+    if (flinkWatermarkEnabled) {
+      Long watermarkNow = watermarkMapUpToCurrentCheckpoint.get(checkpointId);
+      if (watermarkNow != null && watermarkNow >= 0) {
+        operation.set(FLINK_WATERMARK, String.valueOf(watermarkNow));
+        LOG.info("Set snapshot summary property for {} to: {}.", FLINK_WATERMARK, watermarkNow);
+      }
+    }
+
     long startNano = System.nanoTime();
     operation.commit(); // abort is automatically called if this fails.
     long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNano);
@@ -422,6 +454,12 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
         checkpointId,
         durationMs);
     committerMetrics.commitDuration(durationMs);
+
+    // Clear watermarkPerCheckpoint only till its checkpointId to prevent cases that there are
+    // unfinished concurrent commit operations. Note that watermarkMap is a sub map view of
+    // watermarkPerCheckpoint. So cleaning watermarkMap will clear the entries in
+    // watermarkPerCheckpoint.
+    watermarkMapUpToCurrentCheckpoint.clear();
   }
 
   @Override
@@ -431,6 +469,13 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
         writeResultsSinceLastSnapshot.computeIfAbsent(
             flinkWriteResult.checkpointId(), k -> Lists.newArrayList());
     writeResults.add(flinkWriteResult.writeResult());
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    // Watermark must move forward.
+    currentWatermark = Math.max(currentWatermark, mark.getTimestamp());
+    super.processWatermark(mark);
   }
 
   @Override
@@ -526,5 +571,35 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
     }
 
     return lastCommittedCheckpointId;
+  }
+
+  /**
+   * This function traverses the Iceberg table snapshots to get the latest watermark. Note that some
+   * snapshots might not contain the watermark entry if they were not generated by Iceberg
+   * committer. (eg, compaction job).
+   */
+  protected static long getLatestWatermarkFromSnapshots(Table table, String branch) {
+    long watermark = FLINK_WATERMARK_DEFAULT;
+
+    Snapshot snapshot = table.snapshot(branch);
+    while (snapshot != null) {
+      if (snapshot.summary().containsKey(FLINK_WATERMARK)) {
+        watermark = Long.parseLong(snapshot.summary().get(FLINK_WATERMARK));
+        break;
+      }
+
+      if (snapshot.parentId() != null) {
+        snapshot = table.snapshot(snapshot.parentId());
+      } else {
+        snapshot = null;
+      }
+    }
+
+    return watermark;
+  }
+
+  @VisibleForTesting
+  long currentWatermark() {
+    return currentWatermark;
   }
 }
