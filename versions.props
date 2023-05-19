@@ -29,8 +29,8 @@ org.scala-lang.modules:scala-collection-compat_2.12 = 2.6.0
 org.scala-lang.modules:scala-collection-compat_2.13 = 2.6.0
 com.emc.ecs:object-client-bundle = 3.3.2
 io.dropwizard.metrics:* = 4.2.0
-com.apple.pie.boson:boson-common-spark3.3_2.12 = 0.3.2
-com.apple.pie.boson:boson-common-spark3.3_2.13 = 0.3.2
+com.apple.pie.boson:boson-common-spark3.3_2.12 = 0.3.5
+com.apple.pie.boson:boson-common-spark3.3_2.13 = 0.3.5
 
 # test deps
 org.junit.vintage:junit-vintage-engine = 5.8.2
