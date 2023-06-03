@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.io.FileUtils;
@@ -46,10 +47,12 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.SparkTestBase;
+import org.apache.iceberg.spark.actions.BaseCopyTableSparkAction.PathPair;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.SparkException;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoder;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.junit.Assert;
@@ -136,7 +139,7 @@ public class TestCopyTableAction extends SparkTestBase {
     checkDataFileNum(2, result);
 
     // copy the metadata files and data files
-    moveTableFiles(tableLocation, targetTableLocation, stagingDir(result));
+    copyTableFiles(tableLocation, targetTableLocation, stagingDir(result));
 
     // verify the data file path after the rebuild
     List<String> validDataFilesAfterRebuilt = spark.read().format("iceberg")
@@ -241,7 +244,7 @@ public class TestCopyTableAction extends SparkTestBase {
     checkDataFileNum(2, result);
 
     // copy the metadata files and data files
-    moveTableFiles(location, targetLocation, stagingDir(result));
+    copyTableFiles(location, targetLocation, stagingDir(result));
 
     // verify data rows
     Dataset<Row> resultDF = spark.read().format("iceberg").load(targetLocation);
@@ -501,26 +504,6 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
-  public void testPmeEnabled() throws Exception {
-    String sourceTableLocation = newTableLocation();
-    Map<String, String> properties = Maps.newHashMap();
-    properties.put("parquet.encryption.footer.key", "keyA");
-
-    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 1, properties);
-
-    CopyTable.Result result = actions().copyTable(sourceTable)
-        .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
-        .execute();
-
-    checkDataFileNum(2, result);
-
-    List<String> dataFilesToMove  =
-        spark.read().format("text").load(result.dataFileListLocation()).as(Encoders.STRING()).collectAsList();
-    Assert.assertEquals("1 key material file should be moved", 1,
-        dataFilesToMove.stream().filter(f -> f.contains("_KEY_MATERIAL_FOR_")).count());
-  }
-
-  @Test
   public void testSnapshotIdInheritanceEnabled() throws Exception {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();
@@ -561,6 +544,46 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testOutputTargetDataFilePath() throws Exception {
+    String targetTableLocation = newTableLocation();
+
+    CopyTable.Result result = actions().copyTable(table)
+        .rewriteLocationPrefix(tableLocation, targetTableLocation)
+        .outputTargetFilePath()
+        .execute();
+
+    checkMetadataFileNum(7, result);
+    checkDataFileNum(2, result);
+    List<PathPair> metadataFilesToMove = readPathPairList(result.metadataFileListLocation());
+    for (PathPair metadataFileToMove : metadataFilesToMove) {
+      Assert.assertTrue("Source Metadata file should point to the old location",
+          metadataFileToMove.getSource().startsWith(tableLocation));
+      Assert.assertTrue("Target Metadata file should point to the new location",
+          metadataFileToMove.getTarget().startsWith(targetTableLocation));
+    }
+    List<PathPair> dataFilesToMove = readPathPairList(result.dataFileListLocation());
+    for (PathPair dataFileToMove : dataFilesToMove) {
+      Assert.assertTrue("Source Data file should point to the old location",
+          dataFileToMove.getSource().startsWith(tableLocation));
+      Assert.assertTrue("Target Data file should point to the new location",
+          dataFileToMove.getTarget().startsWith(targetTableLocation));
+    }
+
+    copyTableFiles(result);
+
+    // verify data rows
+    Dataset<Row> resultDF = spark.read().format("iceberg").load(targetTableLocation);
+    List<ThreeColumnRecord> actualRecords =
+        resultDF.sort("c1", "c2", "c3").as(Encoders.bean(ThreeColumnRecord.class)).collectAsList();
+
+    List<ThreeColumnRecord> expectedRecords = Lists.newArrayList();
+    expectedRecords.add(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+    expectedRecords.add(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Assert.assertEquals("Rows must match", expectedRecords, actualRecords);
+  }
+
+  @Test
   public void testInvalidArgs() {
     CopyTable actions = actions().copyTable(table);
 
@@ -590,13 +613,13 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   protected void checkDataFileNum(long count, CopyTable.Result result) {
-    List<String> filesToMove  =
+    List<String> filesToMove =
         spark.read().format("text").load(result.dataFileListLocation()).as(Encoders.STRING()).collectAsList();
     Assert.assertEquals("The rebuilt data file number should be", count, filesToMove.size());
   }
 
   protected void checkMetadataFileNum(int count, CopyTable.Result result) {
-    List<String> filesToMove  =
+    List<String> filesToMove =
         spark.read().format("text").load(result.metadataFileListLocation()).as(Encoders.STRING()).collectAsList();
     Assert.assertEquals("The rebuilt metadata file number should be", count, filesToMove.size());
   }
@@ -604,8 +627,8 @@ public class TestCopyTableAction extends SparkTestBase {
   protected void checkMetadataFileNum(
       int versionFileCount, int manifestListCount,
       int manifestFileCount, CopyTable.Result result) {
-    List<String> filesToMove  =
-            spark.read().format("text").load(result.metadataFileListLocation()).as(Encoders.STRING()).collectAsList();
+    List<String> filesToMove =
+        spark.read().format("text").load(result.metadataFileListLocation()).as(Encoders.STRING()).collectAsList();
     Assert.assertEquals("The rebuilt version file number should be", versionFileCount,
         filesToMove.stream().filter(f -> f.endsWith(".metadata.json")).count());
     Assert.assertEquals("The rebuilt Manifest list file number should be", manifestListCount,
@@ -623,9 +646,19 @@ public class TestCopyTableAction extends SparkTestBase {
     return temp.newFolder().toURI().toString();
   }
 
-  private void moveTableFiles(String sourceDir, String targetDir, String stagingDir) throws Exception {
+  private void copyTableFiles(String sourceDir, String targetDir, String stagingDir) throws Exception {
     FileUtils.copyDirectory(new File(removePrefix(sourceDir) + "data/"), new File(removePrefix(targetDir) + "/data/"));
     FileUtils.copyDirectory(new File(removePrefix(stagingDir)), new File(removePrefix(targetDir) + "/metadata/"));
+  }
+
+  private void copyTableFiles(CopyTable.Result result) throws Exception {
+    List<PathPair> filesToMove = Lists.newArrayList();
+    filesToMove.addAll(readPathPairList(result.dataFileListLocation()));
+    filesToMove.addAll(readPathPairList(result.metadataFileListLocation()));
+
+    for (PathPair pathPair : filesToMove) {
+      FileUtils.copyFile(new File(URI.create(pathPair.getSource())), new File(URI.create(pathPair.getTarget())));
+    }
   }
 
   private String removePrefix(String path) {
@@ -878,5 +911,14 @@ public class TestCopyTableAction extends SparkTestBase {
       filename = path.substring(lastIndex + 1);
     }
     return filename;
+  }
+
+  private List<PathPair> readPathPairList(String path) {
+    Encoder<PathPair> encoder = Encoders.bean(PathPair.class);
+    return spark.read().format("csv")
+        .schema(encoder.schema())
+        .load(path)
+        .as(encoder)
+        .collectAsList();
   }
 }

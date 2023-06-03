@@ -72,6 +72,15 @@ public interface CopyTable extends Action<CopyTable, CopyTable.Result> {
   CopyTable targetTable(Table targetTable);
 
   /**
+   * Configures format of {@link Result#dataFileListLocation()} and {@link Result#metadataFileListLocation()} files.
+   * If specified, the file lists are formatted as a CSV files containing both the source and target locations.
+   * If not specified, the file lists are text files containing only the source locations.
+   *
+   * @return this for method chaining
+   */
+  CopyTable outputTargetFilePath();
+
+  /**
    * The action result that contains a summary of the execution.
    */
   interface Result {
