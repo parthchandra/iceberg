@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.spark.source;
 
-import com.apple.boson.parquet.SupportsBoson;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +49,7 @@ import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoson {
+abstract class SparkScan implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(SparkScan.class);
 
   private final JavaSparkContext sparkContext;
@@ -130,17 +129,6 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoso
   @Override
   public Statistics estimateStatistics() {
     return estimateStatistics(table.currentSnapshot());
-  }
-
-  @Override
-  public boolean isBosonEnabled() {
-    if (this.readConf.enableBoson()) {
-      SparkBatch batch = (SparkBatch) this.toBatch();
-      if (batch.useParquetBatchReads()) {
-        return true;
-      }
-    }
-    return false;
   }
 
   protected Statistics estimateStatistics(Snapshot snapshot) {
