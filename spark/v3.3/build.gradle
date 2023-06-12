@@ -293,6 +293,8 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
       exclude 'com.apple.boson.NativeBase*'
       exclude 'com.apple.boson.Native'
       exclude 'com.apple.boson.parquet.Native'
+      // We shouldn't relocate this because Boson checks whether Iceberg classes extend from this interface
+      exclude 'com.apple.boson.parquet.SupportsBoson'
     }
     relocate 'org.apache.spark.sql.boson', 'org.apache.iceberg.shaded.org.apache.spark.sql.boson'
 
