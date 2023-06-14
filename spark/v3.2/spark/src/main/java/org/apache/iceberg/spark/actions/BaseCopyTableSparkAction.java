@@ -23,13 +23,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.GZIPInputStream;
@@ -65,7 +63,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.util.JsonUtil;
-import org.apache.spark.api.java.function.ForeachPartitionFunction;
+import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoder;
@@ -85,12 +83,12 @@ public class BaseCopyTableSparkAction
   private static final String METADATA_FILE_LIST_DIR = "metadata-file-list-to-move";
 
   private final Table table;
-  private final Set<PathPair> metadataFilesToMove = Collections.synchronizedSet(Sets.newHashSet());
+  private final Set<String> metadataFilesToMove = Collections.synchronizedSet(Sets.newHashSet());
   private final Set<String> manifestFilePaths = Collections.synchronizedSet(Sets.newHashSet());
   private final Set<ManifestFile> manifestFilesToRewrite = Collections.synchronizedSet(Sets.newHashSet());
-  private final Set<PathPair> dataFilesToMove = Collections.synchronizedSet(Sets.newHashSet());
   private String dataFileListPath = null;
   private String metadataFileListPath = null;
+  private final boolean enabledPME;
 
   private String sourcePrefix = "";
   private String targetPrefix = "";
@@ -98,7 +96,6 @@ public class BaseCopyTableSparkAction
   private String endVersion = "";
   private String stagingDir = "";
   private Table targetTable = null;
-  private boolean outputTargetFilePath = false;
 
   private Table startStaticTable = null;
   private Table endStaticTable = null;
@@ -106,6 +103,7 @@ public class BaseCopyTableSparkAction
   public BaseCopyTableSparkAction(SparkSession spark, Table table) {
     super(spark);
     this.table = table;
+    enabledPME = table.properties().containsKey("parquet.encryption.footer.key");
   }
 
   @Override
@@ -146,12 +144,6 @@ public class BaseCopyTableSparkAction
   @Override
   public CopyTable targetTable(Table tgtTable) {
     this.targetTable = tgtTable;
-    return this;
-  }
-
-  @Override
-  public CopyTable outputTargetFilePath() {
-    this.outputTargetFilePath = true;
     return this;
   }
 
@@ -288,10 +280,12 @@ public class BaseCopyTableSparkAction
     validSnapshots.forEach(snapshot -> rewriteManifestList(snapshot, tableMetadata));
 
     // rebuild manifest files
-    rewriteManifests(tableMetadata);
-
+    List<ManifestFile> newManifests = rewriteManifests(tableMetadata);
+    newManifests.forEach(manifestFile -> addToRebuiltFiles(manifestFile.path()));
     saveMetadataFileList();
-    saveDataFileList();
+
+    Dataset<Row> dataFiles = getDiffDataFiles(diffSnapshotIds);
+    saveDataFileList(dataFiles);
   }
 
   private boolean hasStatisticFiles(TableMetadata tableMetadata) {
@@ -309,26 +303,35 @@ public class BaseCopyTableSparkAction
     }
   }
 
-  private String saveFileList(Set<PathPair> filesToMove, String fileListDir) {
-    List<PathPair> fileList = Lists.newLinkedList();
-    fileList.addAll(filesToMove);
-    Dataset<PathPair> fileListDataset = spark().createDataset(fileList, Encoders.bean(PathPair.class));
-    String fileListPath = stagingDir + fileListDir;
-
-    if (outputTargetFilePath) {
-      fileListDataset.repartition(1).write().mode(SaveMode.Overwrite).format("csv").save(fileListPath);
-    } else {
-      fileListDataset.drop("target").repartition(1).write().mode(SaveMode.Overwrite).format("text").save(fileListPath);
-    }
-    return fileListPath;
-  }
-
   private void saveMetadataFileList() {
-    metadataFileListPath = saveFileList(metadataFilesToMove, METADATA_FILE_LIST_DIR);
+    List<String> fileList = Lists.newArrayList();
+    fileList.addAll(metadataFilesToMove);
+    Dataset<String> metadataFileList = spark().createDataset(fileList, Encoders.STRING());
+    metadataFileListPath = stagingDir + METADATA_FILE_LIST_DIR;
+    metadataFileList.repartition(1).write().mode(SaveMode.Overwrite).format("text").save(metadataFileListPath);
   }
 
-  private void saveDataFileList() {
-    dataFileListPath = saveFileList(dataFilesToMove, DATA_FILE_LIST_DIR);
+  private void saveDataFileList(Dataset<Row> dataFiles) {
+    dataFileListPath = stagingDir + DATA_FILE_LIST_DIR;
+
+    try {
+      Dataset<Row> dataFileDf = addKeyMaterialIfPmeEnabled(dataFiles);
+      dataFileDf.repartition(1).write().mode(SaveMode.Overwrite).format("text").save(dataFileListPath);
+    } catch (Exception e) {
+      throw new UnsupportedOperationException("Failed to build the data files dataframe, the end version you are " +
+          "trying to copy may contain invalid snapshots, please use the younger version which doesn't have invalid " +
+          "snapshots", e);
+    }
+  }
+
+  private Dataset<Row> addKeyMaterialIfPmeEnabled(Dataset<Row> dataFiles) {
+    if (enabledPME) {
+      return dataFiles.select(functions.explode(functions.array(
+          functions.column("file_path"),
+          functions.regexp_replace(functions.column("file_path"), "/([^/]*.parquet)$", "/_KEY_MATERIAL_FOR_$1.json"))));
+    } else {
+      return dataFiles;
+    }
   }
 
   private Set<Long> getDiffSnapshotIds(Set<Long> allSnapshotIds) {
@@ -342,8 +345,9 @@ public class BaseCopyTableSparkAction
   private Set<Long> rewriteVersionFiles(TableMetadata metadata) {
     Set<Long> allSnapshotIds = Sets.newHashSet();
 
+    String stagingPath = stagingPath(endVersion, stagingDir);
     metadata.snapshots().forEach(snapshot -> allSnapshotIds.add(snapshot.snapshotId()));
-    rewriteVersionFile(metadata, endVersion);
+    rewriteVersionFile(metadata, stagingPath);
 
     List<MetadataLogEntry> versions = metadata.previousFiles();
     for (int i = versions.size() - 1; i >= 0; i--) {
@@ -355,11 +359,12 @@ public class BaseCopyTableSparkAction
       Preconditions.checkArgument(
           fileExist(versionFilePath),
           String.format("Version file %s doesn't exist", versionFilePath));
+      String newPath = stagingPath(versionFilePath, stagingDir);
       TableMetadata tableMetadata = new StaticTableOperations(versionFilePath, table.io()).current();
 
       tableMetadata.snapshots().forEach(snapshot -> allSnapshotIds.add(snapshot.snapshotId()));
 
-      rewriteVersionFile(tableMetadata, versionFilePath);
+      rewriteVersionFile(tableMetadata, newPath);
     }
 
     return allSnapshotIds;
@@ -375,11 +380,10 @@ public class BaseCopyTableSparkAction
     return snapshots;
   }
 
-  private void rewriteVersionFile(TableMetadata metadata, String versionFilePath) {
-    String stagingPath = stagingPath(versionFilePath, stagingDir);
+  private void rewriteVersionFile(TableMetadata metadata, String stagingPath) {
     TableMetadata newTableMetadata = TableMetadataUtil.replacePaths(metadata, sourcePrefix, targetPrefix, table.io());
     TableMetadataParser.overwrite(newTableMetadata, table.io().newOutputFile(stagingPath));
-    metadataFilesToMove.add(new PathPair(stagingPath, newPath(versionFilePath, sourcePrefix, targetPrefix)));
+    addToRebuiltFiles(stagingPath);
   }
 
   private void rewriteManifestList(Snapshot snapshot, TableMetadata tableMetadata) {
@@ -391,20 +395,19 @@ public class BaseCopyTableSparkAction
         snapshot.snapshotId(), snapshot.parentId(), snapshot.sequenceNumber())) {
 
       for (ManifestFile file : manifestFiles) {
+        // need to get the ManifestFile object for manifest file rewriting
+        if (manifestFilePaths.contains(file.path())) {
+          manifestFilesToRewrite.add(file);
+        }
+
         ManifestFile newFile = file.copy();
         if (newFile.path().startsWith(sourcePrefix)) {
           ((StructLike) newFile).set(0, newPath(newFile.path(), sourcePrefix, targetPrefix));
         }
         writer.add(newFile);
-
-        // need to get the ManifestFile object for manifest file rewriting
-        if (manifestFilePaths.contains(file.path())) {
-          manifestFilesToRewrite.add(file);
-          metadataFilesToMove.add(new PathPair(stagingPath(file.path(), stagingDir), newFile.path()));
-        }
       }
 
-      metadataFilesToMove.add(new PathPair(stagingPath, newPath(path, sourcePrefix, targetPrefix)));
+      addToRebuiltFiles(stagingPath);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to rewrite the manifest list file " + path, e);
     }
@@ -444,9 +447,9 @@ public class BaseCopyTableSparkAction
   /**
    * Rewrite manifest files in a distributed manner.
    */
-  private void rewriteManifests(TableMetadata tableMetadata) {
+  private List<ManifestFile> rewriteManifests(TableMetadata tableMetadata) {
     if (manifestFilesToRewrite.isEmpty()) {
-      return;
+      return Lists.newArrayList();
     }
 
     Encoder<ManifestFile> manifestFileEncoder = Encoders.javaSerialization(ManifestFile.class);
@@ -455,32 +458,33 @@ public class BaseCopyTableSparkAction
 
     Broadcast<FileIO> io = sparkContext().broadcast(SparkUtil.serializableFileIO(table));
     Broadcast<Map<Integer, PartitionSpec>> specsById = sparkContext().broadcast(tableMetadata.specsById());
-    Broadcast<Set<PathPair>> dataFiles = sparkContext().broadcast(Sets.newHashSet());
 
-    manifestDS
+    return manifestDS
         .repartition(manifestFilesToRewrite.size())
-        .foreachPartition(
-            writeManifests(io, stagingDir, tableMetadata.formatVersion(), specsById, sourcePrefix, targetPrefix,
-                dataFiles)
-        );
-    dataFilesToMove.addAll(dataFiles.value());
+        .mapPartitions(
+            toManifests(io, stagingDir, tableMetadata.formatVersion(), specsById, sourcePrefix, targetPrefix),
+            manifestFileEncoder
+        )
+        .collectAsList();
   }
 
-  private static ForeachPartitionFunction<ManifestFile> writeManifests(
+  private static MapPartitionsFunction<ManifestFile, ManifestFile> toManifests(
       Broadcast<FileIO> io, String stagingLocation, int format, Broadcast<Map<Integer, PartitionSpec>> specsById,
-      String sourcePrefix, String targetPrefix, Broadcast<Set<PathPair>> dataFilesToMove) {
+      String sourcePrefix, String targetPrefix) {
 
     return rows -> {
+      List<ManifestFile> manifests = Lists.newArrayList();
       while (rows.hasNext()) {
-        writeManifest(rows.next(), io, stagingLocation, format, specsById, sourcePrefix, targetPrefix, dataFilesToMove);
+        manifests.add(writeManifest(rows.next(), io, stagingLocation, format, specsById, sourcePrefix, targetPrefix));
       }
+
+      return manifests.iterator();
     };
   }
 
-  private static void writeManifest(
+  private static ManifestFile writeManifest(
       ManifestFile manifestFile, Broadcast<FileIO> io, String stagingLocation, int format,
-      Broadcast<Map<Integer, PartitionSpec>> specsById, String sourcePrefix, String targetPrefix,
-      Broadcast<Set<PathPair>> dataFilesToMove) throws IOException {
+      Broadcast<Map<Integer, PartitionSpec>> specsById, String sourcePrefix, String targetPrefix) throws IOException {
 
     String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
     OutputFile outputFile = io.value().newOutputFile(stagingPath);
@@ -489,23 +493,27 @@ public class BaseCopyTableSparkAction
     Preconditions.checkArgument(manifestFile.content() == ManifestContent.DATA,
         "Delete files(Position delete files and Equality delete files) are not supported yet");
 
-    try (ManifestWriter<DataFile> writer = ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
-         ManifestReader<DataFile> reader = ManifestFiles.read(manifestFile, io.getValue(), specsById.getValue())
-             .select(Arrays.asList("*"))) {
-      reader.entries().forEach(entry -> appendEntry(entry, writer, spec, sourcePrefix, targetPrefix, dataFilesToMove));
+    ManifestWriter<DataFile> writer = ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
+
+    try (ManifestReader<DataFile> reader = ManifestFiles.read(manifestFile, io.getValue(), specsById.getValue())
+        .select(Arrays.asList("*"))) {
+      reader.entries().forEach(entry -> appendEntry(entry, writer, spec, sourcePrefix, targetPrefix));
+    } finally {
+      writer.close();
     }
+
+    return writer.toManifestFile();
   }
 
   private static void appendEntry(
       ManifestEntry<DataFile> entry, ManifestWriter<DataFile> writer, PartitionSpec spec,
-      String sourcePrefix, String targetPrefix, Broadcast<Set<PathPair>> dataFilesToMove) {
+      String sourcePrefix, String targetPrefix) {
     DataFile dataFile = entry.file();
-    String sourceDataFilePath = dataFile.path().toString();
-    if (sourceDataFilePath.startsWith(sourcePrefix)) {
-      String targetDataFilePath = newPath(sourceDataFilePath, sourcePrefix, targetPrefix);
-      dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(targetDataFilePath).build();
+    String dataFilePath = dataFile.path().toString();
+    if (dataFilePath.startsWith(sourcePrefix)) {
+      dataFilePath = newPath(dataFilePath, sourcePrefix, targetPrefix);
+      dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(dataFilePath).build();
     }
-    dataFilesToMove.value().add(new PathPair(sourceDataFilePath, dataFile.path().toString()));
 
     switch (entry.status()) {
       case ADDED:
@@ -517,6 +525,17 @@ public class BaseCopyTableSparkAction
       case DELETED:
         writer.delete(dataFile);
         break;
+    }
+  }
+
+  private Dataset<Row> getDiffDataFiles(Set<Long> diffSnapshotIds) {
+    Dataset<Row> lastVersionFiles = buildValidDataFileDFWithSnapshotId(endStaticTable);
+    if (startStaticTable == null) {
+      return lastVersionFiles.distinct().select("file_path");
+    } else {
+      return lastVersionFiles.distinct()
+          .filter(functions.column("snapshot_id").isInCollection(diffSnapshotIds))
+          .select("file_path");
     }
   }
 
@@ -533,6 +552,10 @@ public class BaseCopyTableSparkAction
 
   private static String newPath(String path, String sourcePrefix, String targetPrefix) {
     return path.replaceFirst(sourcePrefix, targetPrefix);
+  }
+
+  private void addToRebuiltFiles(String path) {
+    metadataFilesToMove.add(path);
   }
 
   private static String stagingPath(String originalPath, String stagingLocation) {
@@ -562,55 +585,5 @@ public class BaseCopyTableSparkAction
 
     Preconditions.checkArgument(!metadataDir.isEmpty(), "Failed to get the metadata file root directory");
     return metadataDir;
-  }
-
-  public static class PathPair implements Serializable {
-    private String source;
-    private String target;
-
-    public PathPair() {
-    }
-
-    public PathPair(String source, String target) {
-      this.source = source;
-      this.target = target;
-    }
-
-    public static PathPair of(String source, String target) {
-      return new PathPair(source, target);
-    }
-
-    public void setSource(String source) {
-      this.source = source;
-    }
-
-    public void setTarget(String target) {
-      this.target = target;
-    }
-
-    public String getSource() {
-      return source;
-    }
-
-    public String getTarget() {
-      return target;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      PathPair pathPair = (PathPair) o;
-      return Objects.equals(source, pathPair.source) && Objects.equals(target, pathPair.target);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(source, target);
-    }
   }
 }
