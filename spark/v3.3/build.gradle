@@ -17,7 +17,7 @@
  * under the License.
  */
 
-String sparkVersion = '3.3.0.47-apple-SNAPSHOT'
+String sparkVersion = '3.3.0.49-apple-SNAPSHOT'
 String sparkMajorVersion = '3.3'
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
 
@@ -293,6 +293,8 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
       exclude 'com.apple.boson.NativeBase*'
       exclude 'com.apple.boson.Native'
       exclude 'com.apple.boson.parquet.Native'
+      // We shouldn't relocate this because Boson checks whether Iceberg classes extend from this interface
+      exclude 'com.apple.boson.parquet.SupportsBoson'
     }
     relocate 'org.apache.spark.sql.boson', 'org.apache.iceberg.shaded.org.apache.spark.sql.boson'
 
