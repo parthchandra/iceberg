@@ -63,8 +63,11 @@ public class BridgeKmsClient extends LocalKeyWrapClient {
   private static final String REQUIRE_ENV_KEY_PASSING =
       "kms.client.bridge.require.environment.keys";
 
-  /** The system environment variable name. */
-  private static final String VERSIONED_KEY_LIST_ENV = "BRIDGE_VERSIONED_KEY_LIST";
+  /** The default name of system environment variable for key passing. */
+  private static final String DEFAULT_ENV_VAR_FOR_KEYS = "BRIDGE_VERSIONED_KEY_LIST";
+
+  /** The name of system environment variable for key passing can be changed with this parameter. */
+  private static final String ENV_VAR_FOR_KEYS = "kms.client.bridge.environment.keys.var";
 
   /**
    * After the keys are retrieved from the source storage (eg Whisper), they can be passed to the
@@ -145,7 +148,9 @@ public class BridgeKmsClient extends LocalKeyWrapClient {
     boolean requireEnvPassing =
         Boolean.parseBoolean(kmsClientProperties.get(REQUIRE_ENV_KEY_PASSING));
     if (requireEnvPassing) {
-      String envMasterKeyList = System.getenv(VERSIONED_KEY_LIST_ENV);
+      String keyListVarName =
+          kmsClientProperties.getOrDefault(ENV_VAR_FOR_KEYS, DEFAULT_ENV_VAR_FOR_KEYS);
+      String envMasterKeyList = System.getenv(keyListVarName);
       Preconditions.checkArgument(
           envMasterKeyList != null, "Failed to load keys - not found in environment parameters");
       result = envMasterKeyList.split(SPLIT_PATTERN);
