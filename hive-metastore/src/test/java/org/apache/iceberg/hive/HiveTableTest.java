@@ -216,7 +216,7 @@ public class HiveTableTest extends HiveTableBaseTest {
 
     Assert.assertTrue(
         "Drop (table and data) should return true and drop the table",
-        catalog.dropTable(TABLE_IDENTIFIER));
+        catalog.dropTable(TABLE_IDENTIFIER, true));
     Assert.assertFalse("Table should not exist", catalog.tableExists(TABLE_IDENTIFIER));
 
     Assert.assertFalse("Table data files should not exist", new File(location1).exists());

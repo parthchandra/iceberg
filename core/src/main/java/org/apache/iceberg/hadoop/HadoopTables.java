@@ -166,7 +166,7 @@ public class HadoopTables implements Tables, Configurable {
    * @return true if the table was dropped, false if it did not exist
    */
   public boolean dropTable(String location) {
-    return dropTable(location, true);
+    return dropTable(location, false);
   }
 
   /**
