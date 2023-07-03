@@ -101,6 +101,16 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
           LocationUtil.stripTrailingSlash(properties.get(CatalogProperties.WAREHOUSE_LOCATION)));
     }
 
+    if (properties.containsKey(CatalogProperties.HIVE_CATALOG)) {
+      LOG.warn(
+          "spark.sql.catalog.{}.{} is deprecated, please use Iceberg catalog property "
+              + "spark.sql.catalog.{}.hadoop.metastore.catalog.default instead.",
+          name,
+          CatalogProperties.HIVE_CATALOG,
+          name);
+      this.conf.set(HIVE_CONF_CATALOG, properties.get(CatalogProperties.HIVE_CATALOG));
+    }
+
     this.listAllTables =
         Boolean.parseBoolean(properties.getOrDefault(LIST_ALL_TABLES, LIST_ALL_TABLES_DEFAULT));
 

@@ -118,6 +118,13 @@ public class CatalogProperties {
   public static final long IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH_DEFAULT = 8 * 1024 * 1024;
 
   public static final String URI = "uri";
+  /**
+   * Underlying HMS Catalog that this Iceberg catalog connects to.
+   *
+   * @deprecated since 1.3, will be removed in 1.5; Use hadoop.metastore.catalog.default instead.
+   */
+  @Deprecated public static final String HIVE_CATALOG = "hive_catalog";
+
   public static final String CLIENT_POOL_SIZE = "clients";
   public static final int CLIENT_POOL_SIZE_DEFAULT = 2;
   public static final String CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS =
