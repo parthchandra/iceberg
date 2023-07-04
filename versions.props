@@ -49,3 +49,7 @@ org.eclipse.jetty:* = 9.4.43.v20210629
 org.testcontainers:* = 1.17.6
 io.delta:delta-core_* = 2.2.0
 org.awaitility:awaitility = 4.2.0
+
+# Apple Aws Connect Factory
+com.apple.pie.spark:awsappleconnect-spark-utils-shaded = 1.0.11
+com.amazonaws:aws-java-sdk-sts = 1.11.375
