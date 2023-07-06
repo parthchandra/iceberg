@@ -30,6 +30,8 @@ import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.common.DynClasses;
 import org.apache.iceberg.common.DynConstructors;
 import org.apache.iceberg.common.DynMethods;
+import org.apache.iceberg.encryption.DefaultEncryptionManagerFactory;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.hadoop.Configurable;
@@ -447,5 +449,45 @@ public class CatalogUtil {
     reporter.initialize(properties);
 
     return reporter;
+  }
+
+  /**
+   * Load encryption manager factory from catalog properties, if not configured, will load
+   * org.apache.iceberg.encryption.DefaultEncryptionManagerFactory
+   *
+   * @param properties catalog properties
+   * @return Encryption manager factory class.
+   */
+  public static EncryptionManagerFactory loadEncryptionManagerFactory(
+      Map<String, String> properties) {
+    String impl =
+        PropertyUtil.propertyAsString(
+            properties,
+            CatalogProperties.ENCRYPTION_MANAGER_FACTORY_IMPL,
+            DefaultEncryptionManagerFactory.class.getName());
+    DynConstructors.Ctor<EncryptionManagerFactory> ctor;
+    try {
+      ctor =
+          DynConstructors.builder(EncryptionManagerFactory.class).hiddenImpl(impl).buildChecked();
+    } catch (NoSuchMethodException e) {
+      throw new IllegalArgumentException(
+          String.format(
+              "Cannot initialize EncryptionManagerFactory, missing no-arg constructor: %s", impl),
+          e);
+    }
+
+    EncryptionManagerFactory factory;
+    try {
+      factory = ctor.newInstance();
+    } catch (ClassCastException e) {
+      throw new IllegalArgumentException(
+          String.format(
+              "Cannot initialize EncryptionManagerFactory, %s does not implement EncryptionManagerFactory.",
+              impl),
+          e);
+    }
+
+    factory.initialize(properties);
+    return factory;
   }
 }

@@ -19,27 +19,24 @@
 package org.apache.iceberg.encryption;
 
 import java.nio.ByteBuffer;
-import org.apache.iceberg.io.InputFile;
-import org.apache.iceberg.io.OutputFile;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.Assert;
+import org.junit.Test;
 
-public class PlaintextEncryptionManager implements EncryptionManager {
-  public static final EncryptionManager INSTANCE = new PlaintextEncryptionManager();
+public class TestEnvelopeMetadataParser {
 
-  private static final Logger LOG = LoggerFactory.getLogger(PlaintextEncryptionManager.class);
+  @Test
+  public void testParser() {
+    String kekId = "kek1";
+    String wrappedDek = "WrappedDek";
+    EncryptionAlgorithm algo = EncryptionAlgorithm.AES_GCM;
+    EnvelopeMetadata metadata = new EnvelopeMetadata(kekId, wrappedDek, algo);
+    ByteBuffer serialized = EnvelopeMetadataParser.toJson(metadata);
 
-  @Override
-  public InputFile decrypt(EncryptedInputFile encrypted) {
-    if (encrypted.keyMetadata().buffer() != null) {
-      LOG.warn(
-          "File encryption key metadata is present, but currently using PlaintextEncryptionManager.");
-    }
-    return encrypted.encryptedInputFile();
-  }
-
-  @Override
-  public EncryptedOutputFile encrypt(OutputFile rawOutput) {
-    return EncryptedFiles.encryptedOutput(rawOutput, (ByteBuffer) null);
+    EnvelopeMetadata parsedMetadata = EnvelopeMetadataParser.fromJson(serialized);
+    Assert.assertEquals(parsedMetadata.kekId(), kekId);
+    Assert.assertEquals(parsedMetadata.wrappedDek(), wrappedDek);
+    Assert.assertEquals(parsedMetadata.algorithm(), algo);
+    // Also test object comparison
+    Assert.assertEquals(parsedMetadata, metadata);
   }
 }

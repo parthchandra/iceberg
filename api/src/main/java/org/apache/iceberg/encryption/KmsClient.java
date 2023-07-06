@@ -18,14 +18,13 @@
  */
 package org.apache.iceberg.encryption;
 
+import java.io.Closeable;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
 /** A minimum client interface to connect to a key management service (KMS). */
-/** @deprecated the API will be removed in v2.0.0 (replaced with KeyManagementClient interface). */
-@Deprecated
-public interface KmsClient extends Serializable {
+public interface KmsClient extends Serializable, Closeable {
 
   /**
    * Wrap a secret key, using a wrapping/master key which is stored in KMS and referenced by an ID.
@@ -74,11 +73,18 @@ public interface KmsClient extends Serializable {
   ByteBuffer unwrapKey(String wrappedKey, String wrappingKeyId);
 
   /**
-   * Initialize the KMS client with given properties
+   * Initialize the KMS client with given properties.
    *
    * @param properties kms client properties
    */
   void initialize(Map<String, String> properties);
+
+  /**
+   * Close KMS Client to release underlying resources, this could be triggered in different threads
+   * when KmsClient is shared by multiple encryption manager.
+   */
+  @Override
+  default void close() {}
 
   /**
    * For KMS systems that support key generation, this class keeps the key generation result - the

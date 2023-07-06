@@ -27,19 +27,24 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.security.SecureRandom;
 import java.util.List;
+import java.util.Random;
 import org.apache.avro.generic.GenericData;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.avro.AvroSchemaUtil;
+import org.apache.iceberg.encryption.NativeFileCryptoParameters;
+import org.apache.iceberg.encryption.NativelyEncryptedFile;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.FileAppender;
+import org.apache.iceberg.io.InputFile;
+import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.io.PositionOutputStream;
+import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types.IntegerType;
 import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -48,15 +53,91 @@ public class TestParquetEncryption {
 
   private static final String columnName = "intCol";
   private static final int recordCount = 100;
-  private static final ByteBuffer fileDek = ByteBuffer.allocate(16);
-  private static final ByteBuffer aadPrefix = ByteBuffer.allocate(16);
+  private static final byte[] fileDek = new byte[16];
   private static File file;
   private static final Schema schema = new Schema(optional(1, columnName, IntegerType.get()));
 
+  private static class EncryptedLocalOutputFile implements OutputFile, NativelyEncryptedFile {
+    private OutputFile localOutputFile;
+    private NativeFileCryptoParameters nativeEncryptionParameters;
+
+    private EncryptedLocalOutputFile(File file) {
+      localOutputFile = localOutput(file);
+    }
+
+    @Override
+    public PositionOutputStream create() {
+      return localOutputFile.create();
+    }
+
+    @Override
+    public PositionOutputStream createOrOverwrite() {
+      return localOutputFile.createOrOverwrite();
+    }
+
+    @Override
+    public String location() {
+      return localOutputFile.location();
+    }
+
+    @Override
+    public InputFile toInputFile() {
+      return localOutputFile.toInputFile();
+    }
+
+    @Override
+    public NativeFileCryptoParameters nativeCryptoParameters() {
+      return nativeEncryptionParameters;
+    }
+
+    @Override
+    public void setNativeCryptoParameters(NativeFileCryptoParameters nativeCryptoParameters) {
+      this.nativeEncryptionParameters = nativeCryptoParameters;
+    }
+  }
+
+  private static class EncryptedLocalInputFile implements InputFile, NativelyEncryptedFile {
+    private InputFile localInputFile;
+    private NativeFileCryptoParameters nativeDecryptionParameters;
+
+    private EncryptedLocalInputFile(File file) {
+      localInputFile = localInput(file);
+    }
+
+    @Override
+    public long getLength() {
+      return localInputFile.getLength();
+    }
+
+    @Override
+    public SeekableInputStream newStream() {
+      return localInputFile.newStream();
+    }
+
+    @Override
+    public String location() {
+      return localInputFile.location();
+    }
+
+    @Override
+    public boolean exists() {
+      return localInputFile.exists();
+    }
+
+    @Override
+    public NativeFileCryptoParameters nativeCryptoParameters() {
+      return nativeDecryptionParameters;
+    }
+
+    @Override
+    public void setNativeCryptoParameters(NativeFileCryptoParameters nativeCryptoParameters) {
+      this.nativeDecryptionParameters = nativeCryptoParameters;
+    }
+  }
+
   @Rule public TemporaryFolder temp = new TemporaryFolder();
 
-  @Before
-  public void writeEncryptedFile() throws IOException {
+  private void writeEncryptedFile() throws IOException {
     List<GenericData.Record> records = Lists.newArrayListWithCapacity(recordCount);
     org.apache.avro.Schema avroSchema = AvroSchemaUtil.convert(schema.asStruct());
     for (int i = 1; i <= recordCount; i++) {
@@ -65,18 +146,18 @@ public class TestParquetEncryption {
       records.add(record);
     }
 
-    SecureRandom rand = new SecureRandom();
-    rand.nextBytes(fileDek.array());
-    rand.nextBytes(aadPrefix.array());
+    Random rand = new Random();
+    rand.nextBytes(fileDek);
+
+    NativeFileCryptoParameters encryptionParams =
+        NativeFileCryptoParameters.create(ByteBuffer.wrap(fileDek)).build();
 
     file = createTempFile(temp);
 
-    FileAppender<GenericData.Record> writer =
-        Parquet.write(localOutput(file))
-            .schema(schema)
-            .withFileEncryptionKey(fileDek)
-            .withAADPrefix(aadPrefix)
-            .build();
+    EncryptedLocalOutputFile outputFile = new EncryptedLocalOutputFile(file);
+    outputFile.setNativeCryptoParameters(encryptionParams);
+
+    FileAppender<GenericData.Record> writer = Parquet.write(outputFile).schema(schema).build();
 
     try (Closeable toClose = writer) {
       writer.addAll(Lists.newArrayList(records.toArray(new GenericData.Record[] {})));
@@ -85,39 +166,27 @@ public class TestParquetEncryption {
 
   @Test
   public void testReadEncryptedFileWithoutKeys() throws IOException {
+    writeEncryptedFile();
+
     TestHelpers.assertThrows(
         "Decrypted without keys",
         ParquetCryptoRuntimeException.class,
         "Trying to read file with encrypted footer. No keys available",
-        () -> Parquet.read(localInput(file)).project(schema).callInit().build().iterator());
-  }
-
-  @Test
-  public void testReadEncryptedFileWithoutAADPrefix() throws IOException {
-    TestHelpers.assertThrows(
-        "Decrypted without AAD prefix",
-        ParquetCryptoRuntimeException.class,
-        "AAD prefix used for file encryption, "
-            + "but not stored in file and not supplied in decryption properties",
-        () ->
-            Parquet.read(localInput(file))
-                .project(schema)
-                .withFileEncryptionKey(fileDek)
-                .callInit()
-                .build()
-                .iterator());
+        () -> Parquet.read(localInput(file)).project(schema).callInit().build().iterator().next());
   }
 
   @Test
   public void testReadEncryptedFile() throws IOException {
+    writeEncryptedFile();
+
+    NativeFileCryptoParameters encryptionParams =
+        NativeFileCryptoParameters.create(ByteBuffer.wrap(fileDek)).build();
+
+    EncryptedLocalInputFile inputFile = new EncryptedLocalInputFile(file);
+    inputFile.setNativeCryptoParameters(encryptionParams);
+
     try (CloseableIterator readRecords =
-        Parquet.read(localInput(file))
-            .withFileEncryptionKey(fileDek)
-            .withAADPrefix(aadPrefix)
-            .project(schema)
-            .callInit()
-            .build()
-            .iterator()) {
+        Parquet.read(inputFile).project(schema).callInit().build().iterator()) {
       for (int i = 1; i <= recordCount; i++) {
         GenericData.Record readRecord = (GenericData.Record) readRecords.next();
         Assert.assertEquals(i, readRecord.get(columnName));

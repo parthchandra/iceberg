@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.apache.iceberg.encryption.EncryptionManager;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
+import org.apache.iceberg.encryption.PlaintextEncryptionManager;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
@@ -73,6 +75,10 @@ public abstract class BaseMetastoreTableOperations implements TableOperations {
    * @return The full name
    */
   protected abstract String tableName();
+
+  protected EncryptionManagerFactory encryptionManagerFactory() {
+    return EncryptionManagerFactory.NO_ENCRYPTION;
+  }
 
   @Override
   public TableMetadata current() {
@@ -244,6 +250,16 @@ public abstract class BaseMetastoreTableOperations implements TableOperations {
   }
 
   @Override
+  public EncryptionManager encryption() {
+    TableMetadata metadata = current();
+    if (null != metadata) {
+      return encryptionManagerFactory().create(metadata);
+    } else {
+      return PlaintextEncryptionManager.INSTANCE;
+    }
+  }
+
+  @Override
   public TableOperations temp(TableMetadata uncommittedMetadata) {
     return new TableOperations() {
       @Override
@@ -281,7 +297,7 @@ public abstract class BaseMetastoreTableOperations implements TableOperations {
 
       @Override
       public EncryptionManager encryption() {
-        return BaseMetastoreTableOperations.this.encryption();
+        return encryptionManagerFactory().create(uncommittedMetadata);
       }
 
       @Override
