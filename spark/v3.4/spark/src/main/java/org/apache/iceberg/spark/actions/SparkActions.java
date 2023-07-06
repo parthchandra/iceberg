@@ -20,6 +20,9 @@ package org.apache.iceberg.spark.actions;
 
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.ActionsProvider;
+import org.apache.iceberg.actions.CheckSnapshotIntegrity;
+import org.apache.iceberg.actions.CopyTable;
+import org.apache.iceberg.actions.RemoveExpiredFiles;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.Spark3Util.CatalogAndIdentifier;
 import org.apache.spark.sql.SparkSession;
@@ -95,5 +98,20 @@ public class SparkActions implements ActionsProvider {
   @Override
   public RewritePositionDeleteFilesSparkAction rewritePositionDeletes(Table table) {
     return new RewritePositionDeleteFilesSparkAction(spark, table);
+  }
+
+  @Override
+  public CopyTable copyTable(Table table) {
+    return new CopyTableSparkAction(spark, table);
+  }
+
+  @Override
+  public CheckSnapshotIntegrity checkSnapshotIntegrity(Table table) {
+    return new CheckSnapshotIntegritySparkAction(spark, table);
+  }
+
+  @Override
+  public RemoveExpiredFiles removeExpiredFiles(Table table) {
+    return new RemoveExpiredFilesSparkAction(spark, table);
   }
 }
