@@ -175,14 +175,14 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
     validateAndSetEndVersion();
 
-    endStaticTable = newStaticTable(endVersion, table.io());
+    endStaticTable = newStaticTable(endVersion, table);
 
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
 
     validateAndSetStartVersion(tableMetadata);
 
     if (fileExist(startVersion)) {
-      startStaticTable = newStaticTable(startVersion, table.io());
+      startStaticTable = newStaticTable(startVersion, table);
     }
 
     if (stagingDir.isEmpty()) {

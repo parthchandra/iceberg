@@ -159,8 +159,10 @@ abstract class BaseSparkAction<ThisT> {
     return new BaseTable(ops, metadataFileLocation);
   }
 
-  protected Table newStaticTable(String metadataFileLocation, FileIO io) {
-    StaticTableOperations ops = new StaticTableOperations(metadataFileLocation, io);
+  protected Table newStaticTable(String metadataFileLocation, Table table) {
+    StaticTableOperations ops =
+        new StaticTableOperations(
+            metadataFileLocation, table.io(), tableMetadata -> table.encryption());
     return new BaseTable(ops, metadataFileLocation);
   }
 

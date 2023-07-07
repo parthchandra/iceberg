@@ -113,7 +113,7 @@ public class CheckSnapshotIntegritySparkAction
   }
 
   private Result doExecute() {
-    targetTable = newStaticTable(targetVersion, table.io());
+    targetTable = newStaticTable(targetVersion, table);
 
     List<String> filesToCheck = filesToCheck();
 

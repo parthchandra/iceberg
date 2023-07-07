@@ -102,7 +102,7 @@ public class RemoveExpiredFilesSparkAction extends BaseSparkAction<RemoveExpired
   }
 
   private Result doExecute() {
-    targetTable = newStaticTable(targetVersion, table.io());
+    targetTable = newStaticTable(targetVersion, table);
 
     return deleteFiles(expiredFiles().collectAsList().iterator());
   }
@@ -118,7 +118,7 @@ public class RemoveExpiredFilesSparkAction extends BaseSparkAction<RemoveExpired
   }
 
   private Dataset<FileInfo> buildValidFileDS(TableMetadata metadata) {
-    Table staticTable = newStaticTable(metadata, table.io());
+    Table staticTable = newStaticTable(metadata.metadataFileLocation(), table);
     return contentFileDS(staticTable)
         .union(manifestDS(staticTable))
         .union(manifestListDS(staticTable));

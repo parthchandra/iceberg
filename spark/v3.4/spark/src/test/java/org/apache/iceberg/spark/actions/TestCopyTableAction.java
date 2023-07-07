@@ -49,11 +49,13 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.SparkTestBase;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
+import org.apache.iceberg.spark.sql.MockKMS;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.SparkException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
+import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -567,6 +569,49 @@ public class TestCopyTableAction extends SparkTestBase {
         "1 key material file should be moved",
         1,
         dataFilesToMove.stream().filter(f -> f.contains("_KEY_MATERIAL_FOR_")).count());
+  }
+
+  @Test
+  public void testEncryptedTable() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("encryption.table.key.id", MockKMS.MASTER_KEY_NAME1);
+    properties.put("encryption.kms.client-impl", "org.apache.iceberg.spark.sql.MockKMS");
+    Table sourceTable = createMetastoreTable(sourceTableLocation, properties, "encryptedTbl", 1);
+
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .execute();
+
+    // copy the metadata files and data files
+    moveTableFiles(sourceTableLocation, targetTableLocation, stagingDir(result));
+
+    // register the target table
+    String versionFile = fileName(currentMetadata(sourceTable).metadataFileLocation());
+    String targetTableName = "encryptedTbl1";
+    TableIdentifier tableIdentifier = TableIdentifier.of("default", targetTableName);
+    catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+
+    // verify data rows
+    assertEquals(
+        "Rows should match",
+        ImmutableList.of(row(0L, "AAAAAAAAAA", "AAAA")),
+        sql("select * from hive.default.%s", targetTableName));
+
+    // verify the target table is encrypted
+    sql(
+        "ALTER TABLE hive.default.%s UNSET TBLPROPERTIES ('encryption.table.key.id')",
+        targetTableName);
+
+    Assertions.assertThatThrownBy(
+            () -> sql("SELECT * FROM hive.default.%s", targetTableName),
+            "Must fail to read encrypted data files without key")
+        .isInstanceOf(SparkException.class)
+        .hasMessageContaining(
+            "ParquetCryptoRuntimeException: Trying to read file with encrypted footer. No keys available");
   }
 
   @Test
