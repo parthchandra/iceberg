@@ -18,6 +18,9 @@
  */
 package org.apache.iceberg.spark;
 
+import static org.apache.iceberg.NullOrder.NULLS_FIRST;
+import static org.apache.iceberg.NullOrder.NULLS_LAST;
+
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -79,6 +82,8 @@ import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.Expressions;
 import org.apache.spark.sql.connector.expressions.Literal;
 import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.sql.connector.expressions.NullOrdering;
+import org.apache.spark.sql.connector.expressions.SortDirection;
 import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.execution.datasources.FileStatusCache;
@@ -1006,5 +1011,22 @@ public class Spark3Util {
         NullOrder nullOrder) {
       return String.format("%s(%s) %s %s", transform, sourceName, direction, nullOrder);
     }
+  }
+
+  public static void rebuildSortOrder(
+      org.apache.iceberg.SortOrderBuilder<?> builder, SortOrder[] orderFields) {
+
+    Stream.of(orderFields)
+        .forEach(
+            field -> {
+              Term term = Spark3Util.toIcebergTerm(field.expression());
+              NullOrder nullOrder =
+                  field.nullOrdering() == NullOrdering.NULLS_FIRST ? NULLS_FIRST : NULLS_LAST;
+              if (field.direction() == SortDirection.ASCENDING) {
+                builder.asc(term, nullOrder);
+              } else {
+                builder.desc(term, nullOrder);
+              }
+            });
   }
 }

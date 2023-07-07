@@ -161,6 +161,7 @@ public class MergeCardinalityCheckBenchmark {
             .config("spark.sql.catalog.spark_catalog.type", "hadoop")
             .config("spark.sql.catalog.spark_catalog.warehouse", newWarehouseDir())
             .config(SQLConf.DYNAMIC_PARTITION_PRUNING_ENABLED().key(), "false")
+            .config(SQLConf.RUNTIME_ROW_LEVEL_OPERATION_GROUP_FILTER_ENABLED().key(), "false")
             .config(SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), "false")
             .config(SQLConf.SHUFFLE_PARTITIONS().key(), "2")
             .master("local")

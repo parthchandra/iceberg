@@ -66,11 +66,9 @@ singleStatement
     ;
 
 statement
-    : CALL multipartIdentifier '(' (callArgument (',' callArgument)*)? ')'                  #call
-    | ALTER TABLE multipartIdentifier ADD PARTITION FIELD transform (AS name=identifier)?   #addPartitionField
+    : ALTER TABLE multipartIdentifier ADD PARTITION FIELD transform (AS name=identifier)?   #addPartitionField
     | ALTER TABLE multipartIdentifier DROP PARTITION FIELD transform                        #dropPartitionField
     | ALTER TABLE multipartIdentifier REPLACE PARTITION FIELD transform WITH transform (AS name=identifier)? #replacePartitionField
-    | ALTER TABLE multipartIdentifier WRITE writeSpec                                       #setWriteDistributionAndOrdering
     | ALTER TABLE multipartIdentifier SET IDENTIFIER_KW FIELDS fieldList                    #setIdentifierFields
     | ALTER TABLE multipartIdentifier DROP IDENTIFIER_KW FIELDS fieldList                   #dropIdentifierFields
     | ALTER TABLE multipartIdentifier createReplaceBranchClause                             #createOrReplaceBranch
@@ -113,24 +111,6 @@ maxSnapshotAge
 
 minSnapshotsToKeep
     : number SNAPSHOTS
-    ;
-
-writeSpec
-    : (writeDistributionSpec | writeOrderingSpec)*
-    ;
-
-writeDistributionSpec
-    : DISTRIBUTED BY PARTITION
-    ;
-
-writeOrderingSpec
-    : LOCALLY? ORDERED BY order
-    | UNORDERED
-    ;
-
-callArgument
-    : expression                    #positionalArgument
-    | identifier '=>' expression    #namedArgument
     ;
 
 singleOrder

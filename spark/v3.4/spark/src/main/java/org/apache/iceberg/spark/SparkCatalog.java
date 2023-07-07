@@ -20,6 +20,7 @@ package org.apache.iceberg.spark;
 
 import static org.apache.iceberg.TableProperties.GC_ENABLED;
 import static org.apache.iceberg.TableProperties.GC_ENABLED_DEFAULT;
+import static org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE;
 
 import java.util.Arrays;
 import java.util.List;
@@ -35,9 +36,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CachingCatalog;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.MetadataTableType;
+import org.apache.iceberg.ReplaceSortOrder;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.SnapshotRef;
@@ -79,6 +82,7 @@ import org.apache.spark.sql.connector.catalog.TableChange;
 import org.apache.spark.sql.connector.catalog.TableChange.ColumnChange;
 import org.apache.spark.sql.connector.catalog.TableChange.RemoveProperty;
 import org.apache.spark.sql.connector.catalog.TableChange.SetProperty;
+import org.apache.spark.sql.connector.catalog.TableChange.SetWriteDistributionAndOrdering;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
@@ -297,6 +301,7 @@ public class SparkCatalog extends BaseCatalog {
     SetProperty setLocation = null;
     SetProperty setSnapshotId = null;
     SetProperty pickSnapshotId = null;
+    SetWriteDistributionAndOrdering setWriteDistributionAndOrdering = null;
     List<TableChange> propertyChanges = Lists.newArrayList();
     List<TableChange> schemaChanges = Lists.newArrayList();
 
@@ -320,6 +325,8 @@ public class SparkCatalog extends BaseCatalog {
         propertyChanges.add(change);
       } else if (change instanceof ColumnChange) {
         schemaChanges.add(change);
+      } else if (change instanceof SetWriteDistributionAndOrdering) {
+        setWriteDistributionAndOrdering = (SetWriteDistributionAndOrdering) change;
       } else {
         throw new UnsupportedOperationException("Cannot apply unknown table change: " + change);
       }
@@ -328,7 +335,13 @@ public class SparkCatalog extends BaseCatalog {
     try {
       org.apache.iceberg.Table table = icebergCatalog.loadTable(buildIdentifier(ident));
       commitChanges(
-          table, setLocation, setSnapshotId, pickSnapshotId, propertyChanges, schemaChanges);
+          table,
+          setLocation,
+          setSnapshotId,
+          pickSnapshotId,
+          setWriteDistributionAndOrdering,
+          propertyChanges,
+          schemaChanges);
       return new SparkTable(table, true /* refreshEagerly */);
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
@@ -584,6 +597,7 @@ public class SparkCatalog extends BaseCatalog {
       SetProperty setLocation,
       SetProperty setSnapshotId,
       SetProperty pickSnapshotId,
+      SetWriteDistributionAndOrdering setWriteDistributionAndOrdering,
       List<TableChange> propertyChanges,
       List<TableChange> schemaChanges) {
     // don't allow setting the snapshot and picking a commit at the same time because order is
@@ -607,6 +621,20 @@ public class SparkCatalog extends BaseCatalog {
 
     if (setLocation != null) {
       transaction.updateLocation().setLocation(setLocation.value()).commit();
+    }
+
+    if (setWriteDistributionAndOrdering != null) {
+      ReplaceSortOrder replaceSortOrder = transaction.replaceSortOrder();
+      replaceSortOrder.caseSensitive(SparkUtil.caseSensitive(SparkSession.active()));
+      Spark3Util.rebuildSortOrder(replaceSortOrder, setWriteDistributionAndOrdering.ordering());
+      replaceSortOrder.commit();
+
+      String distributionModeName = setWriteDistributionAndOrdering.distributionMode();
+      DistributionMode distributionMode = DistributionMode.fromName(distributionModeName);
+      transaction
+          .updateProperties()
+          .set(WRITE_DISTRIBUTION_MODE, distributionMode.modeName())
+          .commit();
     }
 
     if (!propertyChanges.isEmpty()) {
