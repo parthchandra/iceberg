@@ -114,4 +114,9 @@ public class SparkActions implements ActionsProvider {
   public RemoveExpiredFiles removeExpiredFiles(Table table) {
     return new RemoveExpiredFilesSparkAction(spark, table);
   }
+
+  @Override
+  public AnalyzeTableSparkAction analyzeTable(Table table) {
+    return new AnalyzeTableSparkAction(spark, table);
+  }
 }
