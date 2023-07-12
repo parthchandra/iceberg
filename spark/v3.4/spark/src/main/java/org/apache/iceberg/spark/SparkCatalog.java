@@ -40,6 +40,7 @@ import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.MetadataTableType;
+import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.ReplaceSortOrder;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
@@ -68,11 +69,14 @@ import org.apache.iceberg.spark.source.StagedSparkTable;
 import org.apache.iceberg.util.Pair;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.SnapshotUtil;
+import org.apache.iceberg.util.SortOrderUtil;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NamespaceAlreadyExistsException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
+import org.apache.spark.sql.connector.catalog.CatalogV2Util;
+import org.apache.spark.sql.connector.catalog.Column;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.NamespaceChange;
 import org.apache.spark.sql.connector.catalog.StagedTable;
@@ -83,6 +87,7 @@ import org.apache.spark.sql.connector.catalog.TableChange.ColumnChange;
 import org.apache.spark.sql.connector.catalog.TableChange.RemoveProperty;
 import org.apache.spark.sql.connector.catalog.TableChange.SetProperty;
 import org.apache.spark.sql.connector.catalog.TableChange.SetWriteDistributionAndOrdering;
+import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
@@ -229,16 +234,37 @@ public class SparkCatalog extends BaseCatalog {
   public Table createTable(
       Identifier ident, StructType schema, Transform[] transforms, Map<String, String> properties)
       throws TableAlreadyExistsException {
-    Schema icebergSchema = SparkSchemaUtil.convert(schema);
+    return createTable(ident, CatalogV2Util.structTypeToV2Columns(schema), transforms, properties);
+  }
+
+  @Override
+  public Table createTable(
+      Identifier ident, Column[] columns, Transform[] transforms, Map<String, String> properties)
+      throws TableAlreadyExistsException {
+    return createTable(ident, columns, transforms, properties, null, null);
+  }
+
+  @Override
+  public Table createTable(
+      Identifier ident,
+      Column[] columns,
+      Transform[] transforms,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering)
+      throws TableAlreadyExistsException {
+    Schema icebergSchema = SparkSchemaUtil.convert(CatalogV2Util.v2ColumnsToStructType(columns));
     try {
-      Catalog.TableBuilder builder = newBuilder(ident, icebergSchema);
-      org.apache.iceberg.Table icebergTable =
-          builder
+      Catalog.TableBuilder builder =
+          newBuilder(ident, icebergSchema)
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
               .withLocation(properties.get("location"))
-              .withProperties(Spark3Util.rebuildCreateProperties(properties))
-              .create();
-      return new SparkTable(icebergTable, !cacheEnabled);
+              .withProperties(Spark3Util.rebuildCreateProperties(properties));
+
+      builder = applyDistribution(builder, distributionMode, properties);
+      builder = applySortOrder(builder, icebergSchema, ordering);
+
+      return new SparkTable(builder.create(), !cacheEnabled);
     } catch (AlreadyExistsException e) {
       throw new TableAlreadyExistsException(ident);
     }
@@ -248,16 +274,37 @@ public class SparkCatalog extends BaseCatalog {
   public StagedTable stageCreate(
       Identifier ident, StructType schema, Transform[] transforms, Map<String, String> properties)
       throws TableAlreadyExistsException {
-    Schema icebergSchema = SparkSchemaUtil.convert(schema);
+    return stageCreate(ident, CatalogV2Util.structTypeToV2Columns(schema), transforms, properties);
+  }
+
+  @Override
+  public StagedTable stageCreate(
+      Identifier ident, Column[] columns, Transform[] transforms, Map<String, String> properties)
+      throws TableAlreadyExistsException {
+    return stageCreate(ident, columns, transforms, properties, null, null);
+  }
+
+  @Override
+  public StagedTable stageCreate(
+      Identifier ident,
+      Column[] columns,
+      Transform[] transforms,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering)
+      throws TableAlreadyExistsException {
+    Schema icebergSchema = SparkSchemaUtil.convert(CatalogV2Util.v2ColumnsToStructType(columns));
     try {
-      Catalog.TableBuilder builder = newBuilder(ident, icebergSchema);
-      Transaction transaction =
-          builder
+      Catalog.TableBuilder builder =
+          newBuilder(ident, icebergSchema)
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
               .withLocation(properties.get("location"))
-              .withProperties(Spark3Util.rebuildCreateProperties(properties))
-              .createTransaction();
-      return new StagedSparkTable(transaction);
+              .withProperties(Spark3Util.rebuildCreateProperties(properties));
+
+      builder = applyDistribution(builder, distributionMode, properties);
+      builder = applySortOrder(builder, icebergSchema, ordering);
+
+      return new StagedSparkTable(builder.createTransaction());
     } catch (AlreadyExistsException e) {
       throw new TableAlreadyExistsException(ident);
     }
@@ -267,16 +314,37 @@ public class SparkCatalog extends BaseCatalog {
   public StagedTable stageReplace(
       Identifier ident, StructType schema, Transform[] transforms, Map<String, String> properties)
       throws NoSuchTableException {
-    Schema icebergSchema = SparkSchemaUtil.convert(schema);
+    return stageReplace(ident, CatalogV2Util.structTypeToV2Columns(schema), transforms, properties);
+  }
+
+  @Override
+  public StagedTable stageReplace(
+      Identifier ident, Column[] columns, Transform[] transforms, Map<String, String> properties)
+      throws NoSuchTableException {
+    return stageReplace(ident, columns, transforms, properties, null, null);
+  }
+
+  @Override
+  public StagedTable stageReplace(
+      Identifier ident,
+      Column[] columns,
+      Transform[] transforms,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering)
+      throws NoSuchTableException {
+    Schema icebergSchema = SparkSchemaUtil.convert(CatalogV2Util.v2ColumnsToStructType(columns));
     try {
-      Catalog.TableBuilder builder = newBuilder(ident, icebergSchema);
-      Transaction transaction =
-          builder
+      Catalog.TableBuilder builder =
+          newBuilder(ident, icebergSchema)
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
               .withLocation(properties.get("location"))
-              .withProperties(Spark3Util.rebuildCreateProperties(properties))
-              .replaceTransaction();
-      return new StagedSparkTable(transaction);
+              .withProperties(Spark3Util.rebuildCreateProperties(properties));
+
+      builder = applyDistribution(builder, distributionMode, properties);
+      builder = applySortOrder(builder, icebergSchema, ordering);
+
+      return new StagedSparkTable(builder.replaceTransaction());
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
     }
@@ -285,15 +353,35 @@ public class SparkCatalog extends BaseCatalog {
   @Override
   public StagedTable stageCreateOrReplace(
       Identifier ident, StructType schema, Transform[] transforms, Map<String, String> properties) {
-    Schema icebergSchema = SparkSchemaUtil.convert(schema);
-    Catalog.TableBuilder builder = newBuilder(ident, icebergSchema);
-    Transaction transaction =
-        builder
+    return stageCreateOrReplace(
+        ident, CatalogV2Util.structTypeToV2Columns(schema), transforms, properties);
+  }
+
+  @Override
+  public StagedTable stageCreateOrReplace(
+      Identifier ident, Column[] columns, Transform[] transforms, Map<String, String> properties) {
+    return stageCreateOrReplace(ident, columns, transforms, properties, null, null);
+  }
+
+  @Override
+  public StagedTable stageCreateOrReplace(
+      Identifier ident,
+      Column[] columns,
+      Transform[] transforms,
+      Map<String, String> properties,
+      String distributionMode,
+      SortOrder[] ordering) {
+    Schema icebergSchema = SparkSchemaUtil.convert(CatalogV2Util.v2ColumnsToStructType(columns));
+    Catalog.TableBuilder builder =
+        newBuilder(ident, icebergSchema)
             .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
             .withLocation(properties.get("location"))
-            .withProperties(Spark3Util.rebuildCreateProperties(properties))
-            .createOrReplaceTransaction();
-    return new StagedSparkTable(transaction);
+            .withProperties(Spark3Util.rebuildCreateProperties(properties));
+
+    builder = applyDistribution(builder, distributionMode, properties);
+    builder = applySortOrder(builder, icebergSchema, ordering);
+
+    return new StagedSparkTable(builder.createOrReplaceTransaction());
   }
 
   @Override
@@ -830,6 +918,48 @@ public class SparkCatalog extends BaseCatalog {
     return isPathIdentifier(ident)
         ? tables.buildTable(((PathIdentifier) ident).location(), schema)
         : icebergCatalog.buildTable(buildIdentifier(ident), schema);
+  }
+
+  private Catalog.TableBuilder applySortOrder(
+      Catalog.TableBuilder builder, Schema schema, SortOrder[] ordering) {
+    if (ordering == null || ordering.length == 0) {
+      return builder;
+    } else {
+      org.apache.iceberg.SortOrder.Builder sortBuilder =
+          org.apache.iceberg.SortOrder.builderFor(schema);
+      Spark3Util.rebuildSortOrder(sortBuilder, ordering);
+
+      return builder.withSortOrder(
+          SortOrderUtil.buildSortOrder(schema, PartitionSpec.unpartitioned(), sortBuilder.build()));
+    }
+  }
+
+  private Catalog.TableBuilder applyDistribution(
+      Catalog.TableBuilder builder, String distributionMode, Map<String, String> properties) {
+    // "none" is the default distribution mode passed through by V2 Commands, if we see it here it
+    // was
+    // passed because no user specification was used in the SQL statement
+    if (distributionMode == null || distributionMode.equalsIgnoreCase("none")) {
+      return builder;
+    } else {
+      DistributionMode icebergDistributionMode;
+      if (distributionMode.equalsIgnoreCase("unordered")) {
+        // "unordered" is passed as the distribution mode when the user specifically asks for the
+        // table to be
+        // unordrered
+        icebergDistributionMode = DistributionMode.NONE;
+      } else {
+        icebergDistributionMode = DistributionMode.fromName(distributionMode);
+      }
+      Preconditions.checkArgument(
+          !properties.containsKey(WRITE_DISTRIBUTION_MODE),
+          "Cannot define "
+              + WRITE_DISTRIBUTION_MODE
+              + " in both DDL (%s) and TABLEPROPERTIES (%s).",
+          icebergDistributionMode.modeName(),
+          properties.get(WRITE_DISTRIBUTION_MODE));
+      return builder.withProperty(WRITE_DISTRIBUTION_MODE, icebergDistributionMode.modeName());
+    }
   }
 
   @Override
