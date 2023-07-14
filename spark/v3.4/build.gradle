@@ -74,10 +74,7 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'com.apple.pie.boson'
     }
 
-    implementation("com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}") {
-      exclude group: 'org.apache.arrow', module: 'arrow-vector'
-      exclude group: 'org.apache.iceberg'
-    }
+    compileOnly "com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}"
 
     // Keep Parquet dependencies as provided, to share the same version as Spark.
     compileOnly("org.apache.parquet:parquet-column")
@@ -171,6 +168,7 @@ project(":iceberg-spark:iceberg-spark-extensions-${sparkMajorVersion}_${scalaVer
 
     testImplementation "org.apache.avro:avro"
     testImplementation "org.apache.parquet:parquet-hadoop"
+    testImplementation "com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}"
 
     // Required because we remove antlr plugin dependencies from the compile configuration, see note above
     runtimeOnly "org.antlr:antlr4-runtime:4.9.3"
@@ -282,11 +280,6 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     relocate 'org.apache.httpcomponents.client5', 'org.apache.iceberg.shaded.org.apache.httpcomponents.client5'
     // relocate Arrow and related deps to shade Iceberg specific version
     relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
-    relocate('org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow') {
-      // Boson uses `org.apache.arrow.c` module, but we shouldn't relocate `JniWrapper` since it
-      // contains native JNI methods
-      exclude 'org.apache.arrow.c.jni.JniWrapper'
-    }
     relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
     relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
     relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
