@@ -745,10 +745,7 @@ project(':iceberg-parquet') {
     implementation project(':iceberg-core')
     implementation project(':iceberg-common')
 
-    implementation("com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}") {
-      exclude group: 'org.apache.arrow'
-      exclude group: 'org.apache.iceberg'
-    }
+    compileOnly "com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}"
 
     implementation("org.apache.parquet:parquet-avro") {
       exclude group: 'org.apache.avro', module: 'avro'
