@@ -71,8 +71,6 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'io.netty', module: 'netty-common'
       exclude group: 'org.roaringbitmap'
-      // use the parquet lib from boson
-      exclude group: 'org.apache.parquet'
       exclude group: 'com.apple.pie.boson'
     }
 

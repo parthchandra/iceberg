@@ -47,8 +47,6 @@ project(":iceberg-apple") {
             exclude group: 'io.netty', module: 'netty-buffer'
             exclude group: 'io.netty', module: 'netty-common'
             exclude group: 'org.roaringbitmap'
-            // use the parquet lib from boson
-            exclude group: 'org.apache.parquet'
         }
 
         compileOnly("org.apache.hadoop:hadoop-common") {
