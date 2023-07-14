@@ -17,6 +17,15 @@
  * under the License.
  */
 
+pluginManagement {
+  repositories {
+    maven {
+      url 'https://artifacts.apple.com/plugins-release'
+    }
+    gradlePluginPortal()
+  }
+}
+
 rootProject.name = 'iceberg'
 include 'api'
 include 'common'

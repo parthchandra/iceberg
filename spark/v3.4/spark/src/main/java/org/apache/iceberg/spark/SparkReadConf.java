@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark;
 
+import com.apple.boson.BosonConf;
 import java.util.Map;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -263,6 +264,14 @@ public class SparkReadConf {
         .option(SparkReadOptions.AGGREGATE_PUSH_DOWN_ENABLED)
         .sessionConf(SparkSQLProperties.AGGREGATE_PUSH_DOWN_ENABLED)
         .defaultValue(SparkSQLProperties.AGGREGATE_PUSH_DOWN_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  public boolean enableBoson() {
+    return confParser
+        .booleanConf()
+        .sessionConf(BosonConf.BOSON_ENABLED().key())
+        .defaultValue(true)
         .parse();
   }
 }

@@ -1015,6 +1015,7 @@ public class Parquet {
     private NameMapping nameMapping = null;
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
+    private boolean useBoson = false;
 
     private FileDecryptionProperties fileDecryptionProperties = null;
 
@@ -1114,6 +1115,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder enableBoson(boolean enableBoson) {
+      this.useBoson = enableBoson;
+      return this;
+    }
+
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1176,7 +1182,8 @@ public class Parquet {
               filter,
               reuseContainers,
               caseSensitive,
-              maxRecordsPerBatch);
+              maxRecordsPerBatch,
+              useBoson);
         } else {
           return new org.apache.iceberg.parquet.ParquetReader<>(
               file,

@@ -101,11 +101,11 @@ class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     if (useParquetBatchReads()) {
       int batchSize = readConf.parquetBatchSize();
-      return new SparkColumnarReaderFactory(batchSize);
+      return new SparkColumnarReaderFactory(batchSize, readConf.enableBoson());
 
     } else if (useOrcBatchReads()) {
       int batchSize = readConf.orcBatchSize();
-      return new SparkColumnarReaderFactory(batchSize);
+      return new SparkColumnarReaderFactory(batchSize, false);
 
     } else {
       return new SparkRowReaderFactory();
@@ -117,7 +117,7 @@ class SparkBatch implements Batch {
   // - at least one column is projected
   // - only primitives are projected
   // - all tasks are of FileScanTask type and read only Parquet files
-  private boolean useParquetBatchReads() {
+  boolean useParquetBatchReads() {
     return readConf.parquetVectorizationEnabled()
         && expectedSchema.columns().size() > 0
         && expectedSchema.columns().stream().allMatch(c -> c.type().isPrimitiveType())
