@@ -18,12 +18,16 @@
  */
 package org.apache.iceberg.spark.data.vectorized.boson;
 
+import com.apple.boson.parquet.AbstractColumnReader;
+import com.apple.boson.parquet.BatchReader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.data.vectorized.BaseColumnBatchLoader;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -43,31 +47,39 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
   private final boolean hasIsDeletedColumn;
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
+  private final BatchReader delegate;
 
-  public BosonColumnarBatchReader(List<VectorizedReader<?>> readers) {
+  public BosonColumnarBatchReader(List<VectorizedReader<?>> readers, Schema schema) {
     this.readers =
         readers.stream().map(BosonColumnReader.class::cast).toArray(BosonColumnReader[]::new);
     this.hasIsDeletedColumn =
         readers.stream().anyMatch(reader -> reader instanceof BosonDeleteColumnReader);
+
+    AbstractColumnReader[] abstractColumnReaders = new AbstractColumnReader[readers.size()];
+    delegate = new BatchReader(abstractColumnReaders);
+    delegate.setSparkSchema(SparkSchemaUtil.convert(schema));
   }
 
   @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData, long rowPosition) {
     for (int i = 0; i < readers.length; i++) {
-      if (readers[i] != null) {
-        try {
-          if (!(readers[i] instanceof BosonConstantColumnReader)
-              && !(readers[i] instanceof BosonPositionColumnReader)
-              && !(readers[i] instanceof BosonDeleteColumnReader)) {
-            readers[i].reset();
-            readers[i].setPageReader(pageStore.getPageReader(readers[i].getDescriptor()));
-          }
-        } catch (IOException e) {
-          throw new UncheckedIOException("Failed to setRowGroupInfo for Boson vectorization", e);
+      try {
+        if (!(readers[i] instanceof BosonConstantColumnReader)
+            && !(readers[i] instanceof BosonPositionColumnReader)
+            && !(readers[i] instanceof BosonDeleteColumnReader)) {
+          readers[i].reset();
+          readers[i].setPageReader(pageStore.getPageReader(readers[i].getDescriptor()));
         }
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to setRowGroupInfo for Boson vectorization", e);
       }
     }
+
+    for (int i = 0; i < readers.length; i++) {
+      delegate.getColumnReaders()[i] = this.readers[i].getDelegate();
+    }
+
     this.rowStartPosInBatch = rowPosition;
   }
 
@@ -90,10 +102,11 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
     @Override
     protected ColumnVector[] readDataToColumnVectors() {
       ColumnVector[] columnVectors = new ColumnVector[readers.length];
-
+      // Fetch rows for all readers in the delegate
+      delegate.nextBatch(numRowsToRead);
       for (int i = 0; i < readers.length; i++) {
-        readers[i].read(null, numRowsToRead);
         BosonIcebergVector bv = readers[i].getVector();
+        bv.setDelegate(readers[i].getDelegate().currentBatch());
         bv.setRowIdMapping(rowIdMapping);
         columnVectors[i] = bv;
       }

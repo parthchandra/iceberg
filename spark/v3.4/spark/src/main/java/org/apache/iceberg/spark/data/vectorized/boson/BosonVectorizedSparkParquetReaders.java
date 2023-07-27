@@ -40,12 +40,17 @@ public class BosonVectorizedSparkParquetReaders {
 
   public static BosonColumnarBatchReader buildReader(
       Schema expectedSchema, MessageType fileSchema, Map<Integer, ?> idToConstant) {
-    return (BosonColumnarBatchReader)
-        TypeWithSchemaVisitor.visit(
-            expectedSchema.asStruct(),
-            fileSchema,
-            new BosonVectorizedReaderBuilder(
-                expectedSchema, fileSchema, idToConstant, BosonColumnarBatchReader::new));
+    BosonColumnarBatchReader bosonColumnarBatchReader =
+        (BosonColumnarBatchReader)
+            TypeWithSchemaVisitor.visit(
+                expectedSchema.asStruct(),
+                fileSchema,
+                new BosonVectorizedReaderBuilder(
+                    expectedSchema,
+                    fileSchema,
+                    idToConstant,
+                    readers -> new BosonColumnarBatchReader(readers, expectedSchema)));
+    return bosonColumnarBatchReader;
   }
 
   public static BosonColumnarBatchReader buildReader(
@@ -53,16 +58,18 @@ public class BosonVectorizedSparkParquetReaders {
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
       DeleteFilter<InternalRow> deleteFilter) {
-    return (BosonColumnarBatchReader)
-        TypeWithSchemaVisitor.visit(
-            expectedSchema.asStruct(),
-            fileSchema,
-            new ReaderBuilder(
-                expectedSchema,
+    BosonColumnarBatchReader bosonColumnarBatchReader =
+        (BosonColumnarBatchReader)
+            TypeWithSchemaVisitor.visit(
+                expectedSchema.asStruct(),
                 fileSchema,
-                idToConstant,
-                BosonColumnarBatchReader::new,
-                deleteFilter));
+                new ReaderBuilder(
+                    expectedSchema,
+                    fileSchema,
+                    idToConstant,
+                    readers -> new BosonColumnarBatchReader(readers, expectedSchema),
+                    deleteFilter));
+    return bosonColumnarBatchReader;
   }
 
   private static class ReaderBuilder extends BosonVectorizedReaderBuilder {
