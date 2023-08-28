@@ -131,6 +131,8 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
 
   private final Integer workerPoolSize;
   private final PartitionSpec spec;
+  // Could be used to update the Iceberg commit metadata before executing the commit
+  private final CommitDecorator commitDecorator;
   private transient ExecutorService workerPool;
 
   IcebergFilesCommitter(
@@ -139,13 +141,15 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
       Map<String, String> snapshotProperties,
       Integer workerPoolSize,
       String branch,
-      PartitionSpec spec) {
+      PartitionSpec spec,
+      CommitDecorator commitDecorator) {
     this.tableLoader = tableLoader;
     this.replacePartitions = replacePartitions;
     this.snapshotProperties = snapshotProperties;
     this.workerPoolSize = workerPoolSize;
     this.branch = branch;
     this.spec = spec;
+    this.commitDecorator = commitDecorator;
   }
 
   @Override
@@ -419,6 +423,10 @@ class IcebergFilesCommitter extends AbstractStreamOperator<Void>
         operation.set(FLINK_WATERMARK, String.valueOf(watermarkNow));
         LOG.info("Set snapshot summary property for {} to: {}.", FLINK_WATERMARK, watermarkNow);
       }
+    }
+
+    if (commitDecorator != null) {
+      commitDecorator.decorate(operation);
     }
 
     long startNano = System.nanoTime();

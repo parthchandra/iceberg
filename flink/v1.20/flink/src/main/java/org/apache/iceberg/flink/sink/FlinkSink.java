@@ -151,6 +151,7 @@ public class FlinkSink {
     private ReadableConfig readableConfig = new Configuration();
     private final Map<String, String> writeOptions = Maps.newHashMap();
     private FlinkWriteConf flinkWriteConf = null;
+    private CommitDecorator commitDecorator = null;
 
     private Builder() {}
 
@@ -403,6 +404,11 @@ public class FlinkSink {
       return this;
     }
 
+    public Builder commitDecorator(CommitDecorator decorator) {
+      commitDecorator = decorator;
+      return this;
+    }
+
     private DataStreamSink<Void> chainIcebergOperators() {
       Preconditions.checkArgument(
           inputCreator != null,
@@ -516,7 +522,8 @@ public class FlinkSink {
               snapshotProperties,
               flinkWriteConf.workerPoolSize(),
               flinkWriteConf.branch(),
-              table.spec());
+              table.spec(),
+              commitDecorator);
       SingleOutputStreamOperator<Void> committerStream =
           writerStream
               .transform(operatorName(ICEBERG_FILES_COMMITTER_NAME), Types.VOID, filesCommitter)

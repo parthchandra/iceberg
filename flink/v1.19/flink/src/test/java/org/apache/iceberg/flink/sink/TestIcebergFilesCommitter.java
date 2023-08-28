@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.SortedMap;
 import java.util.stream.Collectors;
@@ -67,6 +68,7 @@ import org.apache.iceberg.ParameterizedTestExtension;
 import org.apache.iceberg.Parameters;
 import org.apache.iceberg.PartitionData;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.SnapshotUpdate;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.TestBase;
 import org.apache.iceberg.flink.FlinkSchemaUtil;
@@ -87,6 +89,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(ParameterizedTestExtension.class)
 public class TestIcebergFilesCommitter extends TestBase {
   private static final Configuration CONF = new Configuration();
+  private static final String DECORATOR_KEY = "COMMIT_DECORATOR";
+  private static final String DECORATOR_VALUE = "COMMIT_DECORATOR_ENABLED";
 
   private File flinkManifestFolder;
 
@@ -96,15 +100,19 @@ public class TestIcebergFilesCommitter extends TestBase {
   @Parameter(index = 2)
   private String branch;
 
-  @Parameters(name = "formatVersion = {0}, fileFormat = {1}, branch = {2}")
+  @Parameter(index = 3)
+  private CommitDecorator commitDecorator;
+
+  @Parameters(name = "formatVersion = {0}, fileFormat = {1}, branch = {2}, decorator = {3}")
   protected static List<Object> parameters() {
     return Arrays.asList(
-        new Object[] {1, FileFormat.AVRO, "main"},
-        new Object[] {2, FileFormat.AVRO, "test-branch"},
-        new Object[] {1, FileFormat.PARQUET, "main"},
-        new Object[] {2, FileFormat.PARQUET, "test-branch"},
-        new Object[] {1, FileFormat.ORC, "main"},
-        new Object[] {2, FileFormat.ORC, "test-branch"});
+        new Object[] {1, FileFormat.AVRO, "main", null},
+        new Object[] {2, FileFormat.AVRO, "test-branch", null},
+        new Object[] {1, FileFormat.PARQUET, "main", null},
+        new Object[] {2, FileFormat.PARQUET, "test-branch", null},
+        new Object[] {1, FileFormat.ORC, "main", null},
+        new Object[] {2, FileFormat.ORC, "test-branch", null},
+        new Object[] {1, FileFormat.PARQUET, "main", new TestingCommitDecorator()});
   }
 
   @Override
@@ -151,6 +159,7 @@ public class TestIcebergFilesCommitter extends TestBase {
 
         assertSnapshotSize(i);
         assertMaxCommittedCheckpointId(jobId, operatorId, checkpointId);
+        assertCommitterDecorator();
       }
     }
   }
@@ -219,6 +228,8 @@ public class TestIcebergFilesCommitter extends TestBase {
         SimpleDataUtil.assertTableRows(table, ImmutableList.copyOf(rows), branch);
         assertSnapshotSize(i);
         assertMaxCommittedCheckpointId(jobID, operatorId, i);
+
+        assertCommitterDecorator();
         assertThat(SimpleDataUtil.latestSnapshot(table, branch).summary())
             .containsEntry("flink.test", TestIcebergFilesCommitter.class.getName());
       }
@@ -1282,9 +1293,25 @@ public class TestIcebergFilesCommitter extends TestBase {
     assertThat(table.snapshots()).hasSize(expectedSnapshotSize);
   }
 
+  private void assertCommitterDecorator() {
+    table.refresh();
+    if (table.currentSnapshot() == null) {
+      // Nothing to check
+      return;
+    }
+
+    Map<String, String> summary = table.currentSnapshot().summary();
+    if (commitDecorator != null) {
+      assertThat(summary.get(DECORATOR_KEY)).isEqualTo(DECORATOR_VALUE);
+    } else {
+      assertThat(summary.get(DECORATOR_KEY)).isNull();
+    }
+  }
+
   private OneInputStreamOperatorTestHarness<FlinkWriteResult, Void> createStreamSink(JobID jobID)
       throws Exception {
-    TestOperatorFactory factory = TestOperatorFactory.of(table.location(), branch, table.spec());
+    TestOperatorFactory factory =
+        TestOperatorFactory.of(table.location(), branch, table.spec(), commitDecorator);
     return new OneInputStreamOperatorTestHarness<>(factory, createEnvironment(jobID));
   }
 
@@ -1306,15 +1333,19 @@ public class TestIcebergFilesCommitter extends TestBase {
     private final String tablePath;
     private final String branch;
     private final PartitionSpec spec;
+    private final CommitDecorator commitDecorator;
 
-    private TestOperatorFactory(String tablePath, String branch, PartitionSpec spec) {
+    private TestOperatorFactory(
+        String tablePath, String branch, PartitionSpec spec, CommitDecorator commitDecorator) {
       this.tablePath = tablePath;
       this.branch = branch;
       this.spec = spec;
+      this.commitDecorator = commitDecorator;
     }
 
-    private static TestOperatorFactory of(String tablePath, String branch, PartitionSpec spec) {
-      return new TestOperatorFactory(tablePath, branch, spec);
+    private static TestOperatorFactory of(
+        String tablePath, String branch, PartitionSpec spec, CommitDecorator commitDecorator) {
+      return new TestOperatorFactory(tablePath, branch, spec, commitDecorator);
     }
 
     @Override
@@ -1328,7 +1359,8 @@ public class TestIcebergFilesCommitter extends TestBase {
               Collections.singletonMap("flink.test", TestIcebergFilesCommitter.class.getName()),
               ThreadPools.WORKER_THREAD_POOL_SIZE,
               branch,
-              spec);
+              spec,
+              commitDecorator);
       committer.setup(param.getContainingTask(), param.getStreamConfig(), param.getOutput());
       return (T) committer;
     }
@@ -1336,6 +1368,18 @@ public class TestIcebergFilesCommitter extends TestBase {
     @Override
     public Class<? extends StreamOperator> getStreamOperatorClass(ClassLoader classLoader) {
       return IcebergFilesCommitter.class;
+    }
+  }
+
+  private static class TestingCommitDecorator implements CommitDecorator {
+    @Override
+    public void decorate(SnapshotUpdate<?> operation) {
+      operation.set(DECORATOR_KEY, DECORATOR_VALUE);
+    }
+
+    @Override
+    public String toString() {
+      return "TestingCommitDecorator";
     }
   }
 }
