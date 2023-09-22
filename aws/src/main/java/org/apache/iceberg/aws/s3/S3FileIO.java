@@ -328,6 +328,7 @@ public class S3FileIO
       synchronized (this) {
         if (client == null) {
           client = s3.get();
+          LOG.info("S3FILEIO: ICEBERG: Created AWS S3 Client {} ", client);
         }
       }
     }
@@ -403,6 +404,7 @@ public class S3FileIO
     if (isResourceClosed.compareAndSet(false, true)) {
       if (client != null) {
         client.close();
+        LOG.info("S3FILEIO: ICEBERG: Closed AWS S3 Client {} ", client);
       }
     }
   }
@@ -412,6 +414,7 @@ public class S3FileIO
   protected void finalize() throws Throwable {
     super.finalize();
     if (!isResourceClosed.get()) {
+      LOG.info("S3FILEIO: ICEBERG: Finalize: Closing AWS S3 Client {} ", client);
       close();
 
       if (null != createStack) {
