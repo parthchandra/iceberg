@@ -18,6 +18,8 @@
  */
 package org.apache.iceberg.spark;
 
+import com.apple.boson.BosonConf;
+import com.apple.boson.parquet.ReadOptions;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.List;
@@ -35,6 +37,8 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.transforms.Transform;
 import org.apache.iceberg.transforms.UnknownTransform;
 import org.apache.iceberg.util.Pair;
+import org.apache.spark.SparkEnv;
+import org.apache.spark.launcher.SparkLauncher;
 import org.apache.spark.sql.RuntimeConfig;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.expressions.BoundReference;
@@ -45,16 +49,30 @@ import org.apache.spark.sql.connector.expressions.NamedReference;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SparkUtil {
+
   private static final String SPARK_CATALOG_CONF_PREFIX = "spark.sql.catalog";
+  private static final Logger LOG = LoggerFactory.getLogger(SparkUtil.class);
   // Format string used as the prefix for Spark configuration keys to override Hadoop configuration
   // values for Iceberg tables from a given catalog. These keys can be specified as
   // `spark.sql.catalog.$catalogName.hadoop.*`, similar to using `spark.hadoop.*` to override
   // Hadoop configurations globally for a given Spark session.
   private static final String SPARK_CATALOG_HADOOP_CONF_OVERRIDE_FMT_STR =
       SPARK_CATALOG_CONF_PREFIX + ".%s.hadoop.";
+
+  // The default connection pool size in AWS SDK
+  private static final int S3_DEFAULT_CONNECTIONS_MAX = 50;
+  private static final String S3A_MAX_CONNECTIONS_KEY = "fs.s3a.connection.maximum";
+  private static final String HTTP_CLIENT_MAX_CONNECTIONS_KEY =
+      "http-client.apache.max-connections";
+  // Default read ahead range in Hadoop is 64K; we increase it to 1 MB
+  private static final String S3A_READAHEAD_RANGE_KEY = "fs.s3a.readahead.range";
+  private static final long S3A_MIN_READAHEAD_RANGE = 1 * 1024 * 1024; // 1 MB
 
   private static final Joiner DOT = Joiner.on(".");
 
@@ -155,6 +173,90 @@ public class SparkUtil {
 
   private static String hadoopConfPrefixForCatalog(String catalogName) {
     return String.format(SPARK_CATALOG_HADOOP_CONF_OVERRIDE_FMT_STR, catalogName);
+  }
+
+  /**
+   * Configures options specific to boson. Currently, this reconfigures the max connections
+   * parameter for the AWS S3 SDK based on the settings in Spark and Boson.
+   *
+   * @param name The catalog name.
+   * @param conf The hadoop configuration. This should include any catalog specific overrides.
+   * @param options The options specific to this catalog
+   */
+  public static void configureBosonOptions(
+      String name,
+      Configuration conf,
+      CaseInsensitiveStringMap options,
+      Map<String, String> optionsMap) {
+    if (Boolean.parseBoolean(conf.get(BosonConf.BOSON_ENABLED().key()))) {
+      setS3MaxConnections(conf, options, optionsMap);
+      setS3ReadAheadRange(conf);
+    }
+  }
+
+  // return the greater of the new value and old value
+  private static int getOptionIfGreater(CaseInsensitiveStringMap options, String key, int newVal) {
+    int maxVal = newVal;
+    String curr = options.get(key);
+    if (curr != null && !curr.isEmpty()) {
+      maxVal = Math.max(Integer.parseInt(curr), newVal);
+    }
+    return maxVal;
+  }
+
+  // return the greater of the new value and old value
+  private static int getS3ConfIfGreater(Configuration conf, String key, int newVal) {
+    int maxVal = newVal;
+    String curr = conf.get(key);
+    if (curr != null && !curr.isEmpty()) {
+      maxVal = Math.max(Integer.parseInt(curr), newVal);
+    }
+    return maxVal;
+  }
+
+  // Update the conf iff the new value is greater than the existing val
+  private static void setS3ConfIfGreater(Configuration conf, String key, int newVal) {
+    conf.set(key, Integer.toString(getS3ConfIfGreater(conf, key, newVal)));
+  }
+
+  // Update the conf iff the new value is greater than the existing val. This handles values that
+  // may have suffixes (K, M, G, T, P, E) indicating well known bytes size suffixes
+  private static void setS3ConfIfGreater(Configuration conf, String key, long newVal) {
+    long maxVal = conf.getLongBytes(key, newVal);
+    conf.set(key, Long.toString(Math.max(maxVal, newVal)));
+  }
+
+  private static void setS3MaxConnections(
+      Configuration conf, CaseInsensitiveStringMap options, Map<String, String> optionsMap) {
+    int numExecutorCores = SparkEnv.get().conf().getInt(SparkLauncher.EXECUTOR_CORES, 32);
+    ReadOptions bosonReadOptions = ReadOptions.builder(conf).build();
+    int parallelReaderThreads =
+        bosonReadOptions.isParallelIOEnabled() ? bosonReadOptions.parallelIOThreadPoolSize() : 1;
+    int s3ConnectionsMax =
+        Math.max(numExecutorCores * parallelReaderThreads * 2, S3_DEFAULT_CONNECTIONS_MAX);
+    boolean isS3FileIOEnabled =
+        options.containsKey("io-impl") && options.get("io-impl").contains("S3FileIO");
+
+    // Check if the hadoop conf was overridden for the catalog
+    s3ConnectionsMax = getOptionIfGreater(options, S3A_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+    s3ConnectionsMax = getS3ConfIfGreater(conf, S3A_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+    // Check if the property was specified for S3FileIO
+    if (isS3FileIOEnabled) {
+      s3ConnectionsMax =
+          getOptionIfGreater(options, HTTP_CLIENT_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+    }
+    // We don't know if we are targeting S3 in this catalog but let's set these options anyway.
+    String s3ConnectionsMaxStr = Integer.toString(s3ConnectionsMax);
+    LOG.info("Setting {} to {}", S3A_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+    setS3ConfIfGreater(conf, S3A_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+    if (isS3FileIOEnabled) {
+      LOG.info("Setting {} to {}", HTTP_CLIENT_MAX_CONNECTIONS_KEY, s3ConnectionsMax);
+      optionsMap.put(HTTP_CLIENT_MAX_CONNECTIONS_KEY, s3ConnectionsMaxStr);
+    }
+  }
+
+  private static void setS3ReadAheadRange(Configuration conf) {
+    setS3ConfIfGreater(conf, S3A_READAHEAD_RANGE_KEY, S3A_MIN_READAHEAD_RANGE);
   }
 
   public static void validateTimestampWithoutTimezoneConfig(RuntimeConfig conf) {
