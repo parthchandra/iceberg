@@ -267,11 +267,33 @@ public class SparkReadConf {
         .parse();
   }
 
-  public boolean enableBoson() {
-    return confParser
-        .booleanConf()
-        .sessionConf(BosonConf.BOSON_ENABLED().key())
-        .defaultValue(true)
-        .parse();
+  public BosonReadOptions getBosonReadConf() {
+    BosonReadOptions bosonReadOptions = new BosonReadOptions();
+    boolean enableBoson =
+        confParser
+            .booleanConf()
+            .sessionConf(BosonConf.BOSON_ENABLED().key())
+            .defaultValue(true)
+            .parse();
+
+    boolean useDecimal128 =
+        confParser
+            .booleanConf()
+            .sessionConf(BosonConf.BOSON_USE_DECIMAL_128().key())
+            .defaultValue((Boolean) BosonConf.BOSON_USE_DECIMAL_128().defaultValue().get())
+            .parse();
+
+    boolean useLazyMaterialization =
+        confParser
+            .booleanConf()
+            .sessionConf(BosonConf.BOSON_USE_LAZY_MATERIALIZATION().key())
+            .defaultValue((Boolean) BosonConf.BOSON_USE_LAZY_MATERIALIZATION().defaultValue().get())
+            .parse();
+
+    bosonReadOptions.setEnableBoson(enableBoson);
+    bosonReadOptions.setUseDecimal128(useDecimal128);
+    bosonReadOptions.setUseLazyMaterialization(useLazyMaterialization);
+
+    return bosonReadOptions;
   }
 }

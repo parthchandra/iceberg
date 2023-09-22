@@ -26,6 +26,7 @@ import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
 
@@ -34,12 +35,15 @@ public class BosonVectorizedSparkParquetReaders {
   private BosonVectorizedSparkParquetReaders() {}
 
   public static BosonColumnarBatchReader buildReader(
-      Schema expectedSchema, MessageType fileSchema) {
-    return buildReader(expectedSchema, fileSchema, Maps.newHashMap());
+      Schema expectedSchema, MessageType fileSchema, BosonReadOptions bosonReadOptions) {
+    return buildReader(expectedSchema, fileSchema, Maps.newHashMap(), bosonReadOptions);
   }
 
   public static BosonColumnarBatchReader buildReader(
-      Schema expectedSchema, MessageType fileSchema, Map<Integer, ?> idToConstant) {
+      Schema expectedSchema,
+      MessageType fileSchema,
+      Map<Integer, ?> idToConstant,
+      BosonReadOptions bosonReadOptions) {
     BosonColumnarBatchReader bosonColumnarBatchReader =
         (BosonColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
@@ -49,7 +53,9 @@ public class BosonVectorizedSparkParquetReaders {
                     expectedSchema,
                     fileSchema,
                     idToConstant,
-                    readers -> new BosonColumnarBatchReader(readers, expectedSchema)));
+                    readers ->
+                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
+                    bosonReadOptions));
     return bosonColumnarBatchReader;
   }
 
@@ -57,7 +63,8 @@ public class BosonVectorizedSparkParquetReaders {
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
-      DeleteFilter<InternalRow> deleteFilter) {
+      DeleteFilter<InternalRow> deleteFilter,
+      BosonReadOptions bosonReadOptions) {
     BosonColumnarBatchReader bosonColumnarBatchReader =
         (BosonColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
@@ -67,8 +74,10 @@ public class BosonVectorizedSparkParquetReaders {
                     expectedSchema,
                     fileSchema,
                     idToConstant,
-                    readers -> new BosonColumnarBatchReader(readers, expectedSchema),
-                    deleteFilter));
+                    readers ->
+                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
+                    deleteFilter,
+                    bosonReadOptions));
     return bosonColumnarBatchReader;
   }
 
@@ -80,8 +89,9 @@ public class BosonVectorizedSparkParquetReaders {
         MessageType parquetSchema,
         Map<Integer, ?> idToConstant,
         Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory,
-        DeleteFilter<InternalRow> deleteFilter) {
-      super(expectedSchema, parquetSchema, idToConstant, readerFactory);
+        DeleteFilter<InternalRow> deleteFilter,
+        BosonReadOptions bosonReadOptions) {
+      super(expectedSchema, parquetSchema, idToConstant, readerFactory, bosonReadOptions);
       this.deleteFilter = deleteFilter;
     }
 
