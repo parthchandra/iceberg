@@ -149,7 +149,7 @@ public class SparkCatalog extends BaseCatalog {
     optionsMap.putAll(options.asCaseSensitiveMap());
     optionsMap.put(CatalogProperties.APP_ID, SparkSession.active().sparkContext().applicationId());
     optionsMap.put(CatalogProperties.USER, SparkSession.active().sparkContext().sparkUser());
-    SparkUtil.configureBosonOptions(name, conf, options, optionsMap);
+    SparkUtil.configureBosonOptions(conf, options, optionsMap);
     return CatalogUtil.buildIcebergCatalog(name, optionsMap, conf);
   }
 
