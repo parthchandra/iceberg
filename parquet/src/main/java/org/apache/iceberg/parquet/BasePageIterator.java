@@ -116,7 +116,16 @@ public abstract class BasePageIterator {
         initPage.getRlEncoding().getValuesReader(desc, ValuesType.REPETITION_LEVEL);
     this.repetitionLevels = new ValuesReaderIntIterator(rlReader);
     try {
+      long start = System.nanoTime();
       BytesInput bytes = initPage.getBytes();
+      double time = ((double) (System.nanoTime() - start));
+      double len = bytes.size();
+      double throughput = (len / (1024 * 1024)) / (time / 1000_000_000L);
+      LOG.info(
+          "S3FILEIO: Decompress read: Length: {} MB, Time: {} msecs, throughput: {} MB/s",
+          len / (1024 * 1024),
+          time / 1000_000L,
+          throughput);
       LOG.debug("page size {} bytes and {} records", bytes.size(), triplesCount);
       LOG.debug("reading repetition levels at 0");
       ByteBufferInputStream in = bytes.toInputStream();
@@ -137,7 +146,17 @@ public abstract class BasePageIterator {
     try {
       initDefinitionLevelsReader(initPage, desc);
       LOG.debug("page data size {} bytes and {} records", initPage.getData().size(), triplesCount);
-      initDataReader(initPage.getDataEncoding(), initPage.getData().toInputStream(), triplesCount);
+      long start = System.nanoTime();
+      BytesInput bytes = initPage.getData();
+      double time = ((double) (System.nanoTime() - start));
+      double len = bytes.size();
+      double throughput = (len / (1024 * 1024)) / (time / 1000_000_000L);
+      LOG.info(
+          "S3FILEIO: Decompress read: Length: {} MB, Time: {} msecs, throughput: {} MB/s",
+          len / (1024 * 1024),
+          time / 1000_000L,
+          throughput);
+      initDataReader(initPage.getDataEncoding(), bytes.toInputStream(), triplesCount);
     } catch (IOException e) {
       throw new ParquetDecodingException("could not read page " + initPage + " in col " + desc, e);
     }
