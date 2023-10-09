@@ -37,7 +37,6 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.transforms.Transform;
 import org.apache.iceberg.transforms.UnknownTransform;
 import org.apache.iceberg.util.Pair;
-import org.apache.spark.SparkEnv;
 import org.apache.spark.launcher.SparkLauncher;
 import org.apache.spark.sql.RuntimeConfig;
 import org.apache.spark.sql.SparkSession;
@@ -197,8 +196,9 @@ public class SparkUtil {
       Configuration conf, CaseInsensitiveStringMap options, Map<String, String> optionsMap) {
     boolean isS3FileIOEnabled =
         options.containsKey("io-impl") && options.get("io-impl").contains("S3FileIO");
+    int numExecutorCores = 32;
     if (isS3FileIOEnabled) {
-      int numExecutorCores = SparkEnv.get().conf().getInt(SparkLauncher.EXECUTOR_CORES, 32);
+      numExecutorCores = conf.getInt(SparkLauncher.EXECUTOR_CORES, numExecutorCores);
       ReadOptions bosonReadOptions = ReadOptions.builder(conf).build();
       int parallelReaderThreads =
           bosonReadOptions.isParallelIOEnabled() ? bosonReadOptions.parallelIOThreadPoolSize() : 1;
