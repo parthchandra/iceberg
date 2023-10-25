@@ -20,6 +20,7 @@ package org.apache.iceberg.spark.data.parquet.vectorized;
 
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.parquet.Parquet;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -29,8 +30,10 @@ public class TestBosonParquetVectorizedReads extends TestParquetVectorizedReads 
   @Override
   void createBatchedReaderFunc(
       Parquet.ReadBuilder readBuilder, Schema schema, boolean setAndCheckArrowValidityBuffer) {
+    BosonReadOptions options = new BosonReadOptions();
+    options.setEnableBoson(true);
     readBuilder.createBatchedReaderFunc(
-        type -> BosonVectorizedSparkParquetReaders.buildReader(schema, type));
+        type -> BosonVectorizedSparkParquetReaders.buildReader(schema, type, options));
   }
 
   @Override

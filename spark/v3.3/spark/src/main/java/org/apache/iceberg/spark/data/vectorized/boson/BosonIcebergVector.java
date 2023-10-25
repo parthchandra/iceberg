@@ -39,10 +39,8 @@ public class BosonIcebergVector extends BosonDelegateVector {
   // [0,4,5,7,-,-,-,-] -- After applying equality deletes [Set Num records to 4]
   protected int[] rowIdMapping;
 
-  public BosonIcebergVector(DataType type) {
-    // FIXME: infer the following boolean flag (from 'spark.boson.use.decimal128') once native
-    //  execution is enabled for Iceberg
-    super(type);
+  public BosonIcebergVector(DataType type, boolean useDecimal128) {
+    super(type, useDecimal128);
   }
 
   public void setRowIdMapping(int[] rowIdMapping) {

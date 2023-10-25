@@ -16,28 +16,38 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark;
 
-import com.apple.boson.parquet.ConstantColumnReader;
-import org.apache.iceberg.spark.BosonReadOptions;
-import org.apache.iceberg.types.Types;
+import java.io.Serializable;
 
-public class BosonConstantColumnReader<T> extends BosonColumnReader {
-  private final T value;
+public class BosonReadOptions implements Serializable {
+  private boolean enableBoson;
+  private boolean useLazyMaterialization;
+  private boolean useDecimal128;
 
-  public BosonConstantColumnReader(
-      T value, Types.NestedField field, BosonReadOptions bosonReadOptions) {
-    super(field, bosonReadOptions);
-    this.value = value;
-    delegate =
-        new ConstantColumnReader(
-            getSparkType(), getDescriptor(), value, bosonReadOptions.getUseDecimal128());
+  public BosonReadOptions() {}
+
+  public void setEnableBoson(boolean enableBoson) {
+    this.enableBoson = enableBoson;
   }
 
-  @Override
-  public void setBatchSize(int batchSize) {
-    delegate.setBatchSize(batchSize);
-    this.batchSize = batchSize;
-    initialized = true;
+  public void setUseDecimal128(boolean useDecimal128) {
+    this.useDecimal128 = useDecimal128;
+  }
+
+  public void setUseLazyMaterialization(boolean lazyMaterialization) {
+    this.useLazyMaterialization = lazyMaterialization;
+  }
+
+  public boolean getEnableBoson() {
+    return enableBoson;
+  }
+
+  public boolean getUseDecimal128() {
+    return useDecimal128;
+  }
+
+  public boolean getUseLazyMaterialization() {
+    return useLazyMaterialization;
   }
 }

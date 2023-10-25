@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.data.vectorized.BaseColumnBatchLoader;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -42,13 +43,16 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
   private final BosonColumnReader[] readers;
   private final boolean hasIsDeletedColumn;
   private DeleteFilter<InternalRow> deletes = null;
+  private final BosonReadOptions bosonReadOptions;
   private long rowStartPosInBatch = 0;
 
-  public BosonColumnarBatchReader(List<VectorizedReader<?>> readers) {
+  public BosonColumnarBatchReader(
+      List<VectorizedReader<?>> readers, BosonReadOptions bosonReadOptions) {
     this.readers =
         readers.stream().map(BosonColumnReader.class::cast).toArray(BosonColumnReader[]::new);
     this.hasIsDeletedColumn =
         readers.stream().anyMatch(reader -> reader instanceof BosonDeleteColumnReader);
+    this.bosonReadOptions = bosonReadOptions;
   }
 
   @Override
@@ -105,7 +109,8 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
     protected void readDeletedColumnIfNecessary(ColumnVector[] columnVectors) {
       for (int i = 0; i < readers.length; i++) {
         if (readers[i] instanceof BosonDeleteColumnReader) {
-          BosonDeleteColumnReader deleteColumnReader = new BosonDeleteColumnReader<>(isDeleted);
+          BosonDeleteColumnReader deleteColumnReader =
+              new BosonDeleteColumnReader<>(isDeleted, bosonReadOptions);
           deleteColumnReader.setBatchSize(numRowsToRead);
           deleteColumnReader.read(null, numRowsToRead);
           columnVectors[i] = deleteColumnReader.getVector();

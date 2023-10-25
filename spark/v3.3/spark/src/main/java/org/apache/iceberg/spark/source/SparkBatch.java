@@ -31,6 +31,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
 import org.apache.iceberg.types.Types;
@@ -119,11 +120,10 @@ public class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     if (useParquetBatchReads()) {
       int batchSize = readConf.parquetBatchSize();
-      return new SparkColumnarReaderFactory(batchSize, readConf.enableBoson());
+      return new SparkColumnarReaderFactory(batchSize, readConf.getBosonReadConf());
     } else if (useOrcBatchReads()) {
       int batchSize = readConf.orcBatchSize();
-      return new SparkColumnarReaderFactory(batchSize, false);
-
+      return new SparkColumnarReaderFactory(batchSize, new BosonReadOptions());
     } else {
       return new SparkRowReaderFactory();
     }

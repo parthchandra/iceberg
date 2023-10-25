@@ -29,6 +29,7 @@ import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -42,16 +43,19 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
   private final Schema icebergSchema;
   private final Map<Integer, ?> idToConstant;
   private final Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory;
+  private final BosonReadOptions bosonReadOptions;
 
   public BosonVectorizedReaderBuilder(
       Schema expectedSchema,
       MessageType parquetSchema,
       Map<Integer, ?> idToConstant,
-      Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory) {
+      Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory,
+      BosonReadOptions bosonReadOptions) {
     this.parquetSchema = parquetSchema;
     this.icebergSchema = expectedSchema;
     this.idToConstant = idToConstant;
     this.readerFactory = readerFactory;
+    this.bosonReadOptions = bosonReadOptions;
   }
 
   @Override
@@ -76,17 +80,18 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
         BosonColumnReader constantReader =
-            new BosonConstantColumnReader<>(idToConstant.get(id), field);
+            new BosonConstantColumnReader<>(idToConstant.get(id), field, bosonReadOptions);
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
-        reorderedFields.add(new BosonPositionColumnReader(field));
+        reorderedFields.add(new BosonPositionColumnReader(field, bosonReadOptions));
       } else if (id == MetadataColumns.IS_DELETED.fieldId()) {
-        BosonColumnReader deleteReader = new BosonDeleteColumnReader<>(field);
+        BosonColumnReader deleteReader = new BosonDeleteColumnReader<>(field, bosonReadOptions);
         reorderedFields.add(deleteReader);
       } else if (reader != null) {
         reorderedFields.add(reader);
       } else {
-        BosonColumnReader constantReader = new BosonConstantColumnReader<>(null, field);
+        BosonColumnReader constantReader =
+            new BosonConstantColumnReader<>(null, field, bosonReadOptions);
         reorderedFields.add(constantReader);
       }
     }
@@ -125,6 +130,7 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       return null;
     }
 
-    return new BosonColumnReader(SparkSchemaUtil.convert(icebergField.type()), desc);
+    return new BosonColumnReader(
+        SparkSchemaUtil.convert(icebergField.type()), desc, bosonReadOptions);
   }
 }
