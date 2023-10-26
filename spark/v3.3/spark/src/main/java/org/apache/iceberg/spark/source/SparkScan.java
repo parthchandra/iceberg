@@ -134,7 +134,7 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoso
 
   @Override
   public boolean isBosonEnabled() {
-    if (this.readConf.enableBoson()) {
+    if (this.readConf.getBosonReadConf().getEnableBoson()) {
       SparkBatch batch = (SparkBatch) this.toBatch();
       if (batch.useParquetBatchReads()) {
         return true;

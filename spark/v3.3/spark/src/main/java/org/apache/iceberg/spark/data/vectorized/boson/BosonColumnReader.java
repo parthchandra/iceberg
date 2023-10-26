@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.util.Map;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -74,19 +75,23 @@ public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
   private final ColumnDescriptor descriptor;
   protected boolean initialized = false;
   protected int batchSize = DEFAULT_BATCH_SIZE;
+  private final BosonReadOptions bosonReadOptions;
 
-  public BosonColumnReader(DataType sparkType, ColumnDescriptor descriptor) {
+  public BosonColumnReader(
+      DataType sparkType, ColumnDescriptor descriptor, BosonReadOptions bosonReadOptions) {
     this.sparkType = sparkType;
     this.descriptor = descriptor;
-    this.vector = new BosonIcebergVector(sparkType);
+    this.bosonReadOptions = bosonReadOptions;
+    this.vector = new BosonIcebergVector(sparkType, bosonReadOptions.getUseDecimal128());
   }
 
-  public BosonColumnReader(Types.NestedField field) {
+  public BosonColumnReader(Types.NestedField field, BosonReadOptions bosonReadOptions) {
     DataType dataType = SparkSchemaUtil.convert(field.type());
     StructField structField = new StructField(field.name(), dataType, false, Metadata.empty());
     this.sparkType = dataType;
     this.descriptor = TypeUtil.convertToParquet(structField);
-    this.vector = new BosonIcebergVector(sparkType);
+    this.bosonReadOptions = bosonReadOptions;
+    this.vector = new BosonIcebergVector(sparkType, bosonReadOptions.getUseDecimal128());
   }
 
   public AbstractColumnReader getDelegate() {
@@ -102,9 +107,14 @@ public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
     if (delegate != null) {
       delegate.close();
     }
-    // FIXME: infer the following boolean flag (from 'spark.boson.use.decimal128',
-    //        'spark.boson.use.lazyMaterialization') once native execution is enabled for Iceberg
-    delegate = Utils.getColumnReader(sparkType, descriptor, batchSize, false, true);
+
+    delegate =
+        Utils.getColumnReader(
+            sparkType,
+            descriptor,
+            batchSize,
+            bosonReadOptions.getUseDecimal128(),
+            bosonReadOptions.getUseLazyMaterialization());
     initialized = true;
   }
 

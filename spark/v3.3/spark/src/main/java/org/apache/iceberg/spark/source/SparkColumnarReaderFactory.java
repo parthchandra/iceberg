@@ -20,6 +20,7 @@ package org.apache.iceberg.spark.source;
 
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
@@ -28,12 +29,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 class SparkColumnarReaderFactory implements PartitionReaderFactory {
   private final int batchSize;
-  private final boolean useBoson;
+  private final BosonReadOptions bosonReadOptions;
 
-  SparkColumnarReaderFactory(int batchSize, boolean useBoson) {
+  SparkColumnarReaderFactory(int batchSize, BosonReadOptions bosonReadOptions) {
     Preconditions.checkArgument(batchSize > 1, "Batch size must be > 1");
     this.batchSize = batchSize;
-    this.useBoson = useBoson;
+    this.bosonReadOptions = bosonReadOptions;
   }
 
   @Override
@@ -52,9 +53,7 @@ class SparkColumnarReaderFactory implements PartitionReaderFactory {
 
     if (partition.allTasksOfType(FileScanTask.class)) {
       BatchDataReader batchDataReader = new BatchDataReader(partition, batchSize);
-      if (useBoson) {
-        batchDataReader.setUseBoson(true);
-      }
+      batchDataReader.setBosonReadOptions(bosonReadOptions);
       return batchDataReader;
 
     } else {

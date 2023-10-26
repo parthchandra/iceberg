@@ -20,14 +20,15 @@ package org.apache.iceberg.spark.data.vectorized.boson;
 
 import com.apple.boson.parquet.MetadataColumnReader;
 import com.apple.boson.parquet.Native;
+import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.spark.sql.types.DataTypes;
 
 public class BosonPositionColumnReader extends BosonColumnReader {
-  public BosonPositionColumnReader(Types.NestedField field) {
-    super(field);
-    delegate = new PositionColumnReader(getDescriptor());
+  public BosonPositionColumnReader(Types.NestedField field, BosonReadOptions bosonReadOptions) {
+    super(field, bosonReadOptions);
+    delegate = new PositionColumnReader(getDescriptor(), bosonReadOptions);
   }
 
   @Override
@@ -41,12 +42,13 @@ public class BosonPositionColumnReader extends BosonColumnReader {
     /** The current position value of the column that are used to initialize this column reader. */
     private long position;
 
-    PositionColumnReader(ColumnDescriptor descriptor) {
-      this(descriptor, 0L);
+    PositionColumnReader(ColumnDescriptor descriptor, BosonReadOptions bosonReadOptions) {
+      this(descriptor, 0L, bosonReadOptions);
     }
 
-    PositionColumnReader(ColumnDescriptor descriptor, long position) {
-      super(DataTypes.LongType, descriptor, false);
+    PositionColumnReader(
+        ColumnDescriptor descriptor, long position, BosonReadOptions bosonReadOptions) {
+      super(DataTypes.LongType, descriptor, bosonReadOptions.getUseDecimal128());
       this.position = position;
     }
 
