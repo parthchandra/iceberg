@@ -450,6 +450,10 @@ acceptedBreaks:
       old: "field org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT"
       new: "field org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT"
       justification: "Prepare for Apple release"
+    - code: "java.field.constantValueChanged"
+      old: "field org.apache.iceberg.actions.BinPackStrategy.MIN_FILE_SIZE_DEFAULT_RATIO"
+      new: "field org.apache.iceberg.actions.BinPackStrategy.MIN_FILE_SIZE_DEFAULT_RATIO"
+      justification: "Apple Internal Change"
     - code: "java.field.removedWithConstant"
       old: "field org.apache.iceberg.CatalogProperties.AUTH_DEFAULT_REFRESH_ENABLED"
       justification: "Removing deprecations for 1.3.0"
@@ -743,16 +747,17 @@ acceptedBreaks:
       justification: "Removing deprecations for 1.3.0"
   "1.3.0":
     org.apache.iceberg:iceberg-parquet:
-      - code: "java.method.numberOfParametersChanged"
-        old: "method void org.apache.iceberg.parquet.VectorizedParquetReader<T>::<init>(org.apache.iceberg.io.InputFile,\
-         \ org.apache.iceberg.Schema, org.apache.parquet.ParquetReadOptions, java.util.function.Function<org.apache.parquet.schema.MessageType,\
-         \ org.apache.iceberg.parquet.VectorizedReader<?>>, org.apache.iceberg.mapping.NameMapping, org.apache.iceberg.expressions.Expression,\
-         \ boolean, boolean, int)"
-        new: "method void org.apache.iceberg.parquet.VectorizedParquetReader<T>::<init>(org.apache.iceberg.io.InputFile, org.apache.iceberg.Schema,\
-         \ org.apache.parquet.ParquetReadOptions, java.util.function.Function<org.apache.parquet.schema.MessageType,\
-         \ org.apache.iceberg.parquet.VectorizedReader<?>>, org.apache.iceberg.mapping.NameMapping, org.apache.iceberg.expressions.Expression,\
-         \ boolean, boolean, int, boolean)"
-        justification: "Need to add a boolean to indicate whether it's boson scan or not"
+    - code: "java.method.numberOfParametersChanged"
+      old: "method void org.apache.iceberg.parquet.VectorizedParquetReader<T>::<init>(org.apache.iceberg.io.InputFile,\
+        \ org.apache.iceberg.Schema, org.apache.parquet.ParquetReadOptions, java.util.function.Function<org.apache.parquet.schema.MessageType,\
+        \ org.apache.iceberg.parquet.VectorizedReader<?>>, org.apache.iceberg.mapping.NameMapping,\
+        \ org.apache.iceberg.expressions.Expression, boolean, boolean, int)"
+      new: "method void org.apache.iceberg.parquet.VectorizedParquetReader<T>::<init>(org.apache.iceberg.io.InputFile,\
+        \ org.apache.iceberg.Schema, org.apache.parquet.ParquetReadOptions, java.util.function.Function<org.apache.parquet.schema.MessageType,\
+        \ org.apache.iceberg.parquet.VectorizedReader<?>>, org.apache.iceberg.mapping.NameMapping,\
+        \ org.apache.iceberg.expressions.Expression, boolean, boolean, int, boolean)"
+      justification: "Need to add a boolean to indicate whether it's boson scan or\
+        \ not"
   apache-iceberg-0.14.0:
     org.apache.iceberg:iceberg-api:
     - code: "java.class.defaultSerializationChanged"
