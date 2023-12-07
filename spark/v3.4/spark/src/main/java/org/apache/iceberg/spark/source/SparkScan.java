@@ -19,6 +19,7 @@
 package org.apache.iceberg.spark.source;
 
 import com.apple.boson.parquet.SupportsBoson;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,7 @@ import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.connector.read.Statistics;
 import org.apache.spark.sql.connector.read.SupportsReportStatistics;
 import org.apache.spark.sql.connector.read.streaming.MicroBatchStream;
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetMetricsV2;
 import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -184,6 +186,14 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoso
 
   @Override
   public CustomMetric[] supportedCustomMetrics() {
-    return new CustomMetric[] {new NumSplits(), new NumDeletes()};
+    CustomMetric[] parquetMetrics = ParquetMetricsV2.metrics();
+    CustomMetric[] scanMetrics = Arrays.copyOf(parquetMetrics, parquetMetrics.length + 2);
+    System.arraycopy(
+        new CustomMetric[] {new NumSplits(), new NumDeletes()},
+        0,
+        scanMetrics,
+        parquetMetrics.length,
+        2);
+    return scanMetrics;
   }
 }

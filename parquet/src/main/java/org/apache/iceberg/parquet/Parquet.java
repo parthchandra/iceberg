@@ -107,6 +107,7 @@ import org.apache.parquet.crypto.ParquetCipher;
 import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetFileWriter;
+import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.hadoop.ParquetOutputFormat;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
@@ -1016,6 +1017,7 @@ public class Parquet {
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
     private boolean useBoson = false;
+    private ParquetMetricsCallback metricsCallback = null;
 
     private FileDecryptionProperties fileDecryptionProperties = null;
 
@@ -1120,6 +1122,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder withMetricsCallback(ParquetMetricsCallback callback) {
+      this.metricsCallback = callback;
+      return this;
+    }
+
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1183,7 +1190,8 @@ public class Parquet {
               reuseContainers,
               caseSensitive,
               maxRecordsPerBatch,
-              useBoson);
+              useBoson,
+              metricsCallback);
         } else {
           return new org.apache.iceberg.parquet.ParquetReader<>(
               file,
@@ -1193,7 +1201,8 @@ public class Parquet {
               nameMapping,
               filter,
               reuseContainers,
-              caseSensitive);
+              caseSensitive,
+              metricsCallback);
         }
       }
 

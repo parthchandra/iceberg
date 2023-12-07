@@ -40,6 +40,7 @@ import org.apache.iceberg.mapping.NameMapping;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.schema.MessageType;
@@ -55,6 +56,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
   private final int batchSize;
   private final NameMapping nameMapping;
   private final boolean useBoson;
+  private final ParquetMetricsCallback metricsCallback;
 
   public VectorizedParquetReader(
       InputFile input,
@@ -67,6 +69,32 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       boolean caseSensitive,
       int maxRecordsPerBatch,
       boolean useBoson) {
+    this(
+        input,
+        expectedSchema,
+        options,
+        readerFunc,
+        nameMapping,
+        filter,
+        reuseContainers,
+        caseSensitive,
+        maxRecordsPerBatch,
+        useBoson,
+        null);
+  }
+
+  public VectorizedParquetReader(
+      InputFile input,
+      Schema expectedSchema,
+      ParquetReadOptions options,
+      Function<MessageType, VectorizedReader<?>> readerFunc,
+      NameMapping nameMapping,
+      Expression filter,
+      boolean reuseContainers,
+      boolean caseSensitive,
+      int maxRecordsPerBatch,
+      boolean useBoson,
+      ParquetMetricsCallback metricsCallback) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -78,6 +106,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     this.batchSize = maxRecordsPerBatch;
     this.nameMapping = nameMapping;
     this.useBoson = useBoson;
+    this.metricsCallback = metricsCallback;
   }
 
   private ReadConf conf = null;
@@ -95,7 +124,8 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
               nameMapping,
               reuseContainers,
               caseSensitive,
-              batchSize);
+              batchSize,
+              metricsCallback);
       this.conf = readConf.copy();
       return readConf;
     }
@@ -110,6 +140,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
   }
 
   private static class FileIterator<T> implements CloseableIterator<T> {
+    private final ReadConf readConf;
     private final ParquetFileReader reader;
     private final FileReader bosonReader;
     private final boolean[] shouldSkip;
@@ -125,9 +156,11 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private final long[] rowGroupsStartRowPos;
 
     FileIterator(ReadConf conf, ParquetReadOptions options, boolean useBoson) {
+      this.readConf = conf;
       this.reader = conf.reader();
       if (useBoson) {
-        this.bosonReader = newBosonReader(options, conf.file(), conf.projection());
+        this.bosonReader =
+            newBosonReader(options, conf.file(), conf.projection(), conf.getMetricsCallback());
       } else {
         this.bosonReader = null;
       }
@@ -142,7 +175,10 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     }
 
     private FileReader newBosonReader(
-        ParquetReadOptions options, InputFile file, MessageType projection) {
+        ParquetReadOptions options,
+        InputFile file,
+        MessageType projection,
+        ParquetMetricsCallback metricsCallback) {
       try {
         ReadOptions bosonOptions = ReadOptions.builder().build();
 
@@ -154,7 +190,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
         } else {
           parquetFile = ParquetIO.file(file);
         }
-        FileReader fileReader = new FileReader(parquetFile, options, bosonOptions);
+        FileReader fileReader = new FileReader(parquetFile, options, bosonOptions, metricsCallback);
         fileReader.setRequestedSchema(projection.getColumns());
         return fileReader;
       } catch (IOException e) {
@@ -199,10 +235,16 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       }
       PageReadStore pages;
       try {
+        long startNs = System.nanoTime();
         if (bosonReader != null) {
           pages = bosonReader.readNextRowGroup();
         } else {
           pages = reader.readNextRowGroup();
+        }
+        ParquetMetricsCallback metricsCallback = readConf.getMetricsCallback();
+        if (metricsCallback != null) {
+          metricsCallback.setValueLong("ParquetLoadRowGroupTime", System.nanoTime() - startNs);
+          metricsCallback.setValueLong("ParquetRowGroups", 1);
         }
       } catch (IOException e) {
         throw new RuntimeIOException(e);

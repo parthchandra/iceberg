@@ -25,8 +25,8 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.parquet.VectorizedReader;
-import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
 
@@ -35,15 +35,11 @@ public class BosonVectorizedSparkParquetReaders {
   private BosonVectorizedSparkParquetReaders() {}
 
   public static BosonColumnarBatchReader buildReader(
-      Schema expectedSchema, MessageType fileSchema, BosonReadOptions bosonReadOptions) {
-    return buildReader(expectedSchema, fileSchema, Maps.newHashMap(), bosonReadOptions);
-  }
-
-  public static BosonColumnarBatchReader buildReader(
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
-      BosonReadOptions bosonReadOptions) {
+      BosonReadOptions bosonReadOptions,
+      ParquetMetricsCallback metricsCallback) {
     BosonColumnarBatchReader bosonColumnarBatchReader =
         (BosonColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
@@ -54,7 +50,8 @@ public class BosonVectorizedSparkParquetReaders {
                     fileSchema,
                     idToConstant,
                     readers ->
-                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
+                        new BosonColumnarBatchReader(
+                            readers, expectedSchema, bosonReadOptions, metricsCallback),
                     bosonReadOptions));
     return bosonColumnarBatchReader;
   }
@@ -64,7 +61,8 @@ public class BosonVectorizedSparkParquetReaders {
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
       DeleteFilter<InternalRow> deleteFilter,
-      BosonReadOptions bosonReadOptions) {
+      BosonReadOptions bosonReadOptions,
+      ParquetMetricsCallback metricsCallback) {
     BosonColumnarBatchReader bosonColumnarBatchReader =
         (BosonColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
@@ -75,7 +73,8 @@ public class BosonVectorizedSparkParquetReaders {
                     fileSchema,
                     idToConstant,
                     readers ->
-                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
+                        new BosonColumnarBatchReader(
+                            readers, expectedSchema, bosonReadOptions, metricsCallback),
                     deleteFilter,
                     bosonReadOptions));
     return bosonColumnarBatchReader;

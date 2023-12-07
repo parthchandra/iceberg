@@ -27,6 +27,7 @@ import org.apache.iceberg.arrow.vectorized.VectorizedReaderBuilder;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.parquet.VectorizedReader;
+import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.slf4j.Logger;
@@ -55,7 +56,8 @@ public class VectorizedSparkParquetReaders {
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
-      DeleteFilter<InternalRow> deleteFilter) {
+      DeleteFilter<InternalRow> deleteFilter,
+      ParquetMetricsCallback metricsCallback) {
     return (ColumnarBatchReader)
         TypeWithSchemaVisitor.visit(
             expectedSchema.asStruct(),
@@ -66,7 +68,8 @@ public class VectorizedSparkParquetReaders {
                 NullCheckingForGet.NULL_CHECKING_ENABLED,
                 idToConstant,
                 ColumnarBatchReader::new,
-                deleteFilter));
+                deleteFilter,
+                metricsCallback));
   }
 
   // enables unsafe memory access to avoid costly checks to see if index is within bounds
@@ -104,6 +107,7 @@ public class VectorizedSparkParquetReaders {
 
   private static class ReaderBuilder extends VectorizedReaderBuilder {
     private final DeleteFilter<InternalRow> deleteFilter;
+    private final ParquetMetricsCallback metricsCallback;
 
     ReaderBuilder(
         Schema expectedSchema,
@@ -111,9 +115,11 @@ public class VectorizedSparkParquetReaders {
         boolean setArrowValidityVector,
         Map<Integer, ?> idToConstant,
         Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory,
-        DeleteFilter<InternalRow> deleteFilter) {
+        DeleteFilter<InternalRow> deleteFilter,
+        ParquetMetricsCallback metricsCallback) {
       super(expectedSchema, parquetSchema, setArrowValidityVector, idToConstant, readerFactory);
       this.deleteFilter = deleteFilter;
+      this.metricsCallback = metricsCallback;
     }
 
     @Override
