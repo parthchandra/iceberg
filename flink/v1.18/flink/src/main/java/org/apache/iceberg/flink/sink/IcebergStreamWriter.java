@@ -37,6 +37,7 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<FlinkWriteResult>
 
   private final String fullTableName;
   private final TaskWriterFactory<T> taskWriterFactory;
+  private FileChecker checker = null;
 
   private transient TaskWriter<T> writer;
   private transient int subTaskId;
@@ -47,6 +48,12 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<FlinkWriteResult>
     this.fullTableName = fullTableName;
     this.taskWriterFactory = taskWriterFactory;
     setChainingStrategy(ChainingStrategy.ALWAYS);
+  }
+
+  IcebergStreamWriter(
+      String fullTableName, TaskWriterFactory<T> taskWriterFactory, FileChecker checker) {
+    this(fullTableName, taskWriterFactory);
+    this.checker = checker;
   }
 
   @Override
@@ -110,6 +117,10 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<FlinkWriteResult>
 
     long startNano = System.nanoTime();
     WriteResult result = writer.complete();
+    if (checker != null) {
+      checker.check(result, writerMetrics);
+    }
+
     writerMetrics.updateFlushResult(result);
     output.collect(new StreamRecord<>(new FlinkWriteResult(checkpointId, result)));
     writerMetrics.flushDuration(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNano));

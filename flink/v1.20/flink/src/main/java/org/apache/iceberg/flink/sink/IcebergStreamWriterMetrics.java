@@ -39,6 +39,7 @@ class IcebergStreamWriterMetrics {
   private final AtomicLong lastFlushDurationMs;
   private final Histogram dataFilesSizeHistogram;
   private final Histogram deleteFilesSizeHistogram;
+  private final Counter failedFileChecks;
 
   IcebergStreamWriterMetrics(MetricGroup metrics, String fullTableName) {
     MetricGroup writerMetrics =
@@ -61,6 +62,7 @@ class IcebergStreamWriterMetrics {
         writerMetrics.histogram(
             "deleteFilesSizeHistogram",
             new DropwizardHistogramWrapper(dropwizardDeleteFilesSizeHistogram));
+    this.failedFileChecks = writerMetrics.counter("failedFileChecks");
   }
 
   void updateFlushResult(WriteResult result) {
@@ -86,5 +88,9 @@ class IcebergStreamWriterMetrics {
 
   void flushDuration(long flushDurationMs) {
     lastFlushDurationMs.set(flushDurationMs);
+  }
+
+  void increaseFailedFileChecks() {
+    failedFileChecks.inc();
   }
 }

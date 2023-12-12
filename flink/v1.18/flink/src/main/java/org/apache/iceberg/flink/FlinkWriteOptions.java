@@ -84,4 +84,7 @@ public class FlinkWriteOptions {
   @Experimental
   public static final ConfigOption<Duration> TABLE_REFRESH_INTERVAL =
       ConfigOptions.key("table-refresh-interval").durationType().noDefaultValue();
+
+  public static final ConfigOption<Boolean> CHECK_FILES =
+      ConfigOptions.key("check-files").booleanType().defaultValue(false);
 }

@@ -102,6 +102,7 @@ project(":iceberg-flink:iceberg-flink-${flinkMajorVersion}") {
 
     testImplementation(libs.hive2.metastore) {
       exclude group: 'org.apache.avro', module: 'avro'
+      exclude group: 'org.apache.orc'
       exclude group: 'org.slf4j', module: 'slf4j-log4j12'
       exclude group: 'org.pentaho' // missing dependency
       exclude group: 'org.apache.hbase'
@@ -196,6 +197,7 @@ project(":iceberg-flink:iceberg-flink-runtime-${flinkMajorVersion}") {
 
     integrationImplementation(libs.hive2.metastore) {
       exclude group: 'org.apache.avro', module: 'avro'
+      exclude group: 'org.apache.orc'
       exclude group: 'org.slf4j', module: 'slf4j-log4j12'
       exclude group: 'org.pentaho' // missing dependency
       exclude group: 'org.apache.hbase'

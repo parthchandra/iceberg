@@ -362,26 +362,26 @@ class TestFlinkIcebergSinkV2Base {
     return SimpleDataUtil.createRecord(id, data);
   }
 
-  List<Snapshot> findValidSnapshots() {
+  protected List<Snapshot> findValidSnapshots() {
     List<Snapshot> validSnapshots = Lists.newArrayList();
     for (Snapshot snapshot : table.snapshots()) {
       if (snapshot.allManifests(table.io()).stream()
-          .anyMatch(m -> snapshot.snapshotId() == m.snapshotId())) {
+              .anyMatch(m -> snapshot.snapshotId() == m.snapshotId())) {
         validSnapshots.add(snapshot);
       }
     }
     return validSnapshots;
   }
 
-  StructLikeSet expectedRowSet(Record... records) {
+  protected StructLikeSet expectedRowSet(Record... records) {
     return SimpleDataUtil.expectedRowSet(table, records);
   }
 
-  StructLikeSet actualRowSet(long snapshotId, String... columns) throws IOException {
+  protected StructLikeSet actualRowSet(long snapshotId, String... columns) throws IOException {
     table.refresh();
     StructLikeSet set = StructLikeSet.create(table.schema().asStruct());
     try (CloseableIterable<Record> reader =
-        IcebergGenerics.read(table).useSnapshot(snapshotId).select(columns).build()) {
+                 IcebergGenerics.read(table).useSnapshot(snapshotId).select(columns).build()) {
       reader.forEach(set::add);
     }
     return set;

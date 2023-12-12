@@ -383,6 +383,11 @@ public class FlinkSink {
       return this;
     }
 
+    public Builder checkFiles(boolean enabled) {
+      writeOptions.put(FlinkWriteOptions.CHECK_FILES.key(), Boolean.toString(enabled));
+      return this;
+    }
+
     private DataStreamSink<Void> chainIcebergOperators() {
       Preconditions.checkArgument(
           inputCreator != null,
@@ -710,7 +715,18 @@ public class FlinkSink {
             equalityFieldIds,
             flinkWriteConf.upsertMode());
 
-    return new IcebergStreamWriter<>(initTable.name(), taskWriterFactory);
+    FileChecker checker = null;
+    if (flinkWriteConf.checkFiles()) {
+      checker =
+          new FileChecker(
+              initTable.io(),
+              format,
+              initTable.schema(),
+              equalityFieldIds,
+              flinkWriteConf.upsertMode());
+    }
+
+    return new IcebergStreamWriter<>(initTable.name(), taskWriterFactory, checker);
   }
 
   /**

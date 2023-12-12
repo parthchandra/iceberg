@@ -223,4 +223,12 @@ public class FlinkWriteConf {
         .flinkConfig(FlinkWriteOptions.TABLE_REFRESH_INTERVAL)
         .parseOptional();
   }
+
+  public boolean checkFiles() {
+    return confParser
+        .booleanConf()
+        .option(FlinkWriteOptions.CHECK_FILES.key())
+        .defaultValue(FlinkWriteOptions.CHECK_FILES.defaultValue())
+        .parse();
+  }
 }
