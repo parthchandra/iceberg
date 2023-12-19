@@ -69,11 +69,19 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
           Types.NestedField.required(1, "id", Types.IntegerType.get()),
           Types.NestedField.required(2, "data", Types.StringType.get()));
 
+  public static final Schema SCHEMA_WITH_UUIDTYPE =
+      new Schema(
+          Types.NestedField.required(1, "id", Types.IntegerType.get()),
+          Types.NestedField.required(2, "data", Types.UUIDType.get()));
+
   private Table fixedTypeTable = null;
   private List<Record> fixedTypeRecords = null;
 
   private Table posTestTable = null;
   private List<Record> posTestRecords = null;
+
+  private Table uuidTestTable = null;
+  private List<Record> uuidTestRecords = null;
 
   public TestBosonSparkReaderDeletes(String format, boolean vectorized) {
     super(format, vectorized);
@@ -112,6 +120,7 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
     dropTable("test2");
     dropTable("test3");
     dropTable("test4");
+    dropTable("test5");
   }
 
   private void initFixedTypeTable() throws IOException {
@@ -152,6 +161,34 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
             posTestTable, Files.localOutput(temp.newFile()), TestHelpers.Row.of(0), posTestRecords);
 
     posTestTable.newAppend().appendFile(dataFile).commit();
+  }
+
+  private void initUuidTestTable() throws IOException {
+    this.uuidTestTable = createTable("test5", SCHEMA_WITH_UUIDTYPE, null);
+    GenericRecord record = GenericRecord.create(uuidTestTable.schema());
+
+    this.uuidTestRecords = Lists.newArrayList();
+    this.uuidTestRecords =
+        Lists.newArrayList(
+            record.copy(
+                "id", 1, "data", new byte[] {0, 1, 2, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}),
+            record.copy(
+                "id", 2, "data", new byte[] {1, 1, 2, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}),
+            record.copy(
+                "id", 3, "data", new byte[] {2, 1, 2, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}),
+            record.copy(
+                "id", 4, "data", new byte[] {3, 1, 2, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}),
+            record.copy(
+                "id", 5, "data", new byte[] {4, 1, 2, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}));
+
+    DataFile dataFile =
+        FileHelpers.writeDataFile(
+            uuidTestTable,
+            Files.localOutput(temp.newFile()),
+            TestHelpers.Row.of(0),
+            uuidTestRecords);
+
+    uuidTestTable.newAppend().appendFile(dataFile).commit();
   }
 
   @Test
@@ -195,5 +232,35 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
             });
 
     Assert.assertTrue(actual.containsAll(expected));
+  }
+
+  @Test
+  public void testUUIDType() throws IOException {
+    if (format.equals("parquet")) {
+      initUuidTestTable();
+      Types.StructType projection = uuidTestTable.schema().select("*").asStruct();
+      Dataset<Row> df =
+          spark
+              .read()
+              .format("iceberg")
+              .load(TableIdentifier.of("default", "test5").toString())
+              .selectExpr("*");
+
+      List<String> expected =
+          Lists.newArrayList(
+              "00010204-0506-0708-0900-010203040506",
+              "01010204-0506-0708-0900-010203040506",
+              "02010204-0506-0708-0900-010203040506",
+              "03010204-0506-0708-0900-010203040506",
+              "04010204-0506-0708-0900-010203040506");
+
+      List<String> actual = Lists.newArrayList();
+      df.collectAsList()
+          .forEach(
+              row -> {
+                actual.add(row.getString(1));
+              });
+      Assert.assertTrue(actual.containsAll(expected));
+    }
   }
 }
