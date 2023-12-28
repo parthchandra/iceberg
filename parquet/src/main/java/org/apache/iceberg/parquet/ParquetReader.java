@@ -32,7 +32,6 @@ import org.apache.iceberg.mapping.NameMapping;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.schema.MessageType;
 
 public class ParquetReader<T> extends CloseableGroup implements CloseableIterable<T> {
@@ -44,7 +43,6 @@ public class ParquetReader<T> extends CloseableGroup implements CloseableIterabl
   private final boolean reuseContainers;
   private final boolean caseSensitive;
   private final NameMapping nameMapping;
-  private final ParquetMetricsCallback metricsCallback;
 
   public ParquetReader(
       InputFile input,
@@ -55,28 +53,6 @@ public class ParquetReader<T> extends CloseableGroup implements CloseableIterabl
       Expression filter,
       boolean reuseContainers,
       boolean caseSensitive) {
-    this(
-        input,
-        expectedSchema,
-        options,
-        readerFunc,
-        nameMapping,
-        filter,
-        reuseContainers,
-        caseSensitive,
-        null);
-  }
-
-  public ParquetReader(
-      InputFile input,
-      Schema expectedSchema,
-      ParquetReadOptions options,
-      Function<MessageType, ParquetValueReader<?>> readerFunc,
-      NameMapping nameMapping,
-      Expression filter,
-      boolean reuseContainers,
-      boolean caseSensitive,
-      ParquetMetricsCallback metricsCallback) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -86,7 +62,6 @@ public class ParquetReader<T> extends CloseableGroup implements CloseableIterabl
     this.reuseContainers = reuseContainers;
     this.caseSensitive = caseSensitive;
     this.nameMapping = nameMapping;
-    this.metricsCallback = metricsCallback;
   }
 
   private ReadConf<T> conf = null;
@@ -104,8 +79,7 @@ public class ParquetReader<T> extends CloseableGroup implements CloseableIterabl
               nameMapping,
               reuseContainers,
               caseSensitive,
-              null,
-              metricsCallback);
+              null);
       this.conf = readConf.copy();
       return readConf;
     }

@@ -58,7 +58,6 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
   private final int batchSize;
   private final NameMapping nameMapping;
   private final boolean useBoson;
-  private final ParquetMetricsCallback metricsCallback;
 
   public VectorizedParquetReader(
       InputFile input,
@@ -71,32 +70,6 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       boolean caseSensitive,
       int maxRecordsPerBatch,
       boolean useBoson) {
-    this(
-        input,
-        expectedSchema,
-        options,
-        readerFunc,
-        nameMapping,
-        filter,
-        reuseContainers,
-        caseSensitive,
-        maxRecordsPerBatch,
-        useBoson,
-        null);
-  }
-
-  public VectorizedParquetReader(
-      InputFile input,
-      Schema expectedSchema,
-      ParquetReadOptions options,
-      Function<MessageType, VectorizedReader<?>> readerFunc,
-      NameMapping nameMapping,
-      Expression filter,
-      boolean reuseContainers,
-      boolean caseSensitive,
-      int maxRecordsPerBatch,
-      boolean useBoson,
-      ParquetMetricsCallback metricsCallback) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -108,7 +81,6 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     this.batchSize = maxRecordsPerBatch;
     this.nameMapping = nameMapping;
     this.useBoson = useBoson;
-    this.metricsCallback = metricsCallback;
   }
 
   private ReadConf conf = null;
@@ -126,8 +98,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
               nameMapping,
               reuseContainers,
               caseSensitive,
-              batchSize,
-              metricsCallback);
+              batchSize);
       this.conf = readConf.copy();
       return readConf;
     }
@@ -161,9 +132,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       this.readConf = conf;
       this.reader = conf.reader();
       if (useBoson) {
-        this.bosonReader =
-            newBosonReader(
-                           options, reader.getFooter(), conf.file(), conf.projection(), conf.rowGroups(), conf.getMEtricsCallback());
+          this.bosonReader = newBosonReader(options, reader.getFooter(), conf.file(), conf.projection());
       } else {
         this.bosonReader = null;
       }
@@ -178,12 +147,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     }
 
     private FileReader newBosonReader(
-        ParquetReadOptions options,
-        ParquetMetadata footer,
-        InputFile file,
-        MessageType projection,
-        List<BlockMetaData> rowGroups,
-        ParquetMetricsCallback metricsCallback) {
+        ParquetReadOptions options, ParquetMetadata footer, InputFile file, MessageType projection) {
       try {
         ReadOptions bosonOptions;
         org.apache.parquet.io.InputFile parquetFile;
@@ -198,7 +162,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
           bosonOptions = ReadOptions.builder().build();
         }
         FileReader fileReader =
-            new FileReader(parquetFile, footer, options, bosonOptions, null, rowGroups, metricsCallback);
+            new FileReader(parquetFile, footer, options, bosonOptions, null, rowGroups);
         fileReader.setRequestedSchema(projection.getColumns());,
         return fileReader;
       } catch (IOException e) {
@@ -249,7 +213,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
         } else {
           pages = reader.readNextRowGroup();
         }
-        ParquetMetricsCallback metricsCallback = readConf.getMetricsCallback();
+        ParquetMetricsCallback metricsCallback = readConf.getOptions().getMetricsCallback();
         if (metricsCallback != null) {
           metricsCallback.setValueLong("ParquetLoadRowGroupTime", System.nanoTime() - startNs);
           metricsCallback.setValueLong("ParquetRowGroups", 1);

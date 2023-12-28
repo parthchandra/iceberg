@@ -37,7 +37,6 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.crypto.FileDecryptionProperties;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
@@ -61,7 +60,6 @@ class ReadConf<T> {
   private final boolean reuseContainers;
   private final Integer batchSize;
   private final long[] startRowPositions;
-  private final ParquetMetricsCallback metricsCallback;
 
   // List of column chunk metadata for each row group
   private final List<Map<ColumnPath, ColumnChunkMetaData>> columnChunkMetaDataForRowGroups;
@@ -77,12 +75,10 @@ class ReadConf<T> {
       NameMapping nameMapping,
       boolean reuseContainers,
       boolean caseSensitive,
-      Integer bSize,
-      ParquetMetricsCallback metricsCallback) {
+      Integer bSize) {
     this.file = file;
     this.options = options;
-    this.metricsCallback = metricsCallback;
-    this.reader = newReader(file, options, metricsCallback);
+    this.reader = newReader(file, options);
     MessageType fileSchema = reader.getFileMetaData().getSchema();
 
     MessageType typeWithIds;
@@ -160,7 +156,6 @@ class ReadConf<T> {
     this.vectorizedModel = toCopy.vectorizedModel;
     this.columnChunkMetaDataForRowGroups = toCopy.columnChunkMetaDataForRowGroups;
     this.startRowPositions = toCopy.startRowPositions;
-    this.metricsCallback = toCopy.metricsCallback;
   }
 
   ParquetFileReader reader() {
@@ -169,13 +164,9 @@ class ReadConf<T> {
       return reader;
     }
 
-    ParquetFileReader newReader = newReader(file, options, metricsCallback);
+    ParquetFileReader newReader = newReader(file, options);
     newReader.setRequestedSchema(projection);
     return newReader;
-  }
-
-  public ParquetMetricsCallback getMetricsCallback() {
-    return metricsCallback;
   }
 
   ParquetValueReader<T> model() {
@@ -198,6 +189,10 @@ class ReadConf<T> {
     return projection;
   }
 
+  public ParquetReadOptions getOptions() {
+    return options;
+  }
+
   private Map<Long, Long> generateOffsetToStartPos(Schema schema) {
     if (schema.findField(MetadataColumns.ROW_POSITION.fieldId()) == null) {
       return null;
@@ -209,7 +204,7 @@ class ReadConf<T> {
     ParquetReadOptions readOptions =
         ParquetReadOptions.builder().withDecryption(decryptionProperties).build();
 
-    try (ParquetFileReader fileReader = newReader(file, readOptions, metricsCallback)) {
+    try (ParquetFileReader fileReader = newReader(file, readOptions)) {
       Map<Long, Long> offsetToStartPos = Maps.newHashMap();
 
       long curRowCount = 0;
@@ -254,13 +249,9 @@ class ReadConf<T> {
     return new ReadConf<>(this);
   }
 
-  private static ParquetFileReader newReader(
-      InputFile file, ParquetReadOptions options, ParquetMetricsCallback metricsCallback) {
+  private static ParquetFileReader newReader(InputFile file, ParquetReadOptions options) {
     try {
       ParquetFileReader reader = ParquetFileReader.open(ParquetIO.file(file), options);
-      if (metricsCallback != null) {
-        reader.initMetrics(metricsCallback);
-      }
       return reader;
     } catch (IOException e) {
       throw new RuntimeIOException(e, "Failed to open Parquet file: %s", file.location());

@@ -1177,6 +1177,10 @@ public class Parquet {
           optionsBuilder.withDecryption(fileDecryptionProperties);
         }
 
+        if (metricsCallback != null) {
+          optionsBuilder.withMetricsCallback(metricsCallback);
+        }
+
         ParquetReadOptions options = optionsBuilder.build();
 
         if (batchedReaderFunc != null) {
@@ -1190,8 +1194,7 @@ public class Parquet {
               reuseContainers,
               caseSensitive,
               maxRecordsPerBatch,
-              useBoson,
-              metricsCallback);
+              useBoson);
         } else {
           return new org.apache.iceberg.parquet.ParquetReader<>(
               file,
@@ -1201,8 +1204,7 @@ public class Parquet {
               nameMapping,
               filter,
               reuseContainers,
-              caseSensitive,
-              metricsCallback);
+              caseSensitive);
         }
       }
 
