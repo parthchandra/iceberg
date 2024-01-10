@@ -24,6 +24,7 @@ public class BosonReadOptions implements Serializable {
   private boolean enableBoson;
   private boolean useLazyMaterialization;
   private boolean useDecimal128;
+  private boolean exceptionOnDatetimeRebase;
 
   public BosonReadOptions() {}
 
@@ -33,6 +34,10 @@ public class BosonReadOptions implements Serializable {
 
   public void setUseDecimal128(boolean useDecimal128) {
     this.useDecimal128 = useDecimal128;
+  }
+
+  public void setExceptionOnDatetimeRebase(boolean exceptionOnDatetimeRebase) {
+    this.exceptionOnDatetimeRebase = exceptionOnDatetimeRebase;
   }
 
   public void setUseLazyMaterialization(boolean lazyMaterialization) {
@@ -49,5 +54,9 @@ public class BosonReadOptions implements Serializable {
 
   public boolean getUseLazyMaterialization() {
     return useLazyMaterialization;
+  }
+
+  public boolean getExceptionOnDatetimeRebase() {
+    return exceptionOnDatetimeRebase;
   }
 }

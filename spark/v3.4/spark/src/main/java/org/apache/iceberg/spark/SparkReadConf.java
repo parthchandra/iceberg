@@ -290,9 +290,18 @@ public class SparkReadConf {
             .defaultValue((Boolean) BosonConf.BOSON_USE_LAZY_MATERIALIZATION().defaultValue().get())
             .parse();
 
+    boolean exceptionOnDatetimeRebase =
+        confParser
+            .booleanConf()
+            .sessionConf(BosonConf.BOSON_EXCEPTION_ON_LEGACY_DATE_TIMESTAMP().key())
+            .defaultValue(
+                (Boolean) BosonConf.BOSON_EXCEPTION_ON_LEGACY_DATE_TIMESTAMP().defaultValue().get())
+            .parse();
+
     bosonReadOptions.setEnableBoson(enableBoson);
     bosonReadOptions.setUseDecimal128(useDecimal128);
     bosonReadOptions.setUseLazyMaterialization(useLazyMaterialization);
+    bosonReadOptions.setExceptionOnDatetimeRebase(exceptionOnDatetimeRebase);
 
     return bosonReadOptions;
   }

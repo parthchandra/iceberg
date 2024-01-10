@@ -114,7 +114,8 @@ public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
             descriptor,
             batchSize,
             bosonReadOptions.getUseDecimal128(),
-            bosonReadOptions.getUseLazyMaterialization());
+            bosonReadOptions.getUseLazyMaterialization(),
+            bosonReadOptions.getExceptionOnDatetimeRebase());
     initialized = true;
   }
 
