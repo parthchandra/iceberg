@@ -30,10 +30,13 @@ import org.apache.iceberg.flink.source.split.IcebergSourceSplitSerializer;
 import org.apache.iceberg.flink.source.split.IcebergSourceSplitState;
 import org.apache.iceberg.flink.source.split.IcebergSourceSplitStatus;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Internal
 public class IcebergEnumeratorStateSerializer
     implements SimpleVersionedSerializer<IcebergEnumeratorState> {
+  private static final Logger LOG = LoggerFactory.getLogger(IcebergEnumeratorStateSerializer.class);
 
   private static final int VERSION = 2;
 
@@ -148,10 +151,15 @@ public class IcebergEnumeratorStateSerializer
     out.writeInt(splitSerializer.getVersion());
     out.writeInt(pendingSplits.size());
     for (IcebergSourceSplitState splitState : pendingSplits) {
-      byte[] splitBytes = splitSerializer.serialize(splitState.split());
-      out.writeInt(splitBytes.length);
-      out.write(splitBytes);
-      out.writeUTF(splitState.status().name());
+      try {
+        byte[] splitBytes = splitSerializer.serialize(splitState.split());
+        out.writeInt(splitBytes.length);
+        out.write(splitBytes);
+        out.writeUTF(splitState.status().name());
+      } catch (IOException e) {
+        LOG.warn("Failed to serialize split: {}", splitState.split(), e);
+        throw e;
+      }
     }
   }
 

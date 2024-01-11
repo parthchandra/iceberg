@@ -82,7 +82,9 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
 
   @Override
   public String splitId() {
-    return MoreObjects.toStringHelper(this).add("files", toString(task.files())).toString();
+    return MoreObjects.toStringHelper(this)
+        .add("files", toStringWithoutDeletes(task.files()))
+        .toString();
   }
 
   public void updatePosition(int newFileOffset, long newRecordOffset) {
@@ -110,6 +112,25 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
                         .add("file", fileScanTask.file().location())
                         .add("start", fileScanTask.start())
                         .add("length", fileScanTask.length())
+                        .add(
+                            "deletes",
+                            fileScanTask.deletes().stream()
+                                .map(d -> d.path().toString())
+                                .collect(Collectors.toList()))
+                        .toString())
+            .collect(Collectors.toList()));
+  }
+
+  private String toStringWithoutDeletes(Collection<FileScanTask> files) {
+    return Iterables.toString(
+        files.stream()
+            .map(
+                fileScanTask ->
+                    MoreObjects.toStringHelper(fileScanTask)
+                        .add("file", fileScanTask.file().path().toString())
+                        .add("start", fileScanTask.start())
+                        .add("length", fileScanTask.length())
+                        .add("deletesLength", fileScanTask.deletes().size())
                         .toString())
             .collect(Collectors.toList()));
   }
