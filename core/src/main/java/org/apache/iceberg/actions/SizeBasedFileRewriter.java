@@ -59,11 +59,11 @@ public abstract class SizeBasedFileRewriter<T extends ContentScanTask<F>, F exte
    * Controls which files will be considered for rewriting. Files with sizes under this threshold
    * will be considered for rewriting regardless of any other criteria.
    *
-   * <p>Defaults to 75% of the target file size.
+   * <p>Defaults to {@link #MIN_FILE_SIZE_DEFAULT_RATIO} of the target file size.
    */
   public static final String MIN_FILE_SIZE_BYTES = "min-file-size-bytes";
 
-  public static final double MIN_FILE_SIZE_DEFAULT_RATIO = 0.75;
+  public static final double MIN_FILE_SIZE_DEFAULT_RATIO = 0.50;
 
   /**
    * Controls which files will be considered for rewriting. Files with sizes above this threshold

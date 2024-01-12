@@ -18,10 +18,8 @@
  */
 package org.apache.iceberg.spark.source;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.ScanTask;
@@ -38,9 +36,7 @@ import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
 import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
-import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
-import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,20 +98,6 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
             .project(requiredSchema)
             .split(start, length)
             .enableBoson(bosonReadOptions.getEnableBoson());
-
-    if (bosonReadOptions.getEnableBoson()) {
-      List types =
-          expectedSchema().columns().stream()
-              .map(Types.NestedField::type)
-              .collect(Collectors.toList());
-      for (Object type : types) {
-        if (((Type) type).typeId().equals(Type.TypeID.UUID)) {
-          bosonReadOptions.setEnableBoson(false);
-          LOG.info("Boson is enabled but found uuid type, falling back to non-Boson path.");
-          break;
-        }
-      }
-    }
 
     if (bosonReadOptions.getEnableBoson()) {
       LOG.info("Boson is enabled.");
