@@ -327,10 +327,13 @@ class V2Metadata {
                 "Found unassigned sequence number for an entry from snapshot: %s",
                 wrapped.snapshotId());
 
+            // Internal: Older versions of Iceberg write null for sequence numbers, when CopyTables
+            // attempts to copy these manifests the following precondition would be set off causing
+            // the job to fail
             // inheritance should work only for ADDED entries
-            Preconditions.checkState(
-                wrapped.status() == Status.ADDED,
-                "Only entries with status ADDED can have null sequence number");
+            // Preconditions.checkState(
+            //    wrapped.status() == Status.ADDED,
+            //    "Only entries with status ADDED can have null sequence number");
 
             return null;
           }
