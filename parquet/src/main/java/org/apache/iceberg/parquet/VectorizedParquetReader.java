@@ -144,15 +144,17 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private FileReader newBosonReader(
         ParquetReadOptions options, InputFile file, MessageType projection) {
       try {
-        ReadOptions bosonOptions = ReadOptions.builder().build();
-
+        ReadOptions bosonOptions;
         org.apache.parquet.io.InputFile parquetFile;
         if (file instanceof HadoopInputFile) {
           // Use BosonInputFile which contains extra optimizations
           HadoopInputFile hInputFile = (HadoopInputFile) file;
-          parquetFile = BosonInputFile.fromPath(hInputFile.getPath(), hInputFile.getConf());
+          org.apache.hadoop.conf.Configuration hConfig = hInputFile.getConf();
+          parquetFile = BosonInputFile.fromPath(hInputFile.getPath(), hConfig);
+          bosonOptions = ReadOptions.builder(hConfig).build();
         } else {
           parquetFile = ParquetIO.file(file);
+          bosonOptions = ReadOptions.builder().build();
         }
         FileReader fileReader = new FileReader(parquetFile, options, bosonOptions);
         fileReader.setRequestedSchema(projection.getColumns());
