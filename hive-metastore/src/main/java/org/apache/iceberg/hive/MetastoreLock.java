@@ -68,6 +68,12 @@ class MetastoreLock implements HiveLock {
   private static final String HIVE_TABLE_LEVEL_LOCK_EVICT_MS =
       "iceberg.hive.table-level-lock-evict-ms";
 
+  // WARNING: internal property.  Do not use without consulting Apple Data Tables team
+  // Changing the table's lock string can corrupt tables simultaneously being written to by other
+  // HiveCatalogs
+  private static final String HIVE_LOCK_INCLUDE_CATALOG_NAME =
+      "iceberg.hive.lock-include-catalog-name";
+
   private static final long HIVE_ACQUIRE_LOCK_TIMEOUT_MS_DEFAULT = 3 * 60 * 1000; // 3 minutes
   private static final long HIVE_LOCK_CHECK_MIN_WAIT_MS_DEFAULT = 50; // 50 milliseconds
   private static final long HIVE_LOCK_CHECK_MAX_WAIT_MS_DEFAULT = 5 * 1000; // 5 seconds
@@ -76,9 +82,11 @@ class MetastoreLock implements HiveLock {
   private static final long HIVE_LOCK_CREATION_MAX_WAIT_MS_DEFAULT = 5 * 1000; // 5 seconds
   private static final long HIVE_LOCK_HEARTBEAT_INTERVAL_MS_DEFAULT = 4 * 60 * 1000; // 4 minutes
   private static final long HIVE_TABLE_LEVEL_LOCK_EVICT_MS_DEFAULT = TimeUnit.MINUTES.toMillis(10);
+  private static final boolean HIVE_LOCK_INCLUDE_CATALOG_NAME_DEFAULT = false;
   private static volatile Cache<String, ReentrantLock> commitLockCache;
 
   private final ClientPool<IMetaStoreClient, TException> metaClients;
+  private final String catalogName;
   private final String databaseName;
   private final String tableName;
   private final String fullName;
@@ -91,6 +99,7 @@ class MetastoreLock implements HiveLock {
   private final long lockHeartbeatIntervalTime;
   private final ScheduledExecutorService exitingScheduledExecutorService;
   private final String agentInfo;
+  private final boolean lockIncludesCatalog;
 
   private Optional<Long> hmsLockId = Optional.empty();
   private ReentrantLock jvmLock = null;
@@ -104,6 +113,7 @@ class MetastoreLock implements HiveLock {
       String tableName) {
     this.metaClients = metaClients;
     this.fullName = catalogName + "." + databaseName + "." + tableName;
+    this.catalogName = catalogName;
     this.databaseName = databaseName;
     this.tableName = tableName;
 
@@ -121,6 +131,8 @@ class MetastoreLock implements HiveLock {
         conf.getLong(HIVE_LOCK_CREATION_MAX_WAIT_MS, HIVE_LOCK_CREATION_MAX_WAIT_MS_DEFAULT);
     this.lockHeartbeatIntervalTime =
         conf.getLong(HIVE_LOCK_HEARTBEAT_INTERVAL_MS, HIVE_LOCK_HEARTBEAT_INTERVAL_MS_DEFAULT);
+    this.lockIncludesCatalog =
+        conf.getBoolean(HIVE_LOCK_INCLUDE_CATALOG_NAME, HIVE_LOCK_INCLUDE_CATALOG_NAME_DEFAULT);
     long tableLevelLockCacheEvictionTimeout =
         conf.getLong(HIVE_TABLE_LEVEL_LOCK_EVICT_MS, HIVE_TABLE_LEVEL_LOCK_EVICT_MS_DEFAULT);
 
@@ -277,8 +289,15 @@ class MetastoreLock implements HiveLock {
       throw new LockException(uhe, "Error generating host name");
     }
 
+    // Workaround for HIVE-28109
+    String lockDbName;
+    if (lockIncludesCatalog) {
+      lockDbName = catalogName + "." + databaseName;
+    } else {
+      lockDbName = databaseName;
+    }
     LockComponent lockComponent =
-        new LockComponent(LockType.EXCLUSIVE, LockLevel.TABLE, databaseName);
+        new LockComponent(LockType.EXCLUSIVE, LockLevel.TABLE, lockDbName);
     lockComponent.setTablename(tableName);
     LockRequest lockRequest =
         new LockRequest(Lists.newArrayList(lockComponent), HiveHadoopUtil.currentUser(), hostName);
