@@ -44,6 +44,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
+import org.apache.hadoop.hive.metastore.api.LockComponent;
 import org.apache.hadoop.hive.metastore.api.LockRequest;
 import org.apache.hadoop.hive.metastore.api.LockResponse;
 import org.apache.hadoop.hive.metastore.api.LockState;
@@ -533,5 +534,36 @@ public class TestHiveCommitLocks extends HiveTableBaseTest {
     Assert.assertEquals(
         context.get("expected_parameter_key"), HiveTableOperations.METADATA_LOCATION_PROP);
     Assert.assertEquals(context.get("expected_parameter_value"), metadataV2.metadataFileLocation());
+  }
+
+  @Test
+  public void testLockIncludeCatalogName() throws Exception {
+
+    Configuration confWithLock = new Configuration(overriddenHiveConf);
+    confWithLock.setBoolean("iceberg.hive.lock-include-catalog-name", true);
+
+    ArgumentCaptor<LockRequest> lockRequestCaptor = ArgumentCaptor.forClass(LockRequest.class);
+    doReturn(acquiredLockResponse).when(spyClient).lock(lockRequestCaptor.capture());
+    HiveTableOperations noLockSpyOps =
+        spy(
+            new HiveTableOperations(
+                confWithLock,
+                spyCachedClientPool,
+                ops.io(),
+                ops.encryptionManagerFactory(),
+                catalog.name(),
+                TABLE_IDENTIFIER.namespace().level(0),
+                TABLE_IDENTIFIER.name()));
+    noLockSpyOps.doCommit(metadataV2, metadataV1);
+
+    // Make sure that the lock includes catalog in the name.
+    LockRequest request = lockRequestCaptor.getValue();
+    Assert.assertEquals(1, request.getComponentSize());
+
+    LockComponent component = request.getComponent().get(0);
+    Assert.assertEquals(catalog.name() + "." + DB_NAME, component.getDbname());
+    Assert.assertEquals(TABLE_NAME, component.getTablename());
+
+    verify(spyClient, times(1)).unlock(eq(dummyLockId));
   }
 }
