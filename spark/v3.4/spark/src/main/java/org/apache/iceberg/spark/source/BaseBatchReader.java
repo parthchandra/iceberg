@@ -18,8 +18,6 @@
  */
 package org.apache.iceberg.spark.source;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +32,7 @@ import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
-import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
@@ -43,10 +41,8 @@ import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParque
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
-import org.apache.parquet.hadoop.ParquetMetricsCallback;
-import org.apache.spark.sql.connector.metric.CustomFileTaskMetric;
 import org.apache.spark.sql.connector.metric.CustomTaskMetric;
-import org.apache.spark.sql.execution.datasources.parquet.ParquetMetricsCallbackImpl;
+import org.apache.spark.sql.execution.datasources.parquet.ParquetMetricsCallback;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,7 +57,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
 
   // The cumulative metrics of all readers. Before a new  reader is
   // created, the metrics of the previous reader are read and merged into this.
-  private List<CustomFileTaskMetric> allParquetMetrics = Lists.newArrayList();
+  private final Map<String, Long> allParquetMetrics = Maps.newHashMap();
 
   BaseBatchReader(
       Table table,
@@ -86,7 +82,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     return metricsCallback;
   }
 
-  public List<CustomFileTaskMetric> getAllParquetMetrics() {
+  public Map<String, Long> getAllParquetMetrics() {
     return allParquetMetrics;
   }
 
@@ -102,14 +98,10 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     switch (format) {
       case PARQUET:
         if (this.metricsCallback != null) {
-          List<CustomTaskMetric> parquetMetrics =
-              new ArrayList<>(
-                  Arrays.asList(
-                      ((ParquetMetricsCallbackImpl) getMetricsCallback()).currentMetricsValues()));
-          allParquetMetrics =
-              CustomFileTaskMetric.mergeMetricValues(parquetMetrics, allParquetMetrics);
+          CustomTaskMetric[] parquetMetrics = getMetricsCallback().currentMetricsValues();
+          updateMetricsValues(parquetMetrics, allParquetMetrics);
         }
-        this.metricsCallback = new ParquetMetricsCallbackImpl(null);
+        this.metricsCallback = new ParquetMetricsCallback(null);
         return newParquetIterable(
             inputFile, start, length, residual, idToConstant, deleteFilter, metricsCallback);
 
@@ -204,5 +196,17 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
       return false;
     }
     return true;
+  }
+
+  protected Map<String, Long> updateMetricsValues(
+      CustomTaskMetric[] currentFileMetrics, Map<String, Long> metricsValues) {
+    for (CustomTaskMetric metric : currentFileMetrics) {
+      if (metricsValues.containsKey(metric.name())) {
+        metricsValues.put(metric.name(), metricsValues.get(metric.name()) + metric.value());
+      } else {
+        metricsValues.put(metric.name(), metric.value());
+      }
+    }
+    return metricsValues;
   }
 }
