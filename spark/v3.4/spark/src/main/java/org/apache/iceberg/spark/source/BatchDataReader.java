@@ -18,8 +18,6 @@
  */
 package org.apache.iceberg.spark.source;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -32,14 +30,13 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.source.metrics.TaskNumDeletes;
 import org.apache.iceberg.spark.source.metrics.TaskNumSplits;
 import org.apache.iceberg.util.SnapshotUtil;
 import org.apache.spark.rdd.InputFileBlockHolder;
-import org.apache.spark.sql.connector.metric.CustomFileTaskMetric;
 import org.apache.spark.sql.connector.metric.CustomTaskMetric;
 import org.apache.spark.sql.connector.read.PartitionReader;
-import org.apache.spark.sql.execution.datasources.parquet.ParquetMetricsCallbackImpl;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,25 +74,25 @@ class BatchDataReader extends BaseBatchReader<FileScanTask>
   @Override
   public CustomTaskMetric[] currentMetricsValues() {
     if (getFileFormat() == FileFormat.PARQUET) {
-      List<CustomTaskMetric> parquetMetrics =
-          new ArrayList<>(
-              Arrays.asList(
-                  ((ParquetMetricsCallbackImpl) getMetricsCallback()).currentMetricsValues()));
-      List<CustomFileTaskMetric> parquetFileMetrics =
-          CustomFileTaskMetric.mergeMetricValues(parquetMetrics, getAllParquetMetrics());
-      CustomTaskMetric[] parquetMetricsArray = new CustomTaskMetric[parquetFileMetrics.size()];
-      parquetFileMetrics.toArray(parquetMetricsArray);
-      CustomTaskMetric[] scanMetrics =
-          Arrays.copyOf(parquetMetricsArray, parquetMetricsArray.length + 2);
-      System.arraycopy(
-          new CustomTaskMetric[] {
-            new TaskNumSplits(numSplits), new TaskNumDeletes(counter().get())
-          },
-          0,
-          scanMetrics,
-          parquetMetricsArray.length,
-          2);
-      return scanMetrics;
+      CustomTaskMetric[] parquetMetrics = getMetricsCallback().currentMetricsValues();
+      Map<String, Long> parquetFileMetrics =
+          updateMetricsValues(parquetMetrics, getAllParquetMetrics());
+      List<CustomTaskMetric> scanMetrics = Lists.newArrayList();
+      for (Map.Entry<String, Long> entry : parquetFileMetrics.entrySet()) {
+        scanMetrics.add(
+            new CustomTaskMetric() {
+              public String name() {
+                return entry.getKey();
+              }
+
+              public long value() {
+                return entry.getValue();
+              }
+            });
+      }
+      scanMetrics.add(new TaskNumSplits(numSplits));
+      scanMetrics.add(new TaskNumDeletes(counter().get()));
+      return scanMetrics.toArray(new CustomTaskMetric[0]);
     } else {
       return new CustomTaskMetric[] {
         new TaskNumSplits(numSplits), new TaskNumDeletes(counter().get())
