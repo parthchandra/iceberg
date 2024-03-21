@@ -16,18 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.parquet.AbstractColumnReader;
-import com.apple.boson.parquet.ColumnReader;
-import com.apple.boson.parquet.TypeUtil;
-import com.apple.boson.parquet.Utils;
-import com.apple.boson.vector.BosonVector;
+import org.apache.comet.parquet.AbstractColumnReader;
+import org.apache.comet.parquet.ColumnReader;
+import org.apache.comet.parquet.TypeUtil;
+import org.apache.comet.parquet.Utils;
+import org.apache.comet.vector.CometVector;
 import java.io.IOException;
 import java.util.Map;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -40,13 +40,13 @@ import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 
 /**
- * A Parquet column reader backed by a Boson {@link ColumnReader}. This class should be used
- * together with {@link BosonIcebergVector}.
+ * A Parquet column reader backed by a Comet {@link ColumnReader}. This class should be used
+ * together with {@link CometIcebergVector}.
  *
  * <p>Example:
  *
  * <pre>
- *   BosonColumnReader reader = ...
+ *   CometColumnReader reader = ...
  *   reader.setBatchSize(batchSize);
  *
  *   while (hasMoreRowsToRead) {
@@ -57,7 +57,7 @@ import org.apache.spark.sql.types.StructField;
  *     }
  *
  *     int numRows = ...
- *     BosonIcebergVector vector = reader.read(null, numRows);
+ *     CometIcebergVector vector = reader.read(null, numRows);
  *
  *     // consume the vector
  *   }
@@ -66,32 +66,32 @@ import org.apache.spark.sql.types.StructField;
  * </pre>
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
-public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
+public class CometColumnReader implements VectorizedReader<CometIcebergVector> {
   public static final int DEFAULT_BATCH_SIZE = 5000;
 
   private final DataType sparkType;
   protected AbstractColumnReader delegate;
-  private final BosonIcebergVector vector;
+  private final CometIcebergVector vector;
   private final ColumnDescriptor descriptor;
   protected boolean initialized = false;
   protected int batchSize = DEFAULT_BATCH_SIZE;
-  private final BosonReadOptions bosonReadOptions;
+  private final CometReadOptions cometReadOptions;
 
-  public BosonColumnReader(
-      DataType sparkType, ColumnDescriptor descriptor, BosonReadOptions bosonReadOptions) {
+  public CometColumnReader(
+      DataType sparkType, ColumnDescriptor descriptor, CometReadOptions cometReadOptions) {
     this.sparkType = sparkType;
     this.descriptor = descriptor;
-    this.bosonReadOptions = bosonReadOptions;
-    this.vector = new BosonIcebergVector(sparkType, bosonReadOptions.getUseDecimal128());
+    this.cometReadOptions = cometReadOptions;
+    this.vector = new CometIcebergVector(sparkType, cometReadOptions.getUseDecimal128());
   }
 
-  public BosonColumnReader(Types.NestedField field, BosonReadOptions bosonReadOptions) {
+  public CometColumnReader(Types.NestedField field, CometReadOptions cometReadOptions) {
     DataType dataType = SparkSchemaUtil.convert(field.type());
     StructField structField = new StructField(field.name(), dataType, false, Metadata.empty());
     this.sparkType = dataType;
     this.descriptor = TypeUtil.convertToParquet(structField);
-    this.bosonReadOptions = bosonReadOptions;
-    this.vector = new BosonIcebergVector(sparkType, bosonReadOptions.getUseDecimal128());
+    this.cometReadOptions = cometReadOptions;
+    this.vector = new CometIcebergVector(sparkType, cometReadOptions.getUseDecimal128());
   }
 
   public AbstractColumnReader getDelegate() {
@@ -113,15 +113,15 @@ public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
             sparkType,
             descriptor,
             batchSize,
-            bosonReadOptions.getUseDecimal128(),
-            bosonReadOptions.getUseLazyMaterialization());
+            cometReadOptions.getUseDecimal128(),
+            cometReadOptions.getUseLazyMaterialization());
     initialized = true;
   }
 
   @Override
-  public BosonIcebergVector read(BosonIcebergVector reuse, int numRows) {
+  public CometIcebergVector read(CometIcebergVector reuse, int numRows) {
     delegate.readBatch(numRows);
-    BosonVector bv = delegate.currentBatch();
+    CometVector bv = delegate.currentBatch();
     vector.setDelegate(bv);
     return reuse;
   }
@@ -130,7 +130,7 @@ public class BosonColumnReader implements VectorizedReader<BosonIcebergVector> {
     return descriptor;
   }
 
-  public BosonIcebergVector getVector() {
+  public CometIcebergVector getVector() {
     return vector;
   }
 

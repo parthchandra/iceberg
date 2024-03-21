@@ -27,7 +27,7 @@ import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.Tasks;
@@ -102,11 +102,11 @@ class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     if (useParquetBatchReads()) {
       int batchSize = readConf.parquetBatchSize();
-      return new SparkColumnarReaderFactory(batchSize, readConf.getBosonReadConf());
+      return new SparkColumnarReaderFactory(batchSize, readConf.getCometReadConf());
 
     } else if (useOrcBatchReads()) {
       int batchSize = readConf.orcBatchSize();
-      return new SparkColumnarReaderFactory(batchSize, new BosonReadOptions());
+      return new SparkColumnarReaderFactory(batchSize, new CometReadOptions());
 
     } else {
       return new SparkRowReaderFactory();

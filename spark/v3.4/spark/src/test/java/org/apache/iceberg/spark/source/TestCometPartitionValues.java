@@ -18,25 +18,25 @@
  */
 package org.apache.iceberg.spark.source;
 
-import com.apple.boson.BosonConf;
+import org.apache.comet.CometConf;
 import org.apache.spark.sql.SparkSession;
 import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 @RunWith(Parameterized.class)
-public class TestBosonPartitionValues extends TestPartitionValues {
+public class TestCometPartitionValues extends TestPartitionValues {
 
   @BeforeClass
   public static void startSpark() {
-    TestBosonPartitionValues.spark =
+    TestCometPartitionValues.spark =
         SparkSession.builder()
             .master("local[2]")
-            .config(BosonConf.BOSON_ENABLED().key(), "true")
+            .config(CometConf.COMET_ENABLED().key(), "true")
             .getOrCreate();
   }
 
-  public TestBosonPartitionValues(String format, boolean vectorized) {
+  public TestCometPartitionValues(String format, boolean vectorized) {
     super(format, vectorized);
   }
 }

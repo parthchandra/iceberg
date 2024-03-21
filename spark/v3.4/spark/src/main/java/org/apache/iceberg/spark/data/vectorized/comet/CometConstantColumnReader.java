@@ -16,22 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.parquet.ConstantColumnReader;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.comet.parquet.ConstantColumnReader;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.types.Types;
 
-public class BosonConstantColumnReader<T> extends BosonColumnReader {
+public class CometConstantColumnReader<T> extends CometColumnReader {
   private final T value;
 
-  public BosonConstantColumnReader(
-      T value, Types.NestedField field, BosonReadOptions bosonReadOptions) {
-    super(field, bosonReadOptions);
+  public CometConstantColumnReader(
+      T value, Types.NestedField field, CometReadOptions cometReadOptions) {
+    super(field, cometReadOptions);
     this.value = value;
     delegate =
         new ConstantColumnReader(
-            getSparkType(), getDescriptor(), value, bosonReadOptions.getUseDecimal128());
+            getSparkType(), getDescriptor(), value, cometReadOptions.getUseDecimal128());
   }
 
   @Override

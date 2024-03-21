@@ -20,7 +20,7 @@ package org.apache.iceberg.spark.source;
 
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTOREURIS;
 
-import com.apple.boson.BosonConf;
+import org.apache.comet.CometConf;
 import java.io.IOException;
 import java.util.List;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -55,12 +55,12 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 @RunWith(Parameterized.class)
-public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
+public class TestCometSparkReaderDeletes extends TestSparkReaderDeletes {
 
   public static final Schema SCHEMA_WITH_FIXEDTYPE =
       new Schema(
           Types.NestedField.required(1, "id", Types.IntegerType.get()),
-          // BOSON doesn't support fixed type yet, read fixed type will fall back to regular
+          // COMET doesn't support fixed type yet, read fixed type will fall back to regular
           // vectorization
           Types.NestedField.required(2, "fixed", Types.FixedType.ofLength(3)));
 
@@ -83,7 +83,7 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
   private Table uuidTestTable = null;
   private List<Record> uuidTestRecords = null;
 
-  public TestBosonSparkReaderDeletes(String format, boolean vectorized) {
+  public TestCometSparkReaderDeletes(String format, boolean vectorized) {
     super(format, vectorized);
   }
 
@@ -98,7 +98,7 @@ public class TestBosonSparkReaderDeletes extends TestSparkReaderDeletes {
             .master("local[2]")
             .config(SQLConf.PARTITION_OVERWRITE_MODE().key(), "dynamic")
             .config("spark.hadoop." + METASTOREURIS.varname, hiveConf.get(METASTOREURIS.varname))
-            .config(BosonConf.BOSON_ENABLED().key(), "true")
+            .config(CometConf.COMET_ENABLED().key(), "true")
             .enableHiveSupport()
             .getOrCreate();
 

@@ -20,15 +20,15 @@ package org.apache.iceberg.spark;
 
 import java.io.Serializable;
 
-public class BosonReadOptions implements Serializable {
-  private boolean enableBoson;
+public class CometReadOptions implements Serializable {
+  private boolean enableComet;
   private boolean useLazyMaterialization;
   private boolean useDecimal128;
 
-  public BosonReadOptions() {}
+  public CometReadOptions() {}
 
-  public void setEnableBoson(boolean enableBoson) {
-    this.enableBoson = enableBoson;
+  public void setEnableComet(boolean enableComet) {
+    this.enableComet = enableComet;
   }
 
   public void setUseDecimal128(boolean useDecimal128) {
@@ -39,8 +39,8 @@ public class BosonReadOptions implements Serializable {
     this.useLazyMaterialization = lazyMaterialization;
   }
 
-  public boolean getEnableBoson() {
-    return enableBoson;
+  public boolean getEnableComet() {
+    return enableComet;
   }
 
   public boolean getUseDecimal128() {

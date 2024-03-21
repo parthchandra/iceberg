@@ -18,7 +18,7 @@
  */
 package org.apache.iceberg.spark.source;
 
-import com.apple.boson.parquet.SupportsBoson;
+import org.apache.comet.parquet.SupportsComet;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +49,7 @@ import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoson {
+abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsComet {
   private static final Logger LOG = LoggerFactory.getLogger(SparkScan.class);
 
   private final JavaSparkContext sparkContext;
@@ -133,8 +133,8 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsBoso
   }
 
   @Override
-  public boolean isBosonEnabled() {
-    if (this.readConf.getBosonReadConf().getEnableBoson()) {
+  public boolean isCometEnabled() {
+    if (this.readConf.getCometReadConf().getEnableComet()) {
       SparkBatch batch = (SparkBatch) this.toBatch();
       if (batch.useParquetBatchReads()) {
         return true;

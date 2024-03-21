@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +29,7 @@ import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -38,24 +38,24 @@ import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 
-public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<VectorizedReader<?>> {
+public class CometVectorizedReaderBuilder extends TypeWithSchemaVisitor<VectorizedReader<?>> {
   private final MessageType parquetSchema;
   private final Schema icebergSchema;
   private final Map<Integer, ?> idToConstant;
   private final Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory;
-  private final BosonReadOptions bosonReadOptions;
+  private final CometReadOptions cometReadOptions;
 
-  public BosonVectorizedReaderBuilder(
+  public CometVectorizedReaderBuilder(
       Schema expectedSchema,
       MessageType parquetSchema,
       Map<Integer, ?> idToConstant,
       Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory,
-      BosonReadOptions bosonReadOptions) {
+      CometReadOptions cometReadOptions) {
     this.parquetSchema = parquetSchema;
     this.icebergSchema = expectedSchema;
     this.idToConstant = idToConstant;
     this.readerFactory = readerFactory;
-    this.bosonReadOptions = bosonReadOptions;
+    this.cometReadOptions = cometReadOptions;
   }
 
   @Override
@@ -79,19 +79,19 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       int id = field.fieldId();
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
-        BosonColumnReader constantReader =
-            new BosonConstantColumnReader<>(idToConstant.get(id), field, bosonReadOptions);
+        CometColumnReader constantReader =
+            new CometConstantColumnReader<>(idToConstant.get(id), field, cometReadOptions);
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
-        reorderedFields.add(new BosonPositionColumnReader(field, bosonReadOptions));
+        reorderedFields.add(new CometPositionColumnReader(field, cometReadOptions));
       } else if (id == MetadataColumns.IS_DELETED.fieldId()) {
-        BosonColumnReader deleteReader = new BosonDeleteColumnReader<>(field, bosonReadOptions);
+        CometColumnReader deleteReader = new CometDeleteColumnReader<>(field, cometReadOptions);
         reorderedFields.add(deleteReader);
       } else if (reader != null) {
         reorderedFields.add(reader);
       } else {
-        BosonColumnReader constantReader =
-            new BosonConstantColumnReader<>(null, field, bosonReadOptions);
+        CometColumnReader constantReader =
+            new CometConstantColumnReader<>(null, field, cometReadOptions);
         reorderedFields.add(constantReader);
       }
     }
@@ -130,7 +130,7 @@ public class BosonVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectoriz
       return null;
     }
 
-    return new BosonColumnReader(
-        SparkSchemaUtil.convert(icebergField.type()), desc, bosonReadOptions);
+    return new CometColumnReader(
+        SparkSchemaUtil.convert(icebergField.type()), desc, cometReadOptions);
   }
 }

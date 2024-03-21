@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
 import java.util.List;
 import java.util.Map;
@@ -26,47 +26,47 @@ import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
 
-public class BosonVectorizedSparkParquetReaders {
+public class CometVectorizedSparkParquetReaders {
 
-  private BosonVectorizedSparkParquetReaders() {}
+  private CometVectorizedSparkParquetReaders() {}
 
-  public static BosonColumnarBatchReader buildReader(
-      Schema expectedSchema, MessageType fileSchema, BosonReadOptions bosonReadOptions) {
-    return buildReader(expectedSchema, fileSchema, Maps.newHashMap(), bosonReadOptions);
+  public static CometColumnarBatchReader buildReader(
+      Schema expectedSchema, MessageType fileSchema, CometReadOptions cometReadOptions) {
+    return buildReader(expectedSchema, fileSchema, Maps.newHashMap(), cometReadOptions);
   }
 
-  public static BosonColumnarBatchReader buildReader(
+  public static CometColumnarBatchReader buildReader(
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
-      BosonReadOptions bosonReadOptions) {
-    BosonColumnarBatchReader bosonColumnarBatchReader =
-        (BosonColumnarBatchReader)
+      CometReadOptions cometReadOptions) {
+    CometColumnarBatchReader cometColumnarBatchReader =
+        (CometColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
                 expectedSchema.asStruct(),
                 fileSchema,
-                new BosonVectorizedReaderBuilder(
+                new CometVectorizedReaderBuilder(
                     expectedSchema,
                     fileSchema,
                     idToConstant,
                     readers ->
-                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
-                    bosonReadOptions));
-    return bosonColumnarBatchReader;
+                        new CometColumnarBatchReader(readers, expectedSchema, cometReadOptions),
+                    cometReadOptions));
+    return cometColumnarBatchReader;
   }
 
-  public static BosonColumnarBatchReader buildReader(
+  public static CometColumnarBatchReader buildReader(
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
       DeleteFilter<InternalRow> deleteFilter,
-      BosonReadOptions bosonReadOptions) {
-    BosonColumnarBatchReader bosonColumnarBatchReader =
-        (BosonColumnarBatchReader)
+      CometReadOptions cometReadOptions) {
+    CometColumnarBatchReader cometColumnarBatchReader =
+        (CometColumnarBatchReader)
             TypeWithSchemaVisitor.visit(
                 expectedSchema.asStruct(),
                 fileSchema,
@@ -75,13 +75,13 @@ public class BosonVectorizedSparkParquetReaders {
                     fileSchema,
                     idToConstant,
                     readers ->
-                        new BosonColumnarBatchReader(readers, expectedSchema, bosonReadOptions),
+                        new CometColumnarBatchReader(readers, expectedSchema, cometReadOptions),
                     deleteFilter,
-                    bosonReadOptions));
-    return bosonColumnarBatchReader;
+                    cometReadOptions));
+    return cometColumnarBatchReader;
   }
 
-  private static class ReaderBuilder extends BosonVectorizedReaderBuilder {
+  private static class ReaderBuilder extends CometVectorizedReaderBuilder {
     private final DeleteFilter<InternalRow> deleteFilter;
 
     ReaderBuilder(
@@ -90,8 +90,8 @@ public class BosonVectorizedSparkParquetReaders {
         Map<Integer, ?> idToConstant,
         Function<List<VectorizedReader<?>>, VectorizedReader<?>> readerFactory,
         DeleteFilter<InternalRow> deleteFilter,
-        BosonReadOptions bosonReadOptions) {
-      super(expectedSchema, parquetSchema, idToConstant, readerFactory, bosonReadOptions);
+        CometReadOptions cometReadOptions) {
+      super(expectedSchema, parquetSchema, idToConstant, readerFactory, cometReadOptions);
       this.deleteFilter = deleteFilter;
     }
 
@@ -99,7 +99,7 @@ public class BosonVectorizedSparkParquetReaders {
     protected VectorizedReader<?> vectorizedReader(List<VectorizedReader<?>> reorderedFields) {
       VectorizedReader<?> reader = super.vectorizedReader(reorderedFields);
       if (deleteFilter != null) {
-        ((BosonColumnarBatchReader) reader).setDeleteFilter(deleteFilter);
+        ((CometColumnarBatchReader) reader).setDeleteFilter(deleteFilter);
       }
       return reader;
     }

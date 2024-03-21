@@ -32,10 +32,10 @@ import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
-import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
+import org.apache.iceberg.spark.data.vectorized.comet.CometVectorizedSparkParquetReaders;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
@@ -45,7 +45,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
   private static final Logger LOG = LoggerFactory.getLogger(BaseBatchReader.class);
   private final int batchSize;
 
-  private BosonReadOptions bosonReadOptions;
+  private CometReadOptions cometReadOptions;
 
   BaseBatchReader(
       Table table,
@@ -58,8 +58,8 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     this.batchSize = batchSize;
   }
 
-  protected void setBosonReadOptions(BosonReadOptions bosonReadOptions) {
-    this.bosonReadOptions = bosonReadOptions;
+  protected void setCometReadOptions(CometReadOptions cometReadOptions) {
+    this.cometReadOptions = cometReadOptions;
   }
 
   protected CloseableIterable<ColumnarBatch> newBatchIterable(
@@ -97,15 +97,15 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         Parquet.read(inputFile)
             .project(requiredSchema)
             .split(start, length)
-            .enableBoson(bosonReadOptions.getEnableBoson());
+            .enableComet(cometReadOptions.getEnableComet());
 
-    if (bosonReadOptions.getEnableBoson()) {
-      LOG.info("Boson is enabled.");
+    if (cometReadOptions.getEnableComet()) {
+      LOG.info("Comet is enabled.");
       builder =
           builder.createBatchedReaderFunc(
               fileSchema ->
-                  BosonVectorizedSparkParquetReaders.buildReader(
-                      requiredSchema, fileSchema, idToConstant, deleteFilter, bosonReadOptions));
+                  CometVectorizedSparkParquetReaders.buildReader(
+                      requiredSchema, fileSchema, idToConstant, deleteFilter, cometReadOptions));
 
     } else {
       builder =

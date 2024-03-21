@@ -16,33 +16,33 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.parquet.ConstantColumnReader;
-import com.apple.boson.parquet.MetadataColumnReader;
-import com.apple.boson.parquet.Native;
-import com.apple.boson.parquet.TypeUtil;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.comet.parquet.ConstantColumnReader;
+import org.apache.comet.parquet.MetadataColumnReader;
+import org.apache.comet.parquet.Native;
+import org.apache.comet.parquet.TypeUtil;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 
-public class BosonDeleteColumnReader<T> extends BosonColumnReader {
-  public BosonDeleteColumnReader(Types.NestedField field, BosonReadOptions bosonReadOptions) {
-    super(field, bosonReadOptions);
+public class CometDeleteColumnReader<T> extends CometColumnReader {
+  public CometDeleteColumnReader(Types.NestedField field, CometReadOptions cometReadOptions) {
+    super(field, cometReadOptions);
     delegate =
         new ConstantColumnReader(
-            getSparkType(), getDescriptor(), false, bosonReadOptions.getUseDecimal128());
+            getSparkType(), getDescriptor(), false, cometReadOptions.getUseDecimal128());
   }
 
-  public BosonDeleteColumnReader(boolean[] isDeleted, BosonReadOptions bosonReadOptions) {
+  public CometDeleteColumnReader(boolean[] isDeleted, CometReadOptions cometReadOptions) {
     super(
         DataTypes.BooleanType,
         TypeUtil.convertToParquet(
             new StructField("deleted", DataTypes.BooleanType, false, Metadata.empty())),
-        bosonReadOptions);
-    delegate = new DeleteColumnReader(isDeleted, bosonReadOptions);
+        cometReadOptions);
+    delegate = new DeleteColumnReader(isDeleted, cometReadOptions);
   }
 
   @Override
@@ -55,12 +55,12 @@ public class BosonDeleteColumnReader<T> extends BosonColumnReader {
   private static class DeleteColumnReader extends MetadataColumnReader {
     private boolean[] isDeleted;
 
-    DeleteColumnReader(boolean[] isDeleted, BosonReadOptions bosonReadOptions) {
+    DeleteColumnReader(boolean[] isDeleted, CometReadOptions cometReadOptions) {
       super(
           DataTypes.BooleanType,
           TypeUtil.convertToParquet(
               new StructField("deleted", DataTypes.BooleanType, false, Metadata.empty())),
-          bosonReadOptions.getUseDecimal128());
+          cometReadOptions.getUseDecimal128());
       this.isDeleted = isDeleted;
     }
 

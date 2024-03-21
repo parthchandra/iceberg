@@ -18,9 +18,9 @@
  */
 package org.apache.iceberg.parquet;
 
-import com.apple.boson.parquet.BosonInputFile;
-import com.apple.boson.parquet.FileReader;
-import com.apple.boson.parquet.ReadOptions;
+import org.apache.comet.parquet.CometInputFile;
+import org.apache.comet.parquet.FileReader;
+import org.apache.comet.parquet.ReadOptions;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
@@ -54,7 +54,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
   private final boolean caseSensitive;
   private final int batchSize;
   private final NameMapping nameMapping;
-  private final boolean useBoson;
+  private final boolean useComet;
 
   public VectorizedParquetReader(
       InputFile input,
@@ -66,7 +66,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       boolean reuseContainers,
       boolean caseSensitive,
       int maxRecordsPerBatch,
-      boolean useBoson) {
+      boolean useComet) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -77,7 +77,7 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     this.caseSensitive = caseSensitive;
     this.batchSize = maxRecordsPerBatch;
     this.nameMapping = nameMapping;
-    this.useBoson = useBoson;
+    this.useComet = useComet;
   }
 
   private ReadConf conf = null;
@@ -104,14 +104,14 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
 
   @Override
   public CloseableIterator<T> iterator() {
-    FileIterator<T> iter = new FileIterator<>(init(), options, useBoson);
+    FileIterator<T> iter = new FileIterator<>(init(), options, useComet);
     addCloseable(iter);
     return iter;
   }
 
   private static class FileIterator<T> implements CloseableIterator<T> {
     private final ParquetFileReader reader;
-    private final FileReader bosonReader;
+    private final FileReader cometReader;
     private final boolean[] shouldSkip;
     private final VectorizedReader<T> model;
     private final long totalValues;
@@ -124,12 +124,12 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private T last = null;
     private final long[] rowGroupsStartRowPos;
 
-    FileIterator(ReadConf conf, ParquetReadOptions options, boolean useBoson) {
+    FileIterator(ReadConf conf, ParquetReadOptions options, boolean useComet) {
       this.reader = conf.reader();
-      if (useBoson) {
-        this.bosonReader = newBosonReader(options, conf.file(), conf.projection());
+      if (useComet) {
+        this.cometReader = newCometReader(options, conf.file(), conf.projection());
       } else {
-        this.bosonReader = null;
+        this.cometReader = null;
       }
       this.shouldSkip = conf.shouldSkip();
       this.totalValues = conf.totalValues();
@@ -141,22 +141,22 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       this.rowGroupsStartRowPos = conf.startRowPositions();
     }
 
-    private FileReader newBosonReader(
+    private FileReader newCometReader(
         ParquetReadOptions options, InputFile file, MessageType projection) {
       try {
-        ReadOptions bosonOptions;
+        ReadOptions cometOptions;
         org.apache.parquet.io.InputFile parquetFile;
         if (file instanceof HadoopInputFile) {
-          // Use BosonInputFile which contains extra optimizations
+          // Use CometInputFile which contains extra optimizations
           HadoopInputFile hInputFile = (HadoopInputFile) file;
           org.apache.hadoop.conf.Configuration hConfig = hInputFile.getConf();
-          parquetFile = BosonInputFile.fromPath(hInputFile.getPath(), hConfig);
-          bosonOptions = ReadOptions.builder(hConfig).build();
+          parquetFile = CometInputFile.fromPath(hInputFile.getPath(), hConfig);
+          cometOptions = ReadOptions.builder(hConfig).build();
         } else {
           parquetFile = ParquetIO.file(file);
-          bosonOptions = ReadOptions.builder().build();
+          cometOptions = ReadOptions.builder().build();
         }
-        FileReader fileReader = new FileReader(parquetFile, options, bosonOptions);
+        FileReader fileReader = new FileReader(parquetFile, options, cometOptions);
         fileReader.setRequestedSchema(projection.getColumns());
         return fileReader;
       } catch (IOException e) {
@@ -193,16 +193,16 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     private void advance() {
       while (shouldSkip[nextRowGroup]) {
         nextRowGroup += 1;
-        if (bosonReader != null) {
-          bosonReader.skipNextRowGroup();
+        if (cometReader != null) {
+          cometReader.skipNextRowGroup();
         } else {
           reader.skipNextRowGroup();
         }
       }
       PageReadStore pages;
       try {
-        if (bosonReader != null) {
-          pages = bosonReader.readNextRowGroup();
+        if (cometReader != null) {
+          pages = cometReader.readNextRowGroup();
         } else {
           pages = reader.readNextRowGroup();
         }
@@ -222,8 +222,8 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
       if (reader != null) {
         reader.close();
       }
-      if (bosonReader != null) {
-        bosonReader.close();
+      if (cometReader != null) {
+        cometReader.close();
       }
     }
   }

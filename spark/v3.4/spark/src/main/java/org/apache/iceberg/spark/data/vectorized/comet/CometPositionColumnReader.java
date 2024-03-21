@@ -16,19 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.parquet.MetadataColumnReader;
-import com.apple.boson.parquet.Native;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.comet.parquet.MetadataColumnReader;
+import org.apache.comet.parquet.Native;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.spark.sql.types.DataTypes;
 
-public class BosonPositionColumnReader extends BosonColumnReader {
-  public BosonPositionColumnReader(Types.NestedField field, BosonReadOptions bosonReadOptions) {
-    super(field, bosonReadOptions);
-    delegate = new PositionColumnReader(getDescriptor(), bosonReadOptions);
+public class CometPositionColumnReader extends CometColumnReader {
+  public CometPositionColumnReader(Types.NestedField field, CometReadOptions cometReadOptions) {
+    super(field, cometReadOptions);
+    delegate = new PositionColumnReader(getDescriptor(), cometReadOptions);
   }
 
   @Override
@@ -42,13 +42,13 @@ public class BosonPositionColumnReader extends BosonColumnReader {
     /** The current position value of the column that are used to initialize this column reader. */
     private long position;
 
-    PositionColumnReader(ColumnDescriptor descriptor, BosonReadOptions bosonReadOptions) {
-      this(descriptor, 0L, bosonReadOptions);
+    PositionColumnReader(ColumnDescriptor descriptor, CometReadOptions cometReadOptions) {
+      this(descriptor, 0L, cometReadOptions);
     }
 
     PositionColumnReader(
-        ColumnDescriptor descriptor, long position, BosonReadOptions bosonReadOptions) {
-      super(DataTypes.LongType, descriptor, bosonReadOptions.getUseDecimal128());
+        ColumnDescriptor descriptor, long position, CometReadOptions cometReadOptions) {
+      super(DataTypes.LongType, descriptor, cometReadOptions.getUseDecimal128());
       this.position = position;
     }
 

@@ -16,10 +16,10 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.parquet.AbstractColumnReader;
-import com.apple.boson.parquet.BatchReader;
+import org.apache.comet.parquet.AbstractColumnReader;
+import org.apache.comet.parquet.BatchReader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
@@ -27,7 +27,7 @@ import java.util.Map;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
-import org.apache.iceberg.spark.BosonReadOptions;
+import org.apache.iceberg.spark.CometReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.data.vectorized.BaseColumnBatchLoader;
 import org.apache.parquet.column.page.PageReadStore;
@@ -40,24 +40,24 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 /**
  * {@link VectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized
  * read path. The {@link ColumnarBatch} returned is created by passing in the Arrow vectors
- * populated via delegated read calls to {@linkplain BosonColumnReader VectorReader(s)}.
+ * populated via delegated read calls to {@linkplain CometColumnReader VectorReader(s)}.
  */
-public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
+public class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
 
-  private final BosonColumnReader[] readers;
+  private final CometColumnReader[] readers;
   private final boolean hasIsDeletedColumn;
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
   private final BatchReader delegate;
-  private final BosonReadOptions bosonReadOptions;
+  private final CometReadOptions cometReadOptions;
 
-  public BosonColumnarBatchReader(
-      List<VectorizedReader<?>> readers, Schema schema, BosonReadOptions bosonReadOptions) {
+  public CometColumnarBatchReader(
+      List<VectorizedReader<?>> readers, Schema schema, CometReadOptions cometReadOptions) {
     this.readers =
-        readers.stream().map(BosonColumnReader.class::cast).toArray(BosonColumnReader[]::new);
+        readers.stream().map(CometColumnReader.class::cast).toArray(CometColumnReader[]::new);
     this.hasIsDeletedColumn =
-        readers.stream().anyMatch(reader -> reader instanceof BosonDeleteColumnReader);
-    this.bosonReadOptions = bosonReadOptions;
+        readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
+    this.cometReadOptions = cometReadOptions;
 
     AbstractColumnReader[] abstractColumnReaders = new AbstractColumnReader[readers.size()];
     delegate = new BatchReader(abstractColumnReaders);
@@ -69,14 +69,14 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData, long rowPosition) {
     for (int i = 0; i < readers.length; i++) {
       try {
-        if (!(readers[i] instanceof BosonConstantColumnReader)
-            && !(readers[i] instanceof BosonPositionColumnReader)
-            && !(readers[i] instanceof BosonDeleteColumnReader)) {
+        if (!(readers[i] instanceof CometConstantColumnReader)
+            && !(readers[i] instanceof CometPositionColumnReader)
+            && !(readers[i] instanceof CometDeleteColumnReader)) {
           readers[i].reset();
           readers[i].setPageReader(pageStore.getPageReader(readers[i].getDescriptor()));
         }
       } catch (IOException e) {
-        throw new UncheckedIOException("Failed to setRowGroupInfo for Boson vectorization", e);
+        throw new UncheckedIOException("Failed to setRowGroupInfo for Comet vectorization", e);
       }
     }
 
@@ -93,13 +93,13 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
 
   @Override
   public final ColumnarBatch read(ColumnarBatch reuse, int numRowsToRead) {
-    ColumnarBatch columnarBatch = new BosonColumnBatchLoader(numRowsToRead).loadDataToColumnBatch();
+    ColumnarBatch columnarBatch = new CometColumnBatchLoader(numRowsToRead).loadDataToColumnBatch();
     rowStartPosInBatch += numRowsToRead;
     return columnarBatch;
   }
 
-  private class BosonColumnBatchLoader extends BaseColumnBatchLoader {
-    BosonColumnBatchLoader(int numRowsToRead) {
+  private class CometColumnBatchLoader extends BaseColumnBatchLoader {
+    CometColumnBatchLoader(int numRowsToRead) {
       super(numRowsToRead, hasIsDeletedColumn, deletes, rowStartPosInBatch);
     }
 
@@ -109,7 +109,7 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
       // Fetch rows for all readers in the delegate
       delegate.nextBatch(numRowsToRead);
       for (int i = 0; i < readers.length; i++) {
-        BosonIcebergVector bv = readers[i].getVector();
+        CometIcebergVector bv = readers[i].getVector();
         bv.setDelegate(readers[i].getDelegate().currentBatch());
         bv.setRowIdMapping(rowIdMapping);
         columnVectors[i] = bv;
@@ -121,9 +121,9 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
     @Override
     protected void readDeletedColumnIfNecessary(ColumnVector[] columnVectors) {
       for (int i = 0; i < readers.length; i++) {
-        if (readers[i] instanceof BosonDeleteColumnReader) {
-          BosonDeleteColumnReader deleteColumnReader =
-              new BosonDeleteColumnReader<>(isDeleted, bosonReadOptions);
+        if (readers[i] instanceof CometDeleteColumnReader) {
+          CometDeleteColumnReader deleteColumnReader =
+              new CometDeleteColumnReader<>(isDeleted, cometReadOptions);
           deleteColumnReader.setBatchSize(numRowsToRead);
           deleteColumnReader.read(null, numRowsToRead);
           columnVectors[i] = deleteColumnReader.getVector();
@@ -134,7 +134,7 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
 
   @Override
   public void close() {
-    for (BosonColumnReader reader : readers) {
+    for (CometColumnReader reader : readers) {
       if (reader != null) {
         reader.close();
       }
@@ -143,7 +143,7 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
 
   @Override
   public void setBatchSize(int batchSize) {
-    for (BosonColumnReader reader : readers) {
+    for (CometColumnReader reader : readers) {
       if (reader != null) {
         reader.setBatchSize(batchSize);
       }

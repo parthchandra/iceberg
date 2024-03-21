@@ -18,7 +18,7 @@
  */
 package org.apache.iceberg.spark;
 
-import com.apple.boson.BosonConf;
+import org.apache.comet.CometConf;
 import java.util.Map;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -267,33 +267,33 @@ public class SparkReadConf {
         .parse();
   }
 
-  public BosonReadOptions getBosonReadConf() {
-    BosonReadOptions bosonReadOptions = new BosonReadOptions();
-    boolean enableBoson =
+  public CometReadOptions getCometReadConf() {
+    CometReadOptions cometReadOptions = new CometReadOptions();
+    boolean enableComet =
         confParser
             .booleanConf()
-            .sessionConf(BosonConf.BOSON_ENABLED().key())
+            .sessionConf(CometConf.COMET_ENABLED().key())
             .defaultValue(true)
             .parse();
 
     boolean useDecimal128 =
         confParser
             .booleanConf()
-            .sessionConf(BosonConf.BOSON_USE_DECIMAL_128().key())
-            .defaultValue((Boolean) BosonConf.BOSON_USE_DECIMAL_128().defaultValue().get())
+            .sessionConf(CometConf.COMET_USE_DECIMAL_128().key())
+            .defaultValue((Boolean) CometConf.COMET_USE_DECIMAL_128().defaultValue().get())
             .parse();
 
     boolean useLazyMaterialization =
         confParser
             .booleanConf()
-            .sessionConf(BosonConf.BOSON_USE_LAZY_MATERIALIZATION().key())
-            .defaultValue((Boolean) BosonConf.BOSON_USE_LAZY_MATERIALIZATION().defaultValue().get())
+            .sessionConf(CometConf.COMET_USE_LAZY_MATERIALIZATION().key())
+            .defaultValue((Boolean) CometConf.COMET_USE_LAZY_MATERIALIZATION().defaultValue().get())
             .parse();
 
-    bosonReadOptions.setEnableBoson(enableBoson);
-    bosonReadOptions.setUseDecimal128(useDecimal128);
-    bosonReadOptions.setUseLazyMaterialization(useLazyMaterialization);
+    cometReadOptions.setEnableComet(enableComet);
+    cometReadOptions.setUseDecimal128(useDecimal128);
+    cometReadOptions.setUseLazyMaterialization(useLazyMaterialization);
 
-    return bosonReadOptions;
+    return cometReadOptions;
   }
 }

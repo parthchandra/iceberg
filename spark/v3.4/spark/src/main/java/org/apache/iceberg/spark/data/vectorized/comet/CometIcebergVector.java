@@ -16,19 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.spark.data.vectorized.boson;
+package org.apache.iceberg.spark.data.vectorized.comet;
 
-import com.apple.boson.vector.BosonDelegateVector;
+import org.apache.comet.vector.CometDelegateVector;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /**
  * A Spark ColumnVector implementation backed by Arrow arrays. This is used by Iceberg's
- * vectorization through Boson
+ * vectorization through Comet
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
-public class BosonIcebergVector extends BosonDelegateVector {
+public class CometIcebergVector extends CometDelegateVector {
 
   // the rowId mapping to skip deleted rows for all column vectors inside a batch
   // Here is an example:
@@ -39,7 +39,7 @@ public class BosonIcebergVector extends BosonDelegateVector {
   // [0,4,5,7,-,-,-,-] -- After applying equality deletes [Set Num records to 4]
   protected int[] rowIdMapping;
 
-  public BosonIcebergVector(DataType type, boolean useDecimal128) {
+  public CometIcebergVector(DataType type, boolean useDecimal128) {
     super(type, useDecimal128);
   }
 
