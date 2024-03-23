@@ -18,8 +18,8 @@
  */
 package org.apache.iceberg.spark;
 
-import org.apache.comet.CometConf;
 import java.util.Map;
+import org.apache.comet.CometConf;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.exceptions.ValidationException;

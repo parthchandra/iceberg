@@ -18,12 +18,12 @@
  */
 package org.apache.iceberg.spark.data.vectorized.comet;
 
-import org.apache.comet.parquet.AbstractColumnReader;
-import org.apache.comet.parquet.BatchReader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import org.apache.comet.parquet.AbstractColumnReader;
+import org.apache.comet.parquet.BatchReader;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;

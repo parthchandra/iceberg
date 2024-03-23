@@ -20,9 +20,9 @@ package org.apache.iceberg.spark.source;
 
 import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTOREURIS;
 
-import org.apache.comet.CometConf;
 import java.io.IOException;
 import java.util.List;
+import org.apache.comet.CometConf;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.DataFile;

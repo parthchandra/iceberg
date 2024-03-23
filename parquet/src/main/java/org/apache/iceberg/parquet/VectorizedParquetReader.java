@@ -18,15 +18,15 @@
  */
 package org.apache.iceberg.parquet;
 
-import org.apache.comet.parquet.CometInputFile;
-import org.apache.comet.parquet.FileReader;
-import org.apache.comet.parquet.ReadOptions;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
+import org.apache.comet.parquet.CometInputFile;
+import org.apache.comet.parquet.FileReader;
+import org.apache.comet.parquet.ReadOptions;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
