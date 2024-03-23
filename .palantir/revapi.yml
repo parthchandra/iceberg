@@ -756,7 +756,7 @@ acceptedBreaks:
         \ org.apache.iceberg.Schema, org.apache.parquet.ParquetReadOptions, java.util.function.Function<org.apache.parquet.schema.MessageType,\
         \ org.apache.iceberg.parquet.VectorizedReader<?>>, org.apache.iceberg.mapping.NameMapping,\
         \ org.apache.iceberg.expressions.Expression, boolean, boolean, int, boolean)"
-      justification: "Need to add a boolean to indicate whether it's boson scan or\
+      justification: "Need to add a boolean to indicate whether it's comet scan or\
         \ not"
   apache-iceberg-0.14.0:
     org.apache.iceberg:iceberg-api:

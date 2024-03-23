@@ -17,7 +17,7 @@
  * under the License.
  */
 
-String sparkVersion = '3.4.0.41-apple-SNAPSHOT'
+String sparkVersion = '3.4.0.52-apple-pr1929-SNAPSHOT'
 String sparkMajorVersion = '3.4'
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
 
@@ -31,6 +31,9 @@ configure(sparkProjects) {
   configurations {
     all {
       resolutionStrategy {
+        force "org.apache.spark:spark-sql_${scalaVersion}:${sparkVersion}"
+        force "org.apache.spark:spark-core_${scalaVersion}:${sparkVersion}"
+
         force "com.fasterxml.jackson.module:jackson-module-scala_${scalaVersion}:2.13.4"
         force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
         force 'com.fasterxml.jackson.core:jackson-core:2.13.4'
@@ -71,10 +74,10 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'io.netty', module: 'netty-common'
       exclude group: 'org.roaringbitmap'
-      exclude group: 'com.apple.pie.boson'
+      exclude group: 'org.apache.comet'
     }
 
-    compileOnly "com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}"
+    compileOnly "org.apache.comet:comet-spark-spark${sparkMajorVersion}_${scalaVersion}"
 
     // Keep Parquet dependencies as provided, to share the same version as Spark.
     compileOnly("org.apache.parquet:parquet-column")
@@ -155,7 +158,7 @@ project(":iceberg-spark:iceberg-spark-extensions-${sparkMajorVersion}_${scalaVer
       exclude group: 'io.netty', module: 'netty-buffer'
       exclude group: 'io.netty', module: 'netty-common'
       exclude group: 'org.roaringbitmap'
-      exclude group: 'com.apple.pie.boson'
+      exclude group: 'org.apache.comet'
     }
     compileOnly "com.google.errorprone:error_prone_annotations"
 
@@ -168,7 +171,7 @@ project(":iceberg-spark:iceberg-spark-extensions-${sparkMajorVersion}_${scalaVer
 
     testImplementation "org.apache.avro:avro"
     testImplementation "org.apache.parquet:parquet-hadoop"
-    testImplementation "com.apple.pie.boson:boson-spark-spark${sparkMajorVersion}_${scalaVersion}"
+    testImplementation "org.apache.comet:comet-spark-spark${sparkMajorVersion}_${scalaVersion}"
 
     // Required because we remove antlr plugin dependencies from the compile configuration, see note above
     runtimeOnly "org.antlr:antlr4-runtime:4.9.3"
