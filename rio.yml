@@ -198,7 +198,7 @@ pipelines:
     findbugs: false
     junit: false
   package:
-    libraries:
+    freeform:
     - publish:
       - repo: m2:oss-patched
   machine:
