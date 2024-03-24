@@ -150,6 +150,11 @@ pipelines:
       - parameter: PR_NUMBER
         description: The source pull request to benchmark
     steps: [ "true" ]
+  reports:
+    checkstyle: false
+    pmd: false
+    findbugs: false
+    junit: false
   finally:
     pipelineChain:
       - pipeline: pr-build-apple-scala-2.12-snapshot
@@ -183,9 +188,15 @@ pipelines:
       - CODE_VERSION=$(./code_version.sh | sed "s/-apple/-apple-pr${BUILD_PARAM_PR_NUMBER}-SNAPSHOT/")
       - echo $CODE_VERSION > version.txt
 
-      - ./gradlew assemble
+      - home_dir=$(pwd)
+      - ./gradlew -Dmaven.repo.local=${home_dir}/local-repo publishToMavenLocal
       - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
       - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+  reports:
+    checkstyle: false
+    pmd: false
+    findbugs: false
+    junit: false
   package:
     libraries:
     - publish:
@@ -222,11 +233,17 @@ pipelines:
       - CODE_VERSION=$(./code_version.sh | sed "s/-apple/-apple-pr${BUILD_PARAM_PR_NUMBER}-SNAPSHOT/")
       - echo $CODE_VERSION > version.txt
 
-      - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.4_2.13:build :iceberg-spark:iceberg-spark-extensions-3.4_2.13:build :iceberg-spark:iceberg-spark-runtime-3.4_2.13:build
+      #- ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.4_2.13:build :iceberg-spark:iceberg-spark-extensions-3.4_2.13:build :iceberg-spark:iceberg-spark-runtime-3.4_2.13:build
       - home_dir=$(pwd)
+      #- ./gradlew -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-3.4_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-3.4_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-3.4_2.13:publishToMavenLocal
       - ./gradlew -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-3.4_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-3.4_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-3.4_2.13:publishToMavenLocal
       - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
       - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+  reports:
+    checkstyle: false
+    pmd: false
+    findbugs: false
+    junit: false
   package:
     freeform:
     - publish:
