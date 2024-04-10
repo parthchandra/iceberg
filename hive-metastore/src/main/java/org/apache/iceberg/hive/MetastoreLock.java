@@ -100,6 +100,7 @@ class MetastoreLock implements HiveLock {
   private final ScheduledExecutorService exitingScheduledExecutorService;
   private final String agentInfo;
   private final boolean lockIncludesCatalog;
+  private final String hmsCatalogName;
 
   private Optional<Long> hmsLockId = Optional.empty();
   private ReentrantLock jvmLock = null;
@@ -131,6 +132,7 @@ class MetastoreLock implements HiveLock {
         conf.getLong(HIVE_LOCK_CREATION_MAX_WAIT_MS, HIVE_LOCK_CREATION_MAX_WAIT_MS_DEFAULT);
     this.lockHeartbeatIntervalTime =
         conf.getLong(HIVE_LOCK_HEARTBEAT_INTERVAL_MS, HIVE_LOCK_HEARTBEAT_INTERVAL_MS_DEFAULT);
+    this.hmsCatalogName = conf.get(HiveCatalog.HIVE_CONF_CATALOG, "hive");
     this.lockIncludesCatalog =
         conf.getBoolean(HIVE_LOCK_INCLUDE_CATALOG_NAME, HIVE_LOCK_INCLUDE_CATALOG_NAME_DEFAULT);
     long tableLevelLockCacheEvictionTimeout =
@@ -292,7 +294,7 @@ class MetastoreLock implements HiveLock {
     // Workaround for HIVE-28109
     String lockDbName;
     if (lockIncludesCatalog) {
-      lockDbName = catalogName + "." + databaseName;
+      lockDbName = hmsCatalogName + "." + databaseName;
     } else {
       lockDbName = databaseName;
     }

@@ -538,13 +538,15 @@ public class TestHiveCommitLocks extends HiveTableBaseTest {
 
   @Test
   public void testLockIncludeCatalogName() throws Exception {
-
     Configuration confWithLock = new Configuration(overriddenHiveConf);
     confWithLock.setBoolean("iceberg.hive.lock-include-catalog-name", true);
+    confWithLock.set(HiveCatalog.HIVE_CONF_CATALOG, "my_catalog");
 
     ArgumentCaptor<LockRequest> lockRequestCaptor = ArgumentCaptor.forClass(LockRequest.class);
     doReturn(acquiredLockResponse).when(spyClient).lock(lockRequestCaptor.capture());
-    HiveTableOperations noLockSpyOps =
+    doNothing().when(spyClient).heartbeat(eq(0L), eq(dummyLockId));
+
+    HiveTableOperations mySpyOps =
         spy(
             new HiveTableOperations(
                 confWithLock,
@@ -554,14 +556,14 @@ public class TestHiveCommitLocks extends HiveTableBaseTest {
                 catalog.name(),
                 TABLE_IDENTIFIER.namespace().level(0),
                 TABLE_IDENTIFIER.name()));
-    noLockSpyOps.doCommit(metadataV2, metadataV1);
+    mySpyOps.doCommit(metadataV2, metadataV1);
 
     // Make sure that the lock includes catalog in the name.
     LockRequest request = lockRequestCaptor.getValue();
     Assert.assertEquals(1, request.getComponentSize());
 
     LockComponent component = request.getComponent().get(0);
-    Assert.assertEquals(catalog.name() + "." + DB_NAME, component.getDbname());
+    Assert.assertEquals("my_catalog." + DB_NAME, component.getDbname());
     Assert.assertEquals(TABLE_NAME, component.getTablename());
 
     verify(spyClient, times(1)).unlock(eq(dummyLockId));
