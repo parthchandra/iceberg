@@ -140,20 +140,7 @@ public class TestCopyTableAction extends SparkTestBase {
     // copy the metadata files and data files
     moveTableFiles(tableLocation, targetTableLocation, stagingDir(result));
 
-    // verify the data file path after the rebuild
-    List<String> validDataFilesAfterRebuilt =
-        spark
-            .read()
-            .format("iceberg")
-            .load(targetTableLocation + "#files")
-            .select("file_path")
-            .as(Encoders.STRING())
-            .collectAsList();
-    Assert.assertEquals("Should be 2 valid data files", 2, validDataFilesAfterRebuilt.size());
-    for (String item : validDataFilesAfterRebuilt) {
-      Assert.assertTrue(
-          "Data file should point to the new location", item.startsWith(targetTableLocation));
-    }
+    validateNewFilePaths(targetTableLocation, 2, 2);
 
     // verify data rows
     Dataset<Row> resultDF = spark.read().format("iceberg").load(targetTableLocation);
@@ -262,6 +249,8 @@ public class TestCopyTableAction extends SparkTestBase {
 
     // copy the metadata files and data files
     moveTableFiles(location, targetLocation, stagingDir(result));
+
+    validateNewFilePaths(targetLocation, 3, 3);
 
     // verify data rows
     Dataset<Row> resultDF = spark.read().format("iceberg").load(targetLocation);
@@ -719,6 +708,50 @@ public class TestCopyTableAction extends SparkTestBase {
             .as(Encoders.STRING())
             .collectAsList();
     Assert.assertEquals("The rebuilt data file number should be", count, filesToMove.size());
+  }
+
+  protected void validateNewFilePaths(
+      String targetLocation, long dataFileCount, long manifestFileCount) {
+    List<String> manifestRebuilt =
+        spark
+            .read()
+            .format("iceberg")
+            .load(targetLocation + "#all_manifests")
+            .select("path")
+            .distinct()
+            .as(Encoders.STRING())
+            .collectAsList();
+
+    Assert.assertEquals(
+        "The number of manifest files in the modified manifest lists is incorrect",
+        manifestFileCount,
+        manifestRebuilt.size());
+    for (String file : manifestRebuilt) {
+      String msg =
+          String.format(
+              "Manifest file(%s) should point to the new location(%s)", file, targetLocation);
+      Assert.assertTrue(msg, file.startsWith(targetLocation));
+    }
+
+    List<String> dataFilePaths =
+        spark
+            .read()
+            .format("iceberg")
+            .load(targetLocation + "#all_entries")
+            .select("data_file.file_path")
+            .as(Encoders.STRING())
+            .collectAsList();
+
+    Assert.assertEquals(
+        "The number of delete files in rewritten manifests is incorrect",
+        dataFileCount,
+        dataFilePaths.size());
+
+    for (String file : dataFilePaths) {
+      String msg =
+          String.format("Data file(%s) should point to the new location(%s)", file, targetLocation);
+      Assert.assertTrue(msg, file.startsWith(targetLocation));
+    }
   }
 
   protected void checkMetadataFileNum(int count, CopyTable.Result result) {
