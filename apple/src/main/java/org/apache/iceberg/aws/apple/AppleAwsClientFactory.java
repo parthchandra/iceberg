@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.aws.AwsClientFactory;
+import org.apache.iceberg.aws.s3.S3FileIOProperties;
 import org.apache.iceberg.common.DynConstructors;
 import org.apache.iceberg.hadoop.SerializableConfiguration;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
@@ -110,6 +111,7 @@ public class AppleAwsClientFactory implements AwsClientFactory, KryoSerializable
 
   private SerializableConfiguration lazyConfig;
   private Map<String, String> properties;
+  private S3FileIOProperties s3FileIOProperties;
 
   @VisibleForTesting
   Configuration config() {
@@ -197,6 +199,7 @@ public class AppleAwsClientFactory implements AwsClientFactory, KryoSerializable
   public S3Client s3() {
     return maybeApplyRegion(S3Client.builder())
         .httpClient(httpClient())
+        .applyMutation(s3FileIOProperties::applySignerConfiguration)
         .credentialsProvider(provider())
         .build();
   }
@@ -233,6 +236,7 @@ public class AppleAwsClientFactory implements AwsClientFactory, KryoSerializable
   @Override
   public void initialize(Map<String, String> props) {
     this.properties = props;
+    this.s3FileIOProperties = new S3FileIOProperties(props);
 
     List<List<String>> missingRequired =
         REQUIRED_KEYS.stream()

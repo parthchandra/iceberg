@@ -18,19 +18,25 @@
  */
 package org.apache.iceberg.aws;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import java.util.Optional;
 import org.apache.iceberg.aws.s3.S3FileIOProperties;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariables;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.glue.GlueClient;
 import software.amazon.awssdk.services.glue.model.GetDatabaseRequest;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ServiceClientConfiguration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -98,5 +104,71 @@ public class TestDefaultAwsClientFactory {
         .cause()
         .isInstanceOf(SdkClientException.class)
         .hasMessageContaining("Unable to execute HTTP request: unknown");
+  }
+
+  @Test
+  public void testSignerOverride() {
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("MySigner:%s", TestSigner.class.getName()));
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "MySigner");
+    AwsClientFactory factory = AwsClientFactories.from(properties);
+    S3Client s3Client = factory.s3();
+    S3ServiceClientConfiguration s3ServiceClientConfiguration =
+        s3Client.serviceClientConfiguration();
+    ClientOverrideConfiguration clientOverrideConfiguration =
+        s3ServiceClientConfiguration.overrideConfiguration();
+    Optional<Signer> signer =
+        clientOverrideConfiguration.advancedOption(SdkAdvancedClientOption.SIGNER);
+    assertThat(signer.isPresent()).as("Signer Option").isTrue();
+    assertThat(signer.get() instanceof TestSigner).as("Signer is TestSigner").isTrue();
+  }
+
+  @Test
+  public void testSignerOverrideList() {
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("T1:dummy, T2:%s, T3:dummy", TestSigner.class.getName()));
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "T2");
+    AwsClientFactory factory = AwsClientFactories.from(properties);
+    S3Client s3Client = factory.s3();
+    S3ServiceClientConfiguration s3ServiceClientConfiguration =
+        s3Client.serviceClientConfiguration();
+    ClientOverrideConfiguration clientOverrideConfiguration =
+        s3ServiceClientConfiguration.overrideConfiguration();
+    Optional<Signer> signer =
+        clientOverrideConfiguration.advancedOption(SdkAdvancedClientOption.SIGNER);
+    assertThat(signer.isPresent()).as("Signer Option").isTrue();
+    assertThat(signer.get() instanceof TestSigner).as("Signer is TestSigner").isTrue();
+  }
+
+  @Test
+  public void testSignerNegative() {
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("T1:dummy, T2:%s, T3:dummy", TestSigner.class.getName()));
+    AwsClientFactory factory = AwsClientFactories.from(properties);
+
+    assertThatThrownBy(factory::s3)
+        .hasMessageContaining(
+            "fs.s3a.signing-algorithm must be specified along with fs.s3a.custom.signers");
+  }
+
+  @Test
+  public void testSignerNegative2() {
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(S3FileIOProperties.S3_CUSTOM_SIGNERS, TestSigner.class.getName());
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "blah");
+    AwsClientFactory factory = AwsClientFactories.from(properties);
+
+    assertThatThrownBy(factory::s3)
+        .hasMessageContaining("Invalid format (Expected name, name:SignerClass) for CustomSigner");
   }
 }

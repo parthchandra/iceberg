@@ -36,7 +36,9 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.iceberg.aws.s3.S3FileIOProperties;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
@@ -46,11 +48,16 @@ import org.apache.spark.serializer.KryoSerializer;
 import org.apache.spark.sql.SparkSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
+import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.http.apache.ProxyConfiguration;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ServiceClientConfiguration;
 
 public class TestAppleAwsClientFactory extends TestBase {
 
-  private static final String REGION = "us_west";
+  private static final String REGION = "us-west-1";
   private static final Map<String, String> PROPERTIES =
       ImmutableMap.<String, String>builder().put(AWS_REGION, REGION).build();
 
@@ -293,5 +300,79 @@ public class TestAppleAwsClientFactory extends TestBase {
     factory.initialize(PROPERTIES);
 
     assertThat(factory.s3Async()).isNotNull();
+  }
+
+  @Test
+  public void testSignerOverride() {
+    AppleAwsClientFactory factory = new AppleAwsClientFactory();
+    setHadoopConf(USER_SET);
+    Map<String, String> properties = Maps.newHashMap(PROPERTIES);
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("MySigner:%s", TestSigner.class.getName()));
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "MySigner");
+    factory.initialize(properties);
+    S3Client s3Client = factory.s3();
+    S3ServiceClientConfiguration s3ServiceClientConfiguration =
+        s3Client.serviceClientConfiguration();
+    ClientOverrideConfiguration clientOverrideConfiguration =
+        s3ServiceClientConfiguration.overrideConfiguration();
+    Optional<Signer> signer =
+        clientOverrideConfiguration.advancedOption(SdkAdvancedClientOption.SIGNER);
+    assertThat(signer.isPresent()).as("Signer Option").isTrue();
+    assertThat(signer.get() instanceof TestSigner).as("Signer is TestSigner").isTrue();
+  }
+
+  @Test
+  public void testSignerOverrideList() {
+    AppleAwsClientFactory factory = new AppleAwsClientFactory();
+    setHadoopConf(USER_SET);
+    Map<String, String> properties = Maps.newHashMap(PROPERTIES);
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("T1:dummy, T2:%s, T3:dummy", TestSigner.class.getName()));
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "T2");
+    factory.initialize(properties);
+    S3Client s3Client = factory.s3();
+    S3ServiceClientConfiguration s3ServiceClientConfiguration =
+        s3Client.serviceClientConfiguration();
+    ClientOverrideConfiguration clientOverrideConfiguration =
+        s3ServiceClientConfiguration.overrideConfiguration();
+    Optional<Signer> signer =
+        clientOverrideConfiguration.advancedOption(SdkAdvancedClientOption.SIGNER);
+    assertThat(signer.isPresent()).as("Signer Option").isTrue();
+    assertThat(signer.get() instanceof TestSigner).as("Signer is TestSigner").isTrue();
+  }
+
+  @Test
+  public void testSignerNegative() {
+    AppleAwsClientFactory factory = new AppleAwsClientFactory();
+    setHadoopConf(USER_SET);
+    Map<String, String> properties = Maps.newHashMap(PROPERTIES);
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(
+        S3FileIOProperties.S3_CUSTOM_SIGNERS,
+        String.format("T1:dummy, T2:%s, T3:dummy", TestSigner.class.getName()));
+    factory.initialize(properties);
+
+    assertThatThrownBy(factory::s3)
+        .hasMessageContaining(
+            "fs.s3a.signing-algorithm must be specified along with fs.s3a.custom.signers");
+  }
+
+  @Test
+  public void testSignerNegative2() {
+    AppleAwsClientFactory factory = new AppleAwsClientFactory();
+    setHadoopConf(USER_SET);
+    Map<String, String> properties = Maps.newHashMap(PROPERTIES);
+    properties.put(S3FileIOProperties.ENDPOINT, "https://unknown:1234");
+    properties.put(S3FileIOProperties.S3_CUSTOM_SIGNERS, TestSigner.class.getName());
+    properties.put(S3FileIOProperties.S3_SIGNING_ALGORITHM, "blah");
+    factory.initialize(properties);
+
+    assertThatThrownBy(factory::s3)
+        .hasMessageContaining("Invalid format (Expected name, name:SignerClass) for CustomSigner");
   }
 }

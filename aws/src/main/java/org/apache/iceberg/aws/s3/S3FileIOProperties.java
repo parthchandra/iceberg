@@ -30,6 +30,7 @@ import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.aws.AwsClientProperties;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.aws.s3.signer.S3V4RestSignerClient;
+import org.apache.iceberg.common.DynConstructors;
 import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
@@ -37,6 +38,8 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.SerializableMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
@@ -48,6 +51,7 @@ import software.amazon.awssdk.core.retry.conditions.OrRetryCondition;
 import software.amazon.awssdk.core.retry.conditions.RetryCondition;
 import software.amazon.awssdk.core.retry.conditions.RetryOnExceptionsCondition;
 import software.amazon.awssdk.core.retry.conditions.TokenBucketRetryCondition;
+import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.S3Configuration;
@@ -56,6 +60,8 @@ import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 import software.amazon.awssdk.services.s3.model.Tag;
 
 public class S3FileIOProperties implements Serializable {
+  private static final Logger LOG = LoggerFactory.getLogger(S3FileIOProperties.class);
+
   /**
    * This property is used to pass in the aws client factory implementation class for S3 FileIO. The
    * class should implement {@link S3FileIOAwsClientFactory}. For example, {@link
@@ -123,6 +129,22 @@ public class S3FileIOProperties implements Serializable {
       "s3.access-grants.fallback-to-iam";
 
   public static final boolean S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED_DEFAULT = false;
+
+  /**
+   * Comma-separated list of {@link software.amazon.awssdk.core.signer.Signer}.
+   *
+   * <p>This is to match S3A configs:
+   * https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/index.html#Advanced_-_Custom_Signers
+   */
+  public static final String S3_CUSTOM_SIGNERS = "fs.s3a.custom.signers";
+
+  /**
+   * Specify the signer for S3.
+   *
+   * <p>This is to match S3A configs:
+   * https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/index.html#Advanced_-_Custom_Signers
+   */
+  public static final String S3_SIGNING_ALGORITHM = "fs.s3a.signing-algorithm";
 
   /**
    * Type of S3 Server side encryption used, default to {@link S3FileIOProperties#SSE_TYPE_NONE}.
@@ -534,6 +556,8 @@ public class S3FileIOProperties implements Serializable {
 
   private boolean s3DirectoryBucketListPrefixAsDirectory;
   private final Map<String, String> allProperties;
+  private String customSigners;
+  private String signingAlgorithm;
 
   public S3FileIOProperties() {
     this.sseType = SSE_TYPE_NONE;
@@ -697,6 +721,8 @@ public class S3FileIOProperties implements Serializable {
     this.s3CrtMaxConcurrency =
         PropertyUtil.propertyAsInt(
             properties, S3_CRT_MAX_CONCURRENCY, S3_CRT_MAX_CONCURRENCY_DEFAULT);
+    this.customSigners = PropertyUtil.propertyAsString(properties, S3_CUSTOM_SIGNERS, null);
+    this.signingAlgorithm = PropertyUtil.propertyAsString(properties, S3_SIGNING_ALGORITHM, null);
 
     ValidationException.check(
         keyIdAccessKeyBothConfigured(),
@@ -1009,6 +1035,13 @@ public class S3FileIOProperties implements Serializable {
                   SdkAdvancedClientOption.SIGNER, S3V4RestSignerClient.create(allProperties))
               .build());
     }
+    String customSigner = chooseCustomSigner();
+    if (customSigner != null) {
+      DynConstructors.Ctor<Signer> ctor =
+          DynConstructors.builder(Signer.class).hiddenImpl(customSigner).build();
+      builder.overrideConfiguration(
+          c -> c.putAdvancedOption(SdkAdvancedClientOption.SIGNER, ctor.newInstance()));
+    }
   }
 
   /**
@@ -1173,5 +1206,58 @@ public class S3FileIOProperties implements Serializable {
               "Cannot create %s to generate and configure the client SDK Plugin builder", impl),
           e);
     }
+  }
+
+  /**
+   * Modified from Hadoop S3A SignerManager::initCustomSigners
+   *
+   * <p>Initialize custom signers and register them with the AWS SDK.
+   *
+   * @return chosen custom signer, or null if nothing chosen.
+   */
+  @SuppressWarnings("StringSplitter")
+  private String chooseCustomSigner() {
+    String[] customSignerArray = getTrimmedStrings(this.customSigners);
+    if (customSignerArray == null || customSignerArray.length == 0) {
+      // No custom signers specified, nothing to do.
+      LOG.debug("No custom signers specified");
+      return null;
+    }
+
+    Preconditions.checkArgument(
+        signingAlgorithm != null,
+        "%s must be specified along with %s",
+        S3FileIOProperties.S3_SIGNING_ALGORITHM,
+        S3FileIOProperties.S3_CUSTOM_SIGNERS);
+
+    Map<String, String> signers = Maps.newHashMap();
+    for (String customSigner : customSignerArray) {
+      String[] parts = customSigner.split(":");
+      Preconditions.checkArgument(
+          parts.length == 2 || parts.length == 3,
+          "Invalid format (Expected name, name:SignerClass)" + " for CustomSigner: [%s]",
+          customSigner);
+      if (parts.length == 3) {
+        LOG.warn("Initializing class specified but is not supported yet: {}", parts[2]);
+      }
+      signers.put(parts[0], parts[1]);
+    }
+
+    return signers.get(signingAlgorithm);
+  }
+
+  /**
+   * Copied from Hadoop StringUtils. Splits a comma or newline separated value <code>String</code>,
+   * trimming leading and trailing whitespace on each value.
+   *
+   * @param str a comma or newline separated <code>String</code> with values, may be null
+   * @return an array of <code>String</code> values, empty array if null String input
+   */
+  private static String[] getTrimmedStrings(String str) {
+    if (null == str || str.trim().isEmpty()) {
+      return new String[0];
+    }
+
+    return str.trim().split("\\s*,\\s*");
   }
 }
