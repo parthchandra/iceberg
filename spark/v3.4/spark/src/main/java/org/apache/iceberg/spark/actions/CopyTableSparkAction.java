@@ -576,14 +576,14 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
     switch (entry.status()) {
       case ADDED:
-        writer.add(dataFile);
+        writer.add(dataFile, entry.dataSequenceNumber());
         break;
       case EXISTING:
         writer.existing(
             dataFile, entry.snapshotId(), entry.dataSequenceNumber(), entry.fileSequenceNumber());
         break;
       case DELETED:
-        writer.delete(entry);
+        writer.delete(dataFile, entry.dataSequenceNumber(), entry.fileSequenceNumber());
         break;
     }
   }
