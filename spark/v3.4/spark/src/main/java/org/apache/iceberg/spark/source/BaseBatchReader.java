@@ -36,6 +36,7 @@ import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkOrcReaders;
 import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
 import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
+import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
@@ -99,7 +100,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
             .split(start, length)
             .enableBoson(bosonReadOptions.getEnableBoson());
 
-    if (bosonReadOptions.getEnableBoson()) {
+    if (bosonReadOptions.getEnableBoson() && allDataTypeSupportedByBoson()) {
       LOG.info("Boson is enabled.");
       builder =
           builder.createBatchedReaderFunc(
@@ -150,5 +151,13 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         .caseSensitive(caseSensitive())
         .withNameMapping(nameMapping())
         .build();
+  }
+
+  private boolean allDataTypeSupportedByBoson() {
+    if (expectedSchema().columns().stream()
+        .anyMatch(c -> c.type().typeId().equals(Type.TypeID.UUID))) {
+      return false;
+    }
+    return true;
   }
 }

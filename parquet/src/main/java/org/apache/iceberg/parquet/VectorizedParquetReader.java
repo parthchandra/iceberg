@@ -40,8 +40,10 @@ import org.apache.iceberg.mapping.NameMapping;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
+import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.schema.MessageType;
 
 public class VectorizedParquetReader<T> extends CloseableGroup implements CloseableIterable<T> {
@@ -127,7 +129,9 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     FileIterator(ReadConf conf, ParquetReadOptions options, boolean useBoson) {
       this.reader = conf.reader();
       if (useBoson) {
-        this.bosonReader = newBosonReader(options, conf.file(), conf.projection());
+        this.bosonReader =
+            newBosonReader(
+                options, reader.getFooter(), conf.file(), conf.projection(), conf.rowGroups());
       } else {
         this.bosonReader = null;
       }
@@ -142,7 +146,11 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
     }
 
     private FileReader newBosonReader(
-        ParquetReadOptions options, InputFile file, MessageType projection) {
+        ParquetReadOptions options,
+        ParquetMetadata footer,
+        InputFile file,
+        MessageType projection,
+        List<BlockMetaData> rowGroups) {
       try {
         ReadOptions bosonOptions;
         org.apache.parquet.io.InputFile parquetFile;
@@ -156,7 +164,8 @@ public class VectorizedParquetReader<T> extends CloseableGroup implements Closea
           parquetFile = ParquetIO.file(file);
           bosonOptions = ReadOptions.builder().build();
         }
-        FileReader fileReader = new FileReader(parquetFile, options, bosonOptions);
+        FileReader fileReader =
+            new FileReader(parquetFile, footer, options, bosonOptions, null, rowGroups);
         fileReader.setRequestedSchema(projection.getColumns());
         return fileReader;
       } catch (IOException e) {

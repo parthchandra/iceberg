@@ -233,6 +233,10 @@ class ReadConf<T> {
     return batchSize;
   }
 
+  List<BlockMetaData> rowGroups() {
+    return rowGroups;
+  }
+
   List<Map<ColumnPath, ColumnChunkMetaData>> columnChunkMetadataForRowGroups() {
     return columnChunkMetaDataForRowGroups;
   }
