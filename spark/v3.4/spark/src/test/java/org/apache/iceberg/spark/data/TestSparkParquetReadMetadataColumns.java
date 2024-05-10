@@ -193,7 +193,7 @@ public class TestSparkParquetReadMetadataColumns {
     builder.createBatchedReaderFunc(
         fileSchema ->
             VectorizedSparkParquetReaders.buildReader(
-                PROJECTION_SCHEMA, fileSchema, Maps.newHashMap(), deleteFilter));
+                PROJECTION_SCHEMA, fileSchema, Maps.newHashMap(), deleteFilter, null));
     builder.recordsPerBatch(RECORDS_PER_BATCH);
 
     validate(expectedRowsAfterDelete, builder);
@@ -269,7 +269,7 @@ public class TestSparkParquetReadMetadataColumns {
       builder.createBatchedReaderFunc(
           fileSchema ->
               VectorizedSparkParquetReaders.buildReader(
-                  PROJECTION_SCHEMA, fileSchema, Maps.newHashMap(), null));
+                  PROJECTION_SCHEMA, fileSchema, Maps.newHashMap(), null, null));
       builder.recordsPerBatch(RECORDS_PER_BATCH);
     } else {
       builder =

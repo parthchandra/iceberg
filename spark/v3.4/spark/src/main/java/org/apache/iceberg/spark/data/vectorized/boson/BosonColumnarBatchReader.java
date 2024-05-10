@@ -31,6 +31,7 @@ import org.apache.iceberg.spark.BosonReadOptions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.spark.data.vectorized.BaseColumnBatchLoader;
 import org.apache.parquet.column.page.PageReadStore;
+import org.apache.parquet.hadoop.ParquetMetricsCallback;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -52,7 +53,10 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
   private final BosonReadOptions bosonReadOptions;
 
   public BosonColumnarBatchReader(
-      List<VectorizedReader<?>> readers, Schema schema, BosonReadOptions bosonReadOptions) {
+      List<VectorizedReader<?>> readers,
+      Schema schema,
+      BosonReadOptions bosonReadOptions,
+      ParquetMetricsCallback metricsCallback) {
     this.readers =
         readers.stream().map(BosonColumnReader.class::cast).toArray(BosonColumnReader[]::new);
     this.hasIsDeletedColumn =
@@ -61,6 +65,7 @@ public class BosonColumnarBatchReader implements VectorizedReader<ColumnarBatch>
 
     AbstractColumnReader[] abstractColumnReaders = new AbstractColumnReader[readers.size()];
     delegate = new BatchReader(abstractColumnReaders);
+    delegate.setMetricsCallback(metricsCallback);
     delegate.setSparkSchema(SparkSchemaUtil.convert(schema));
   }
 

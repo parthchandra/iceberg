@@ -18,9 +18,13 @@
  */
 package org.apache.iceberg.spark.source;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.apache.iceberg.ContentFile;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
@@ -32,8 +36,10 @@ import org.apache.iceberg.spark.source.metrics.TaskNumDeletes;
 import org.apache.iceberg.spark.source.metrics.TaskNumSplits;
 import org.apache.iceberg.util.SnapshotUtil;
 import org.apache.spark.rdd.InputFileBlockHolder;
+import org.apache.spark.sql.connector.metric.CustomFileTaskMetric;
 import org.apache.spark.sql.connector.metric.CustomTaskMetric;
 import org.apache.spark.sql.connector.read.PartitionReader;
+import org.apache.spark.sql.execution.datasources.parquet.ParquetMetricsCallbackImpl;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,9 +76,31 @@ class BatchDataReader extends BaseBatchReader<FileScanTask>
 
   @Override
   public CustomTaskMetric[] currentMetricsValues() {
-    return new CustomTaskMetric[] {
-      new TaskNumSplits(numSplits), new TaskNumDeletes(counter().get())
-    };
+    if (getFileFormat() == FileFormat.PARQUET) {
+      List<CustomTaskMetric> parquetMetrics =
+          new ArrayList<>(
+              Arrays.asList(
+                  ((ParquetMetricsCallbackImpl) getMetricsCallback()).currentMetricsValues()));
+      List<CustomFileTaskMetric> parquetFileMetrics =
+          CustomFileTaskMetric.mergeMetricValues(parquetMetrics, getAllParquetMetrics());
+      CustomTaskMetric[] parquetMetricsArray = new CustomTaskMetric[parquetFileMetrics.size()];
+      parquetFileMetrics.toArray(parquetMetricsArray);
+      CustomTaskMetric[] scanMetrics =
+          Arrays.copyOf(parquetMetricsArray, parquetMetricsArray.length + 2);
+      System.arraycopy(
+          new CustomTaskMetric[] {
+            new TaskNumSplits(numSplits), new TaskNumDeletes(counter().get())
+          },
+          0,
+          scanMetrics,
+          parquetMetricsArray.length,
+          2);
+      return scanMetrics;
+    } else {
+      return new CustomTaskMetric[] {
+        new TaskNumSplits(numSplits), new TaskNumDeletes(counter().get())
+      };
+    }
   }
 
   @Override
