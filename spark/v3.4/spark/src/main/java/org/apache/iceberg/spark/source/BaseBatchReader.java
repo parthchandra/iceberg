@@ -42,7 +42,7 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.connector.metric.CustomTaskMetric;
-import org.apache.spark.sql.execution.datasources.parquet.ParquetMetricsCallback;
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetMetricsCallbackV2;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +53,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
 
   private BosonReadOptions bosonReadOptions;
   private FileFormat fileFormat;
-  private ParquetMetricsCallback metricsCallback;
+  private ParquetMetricsCallbackV2 metricsCallback;
 
   // The cumulative metrics of all readers. Before a new  reader is
   // created, the metrics of the previous reader are read and merged into this.
@@ -78,7 +78,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     return fileFormat;
   }
 
-  public ParquetMetricsCallback getMetricsCallback() {
+  public ParquetMetricsCallbackV2 getMetricsCallback() {
     return metricsCallback;
   }
 
@@ -101,7 +101,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
           CustomTaskMetric[] parquetMetrics = getMetricsCallback().currentMetricsValues();
           updateMetricsValues(parquetMetrics, allParquetMetrics);
         }
-        this.metricsCallback = new ParquetMetricsCallback(null);
+        this.metricsCallback = new ParquetMetricsCallbackV2();
         return newParquetIterable(
             inputFile, start, length, residual, idToConstant, deleteFilter, metricsCallback);
 
@@ -121,7 +121,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
       Expression residual,
       Map<Integer, ?> idToConstant,
       SparkDeleteFilter deleteFilter,
-      ParquetMetricsCallback callback) {
+      ParquetMetricsCallbackV2 callback) {
     // get required schema if there are deletes
     Schema requiredSchema = deleteFilter != null ? deleteFilter.requiredSchema() : expectedSchema();
 
