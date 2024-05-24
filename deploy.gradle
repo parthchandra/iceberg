@@ -84,7 +84,6 @@ subprojects {
       relocate 'org.apache.avro', 'org.apache.iceberg.shaded.org.apache.avro'
       relocate 'avro.shaded', 'org.apache.iceberg.shaded.org.apache.avro.shaded'
       relocate 'com.thoughtworks.paranamer', 'org.apache.iceberg.shaded.com.thoughtworks.paranamer'
-      relocate 'org.apache.parquet', 'org.apache.iceberg.shaded.org.apache.parquet'
       relocate 'shaded.parquet', 'org.apache.iceberg.shaded.org.apache.parquet.shaded'
       relocate 'org.apache.orc', 'org.apache.iceberg.shaded.org.apache.orc'
       relocate 'io.airlift', 'org.apache.iceberg.shaded.io.airlift'
