@@ -167,6 +167,10 @@ public abstract class ManifestWriter<F extends ContentFile<F>> implements FileAp
     addEntry(reused.wrapDelete(snapshotId, dataSequenceNumber, fileSequenceNumber, deletedFile));
   }
 
+  public void delete(F deletedFile, Long dataSequenceNumber, Long fileSequenceNumber) {
+    addEntry(reused.wrapDelete(snapshotId, dataSequenceNumber, fileSequenceNumber, deletedFile));
+  }
+
   void delete(ManifestEntry<F> entry) {
     // Use the current Snapshot ID for the delete. It is safe to delete the data file from disk
     // when this Snapshot has been removed or when there are no Snapshots older than this one.
