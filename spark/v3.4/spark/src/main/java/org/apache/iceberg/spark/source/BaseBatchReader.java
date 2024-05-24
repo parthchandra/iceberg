@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.spark.source;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.FileFormat;
@@ -40,7 +39,6 @@ import org.apache.iceberg.spark.data.vectorized.VectorizedSparkParquetReaders;
 import org.apache.iceberg.spark.data.vectorized.boson.BosonVectorizedSparkParquetReaders;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
-import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.connector.metric.CustomTaskMetric;
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetMetricsCallbackV2;
 import org.apache.spark.sql.vectorized.ColumnarBatch;

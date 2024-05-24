@@ -30,8 +30,8 @@ com.emc.ecs:object-client-bundle = 3.3.2
 org.immutables:value = 2.9.2
 net.snowflake:snowflake-jdbc = 3.13.30
 io.delta:delta-standalone_* = 0.6.0
-com.apple.pie.boson:boson-spark-spark3.4_2.12 = 0.3.35
-com.apple.pie.boson:boson-spark-spark3.4_2.13 = 0.3.35
+com.apple.pie.boson:boson-spark-spark3.4_2.12 = 0.3.35-metrics
+com.apple.pie.boson:boson-spark-spark3.4_2.13 = 0.3.35-metrics
 
 # test deps
 org.junit.vintage:junit-vintage-engine = 5.9.2
