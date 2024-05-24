@@ -123,6 +123,24 @@ public class TestManifestWriter extends TableTestBase {
   }
 
   @Test
+  public void testWriteNullSequenceNumber() throws IOException {
+    File manifestFile = temp.newFile("manifest.avro");
+    Assert.assertTrue(manifestFile.delete());
+    OutputFile outputFile = table.ops().io().newOutputFile(manifestFile.getCanonicalPath());
+    ManifestWriter<DataFile> writer =
+        ManifestFiles.write(formatVersion, table.spec(), outputFile, 1L);
+    // write the manifest with a null data sequence number
+    writer.delete(newFile(10, TestHelpers.Row.of(1)), null, null);
+    writer.close();
+    ManifestFile manifest = writer.toManifestFile();
+    ManifestReader<DataFile> manifestReader = ManifestFiles.read(manifest, table.io());
+    for (ManifestEntry<DataFile> entry : manifestReader.entries()) {
+      Assert.assertNull(entry.dataSequenceNumber());
+      Assert.assertNull(entry.fileSequenceNumber());
+    }
+  }
+
+  @Test
   public void testCommitManifestWithExplicitDataSequenceNumber() throws IOException {
     Assume.assumeTrue("Sequence numbers are valid for format version > 1", formatVersion > 1);
 
