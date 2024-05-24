@@ -210,19 +210,16 @@ public class BridgeKmsClient extends LocalKeyWrapClient {
     for (String masterKey : masterKeys) {
       String[] parts = masterKey.split(":", -1);
       Preconditions.checkArgument(
-          parts.length == 3,
-          "Versioned key " + masterKey + " does not have 3 components, separated by :");
+          parts.length == 3, "Wrong key format, must be <keyId>:v<N>:<encodedKey>");
       String keyName = parts[0].trim();
       String keyVersion = parts[1].trim();
-      Preconditions.checkArgument(
-          keyVersion.startsWith("v"), "Key version " + keyVersion + " does not start with v");
+      Preconditions.checkArgument(keyVersion.startsWith("v"), "Key version does not start with v");
 
       int version;
       try {
         version = Integer.parseInt(keyVersion.substring(1));
       } catch (NumberFormatException e) {
-        throw new RuntimeException(
-            "Version component was not an Integer - " + keyVersion.substring(1), e);
+        throw new RuntimeException("Version component was not an Integer", e);
       }
 
       if (version > latestKeyVersion) {
@@ -236,7 +233,7 @@ public class BridgeKmsClient extends LocalKeyWrapClient {
       try {
         keyBytes = Base64.getDecoder().decode(key);
       } catch (IllegalArgumentException e) {
-        throw new RuntimeException("Key content is not a valid base64 scheme - " + key);
+        throw new RuntimeException("Key content is not a valid base64 scheme");
       }
       keyMap.put(keyName, keyBytes);
     }
