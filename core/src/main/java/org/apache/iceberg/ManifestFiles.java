@@ -87,7 +87,8 @@ public class ManifestFiles {
   }
 
   /**
-   * Returns a {@link CloseableIterable} of file paths in the {@link ManifestFile}.
+   * Returns a {@link CloseableIterable} of file paths in the {@link ManifestFile}. Only reads data
+   * manifest files.
    *
    * @param manifest a ManifestFile
    * @param io a FileIO

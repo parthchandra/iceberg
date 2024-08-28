@@ -24,10 +24,14 @@ import static org.assertj.core.api.Assumptions.assumeThat;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.apache.iceberg.ManifestEntry.Status;
 import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Queues;
 import org.apache.iceberg.types.Conversions;
 import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.TestTemplate;
@@ -307,10 +311,57 @@ public class TestManifestWriter extends TestBase {
         addedRowCounts,
         existingRowCounts,
         deletedRowCounts);
+  }
+
+  /**
+   * This test makes sure that the {@link RollingManifestWriter} could be used in streaming mode.
+   * The {@link RollingManifestWriter#onNewManifestFile(ManifestFile)} is called, and the generated
+   * {@link ManifestFile} contain all, but the last submitted record. When the writer is closed then
+   * the {@link RollingManifestWriter#onNewManifestFile(ManifestFile)} could be used to retrieve the
+   * last manifest file.
+   */
+  @TestTemplate
+  public void testRollingManifestWriterPoll() throws IOException {
+    RollingManifestWriterWithQueue writer = newRollingWriteManifestWithQueue(SMALL_FILE_SIZE);
+
+    int[] addedFileCounts = new int[3];
+    int[] existingFileCounts = new int[3];
+    int[] deletedFileCounts = new int[3];
+    long[] addedRowCounts = new long[3];
+    long[] existingRowCounts = new long[3];
+    long[] deletedRowCounts = new long[3];
+
+    List<ManifestFile> manifestFiles = Lists.newArrayListWithExpectedSize(3);
+    for (int i = 0; i < FILE_SIZE_CHECK_ROWS_DIVISOR * 3; i++) {
+      int type = i % 3;
+      int fileIndex = i / FILE_SIZE_CHECK_ROWS_DIVISOR;
+      if (type == 0) {
+        writer.add(newFile(i));
+        addedFileCounts[fileIndex] += 1;
+        addedRowCounts[fileIndex] += i;
+      } else if (type == 1) {
+        writer.existing(newFile(i), 1, 1, null);
+        existingFileCounts[fileIndex] += 1;
+        existingRowCounts[fileIndex] += i;
+      } else {
+        writer.delete(newFile(i), 1, null);
+        deletedFileCounts[fileIndex] += 1;
+        deletedRowCounts[fileIndex] += i;
+      }
+
+      if (i % FILE_SIZE_CHECK_ROWS_DIVISOR != 0 || i == 0) {
+        assertThat(writer.poll()).isNull();
+      } else {
+        manifestFiles.add(writer.poll());
+        assertThat(writer.poll()).isNull();
+      }
+    }
 
     writer.close();
-    manifestFiles = writer.toManifestFiles();
-    assertThat(manifestFiles).hasSize(3);
+    manifestFiles.add(writer.poll());
+    assertThat(writer.poll()).isNull();
+
+    assertThat(writer.toManifestFiles()).isEqualTo(manifestFiles);
 
     checkManifests(
         manifestFiles,
@@ -391,6 +442,15 @@ public class TestManifestWriter extends TestBase {
         targetFileSize);
   }
 
+  private RollingManifestWriterWithQueue newRollingWriteManifestWithQueue(long targetFileSize) {
+    return new RollingManifestWriterWithQueue(
+        () -> {
+          OutputFile newManifestFile = newManifestFile();
+          return ManifestFiles.write(formatVersion, SPEC, newManifestFile, null);
+        },
+        targetFileSize);
+  }
+
   private OutputFile newManifestFile() {
     try {
       return Files.localOutput(
@@ -398,6 +458,25 @@ public class TestManifestWriter extends TestBase {
               File.createTempFile("manifest", null, temp.toFile()).toString()));
     } catch (IOException e) {
       throw new UncheckedIOException(e);
+    }
+  }
+
+  private static class RollingManifestWriterWithQueue extends RollingManifestWriter<DataFile> {
+    Deque<ManifestFile> manifestFiles = Queues.newArrayDeque();
+
+    RollingManifestWriterWithQueue(
+        Supplier<ManifestWriter<DataFile>> manifestWriterSupplier, long targetFileSizeInBytes) {
+      super(manifestWriterSupplier, targetFileSizeInBytes);
+    }
+
+    @Override
+    protected void onNewManifestFile(ManifestFile newManifestFile) {
+      super.onNewManifestFile(newManifestFile);
+      manifestFiles.add(newManifestFile);
+    }
+
+    ManifestFile poll() {
+      return manifestFiles.poll();
     }
   }
 }
