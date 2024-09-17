@@ -16,35 +16,23 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.iceberg.encryption.kms;
 
-project(":iceberg-azure-bundle") {
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 
-  apply plugin: 'com.gradleup.shadow'
+public class UnitestKMS extends MemoryMockKMS {
+  public static final String MASTER_KEY_NAME1 = "keyA";
+  public static final byte[] MASTER_KEY1 = "0123456789012345".getBytes(StandardCharsets.UTF_8);
+  public static final String MASTER_KEY_NAME2 = "keyB";
+  public static final byte[] MASTER_KEY2 = "1123456789012345".getBytes(StandardCharsets.UTF_8);
 
-  tasks.jar.dependsOn tasks.shadowJar
-
-  dependencies {
-    implementation platform(libs.azuresdk.bom)
-    implementation "com.azure:azure-storage-file-datalake"
-    implementation "com.azure:azure-identity"
-  }
-
-  shadowJar {
-    archiveClassifier.set(null)
-    zip64 true
-
-    // include the LICENSE and NOTICE files for the shaded Jar
-    from(projectDir) {
-      include 'LICENSE'
-      include 'NOTICE'
-    }
-
-    // relocate Azure-specific versions
-    relocate 'io.netty', 'org.apache.iceberg.azure.shaded.io.netty'
-    relocate 'com.fasterxml.jackson', 'org.apache.iceberg.azure.shaded.com.fasterxml.jackson'
-  }
-
-  jar {
-    enabled = false
+  @Override
+  public void initialize(Map<String, String> properties) {
+    masterKeys =
+        ImmutableMap.of(
+            MASTER_KEY_NAME1, MASTER_KEY1,
+            MASTER_KEY_NAME2, MASTER_KEY2);
   }
 }

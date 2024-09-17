@@ -34,6 +34,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.actions.ActionsProvider;
 import org.apache.iceberg.actions.CheckSnapshotIntegrity;
+import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
@@ -100,6 +101,42 @@ public class TestCheckSnapshotIntegrityAction extends SparkTestBase {
   }
 
   @Test
+  public void testCheckSnapshotIntegrityForTargetVersionOnly() {
+    String manifestListFileLocation = table.currentSnapshot().manifestListLocation();
+
+    String versionThreeFile =
+        ((HasTableOperations) table).operations().current().metadataFileLocation();
+    Table startTable = newStaticTable(versionThreeFile, table.io());
+    CheckSnapshotIntegrity.Result result =
+        actions().checkSnapshotIntegrity(startTable).targetVersion(versionThreeFile).execute();
+    checkMissingFiles(0, result);
+
+    // delete v3 manifest-list files
+    table.io().deleteFile(manifestListFileLocation);
+
+    // fail as v3 is now corrupted
+    AssertHelpers.assertThrows(
+        "",
+        NullPointerException.class,
+        () -> actions().checkSnapshotIntegrity(startTable).execute());
+    AssertHelpers.assertThrows(
+        "",
+        NotFoundException.class,
+        () ->
+            actions().checkSnapshotIntegrity(startTable).targetVersion(versionThreeFile).execute());
+
+    // pass if use v2 as targetVersion
+    String versionTwoFile = tableLocation + "metadata/v2.metadata.json";
+    CheckSnapshotIntegrity.Result resultV1 =
+        actions()
+            .checkSnapshotIntegrity(startTable)
+            .targetVersion(versionTwoFile)
+            .completeCheck(true)
+            .execute();
+    checkMissingFiles(0, resultV1);
+  }
+
+  @Test
   public void testStartFromFirstSnapshot() {
     List<String> validFiles = validFiles();
 
@@ -134,12 +171,15 @@ public class TestCheckSnapshotIntegrityAction extends SparkTestBase {
         "", IllegalArgumentException.class, () -> actions.targetVersion(null));
     AssertHelpers.assertThrows(
         "", IllegalArgumentException.class, () -> actions.targetVersion("invalid"));
+    AssertHelpers.assertThrows(
+        "", IllegalArgumentException.class, () -> actions.completeCheck(true).execute());
 
     // either version file name or path are valid
     String versionFilePath = currentMetadata(table).metadataFileLocation();
     actions.targetVersion(versionFilePath);
     String versionFilename = fileName(versionFilePath);
     actions.targetVersion(versionFilename);
+    actions.completeCheck(true);
   }
 
   private void checkMissingFiles(int num, CheckSnapshotIntegrity.Result result) {

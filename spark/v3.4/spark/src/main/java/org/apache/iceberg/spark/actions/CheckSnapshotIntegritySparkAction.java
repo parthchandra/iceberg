@@ -51,6 +51,7 @@ public class CheckSnapshotIntegritySparkAction
   private ExecutorService executorService = DEFAULT_EXECUTOR_SERVICE;
   private String targetVersion;
   private Table targetTable;
+  private boolean completeCheck = false;
 
   private Consumer<String> validateFunc =
       new Consumer<String>() {
@@ -102,9 +103,22 @@ public class CheckSnapshotIntegritySparkAction
   }
 
   @Override
+  public CheckSnapshotIntegrity completeCheck(boolean completeCheckFlag) {
+    this.completeCheck = completeCheckFlag;
+    return this;
+  }
+
+  @Override
   public Result execute() {
+    validateInputs();
     JobGroupInfo info = newJobGroupInfo("CHECK-SNAPSHOT-INTEGRITY", jobDesc());
     return withJobGroupInfo(info, this::doExecute);
+  }
+
+  private void validateInputs() {
+    Preconditions.checkArgument(
+        !this.completeCheck || this.targetVersion != null,
+        "completeCheck can only be used when targetVersion is set.");
   }
 
   private String jobDesc() {
@@ -128,8 +142,12 @@ public class CheckSnapshotIntegritySparkAction
 
   private List<String> filesToCheck() {
     Dataset<Row> targetFileDF = fileDS(targetTable).select("path");
-    Dataset<Row> currentFileDF = fileDS(table).select("path");
-    return targetFileDF.except(currentFileDF).as(Encoders.STRING()).collectAsList();
+    if (!completeCheck) {
+      // check only incremental files
+      Dataset<Row> currentFileDF = fileDS(table).select("path");
+      targetFileDF = targetFileDF.except(currentFileDF);
+    }
+    return targetFileDF.as(Encoders.STRING()).collectAsList();
   }
 
   private Dataset<FileInfo> fileDS(Table tbl) {

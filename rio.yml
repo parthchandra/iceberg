@@ -7,7 +7,7 @@ notify:
 
 machine:
   env:
-    RUNTIME_JDK_VERSION: 11
+    RUNTIME_JDK_VERSION: 17
     skipTest: false
     CODE_VERSION: $(./code_version.sh)
 
@@ -29,7 +29,7 @@ pipelines:
   build:
     template: buildozer:v4:prb
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-scala-2.13-prb
@@ -39,7 +39,7 @@ pipelines:
     steps:
       - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.4_2.13:build :iceberg-spark:iceberg-spark-extensions-3.4_2.13:build :iceberg-spark:iceberg-spark-runtime-3.4_2.13:build
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-release-scala-2.12-prb
@@ -47,7 +47,7 @@ pipelines:
   build:
     template: buildozer:v4:prb
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-release-scala-2.13-prb
@@ -57,7 +57,7 @@ pipelines:
     steps:
       - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-3.4_2.13:build :iceberg-spark:iceberg-spark-extensions-3.4_2.13:build :iceberg-spark:iceberg-spark-runtime-3.4_2.13:build
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 # publish pipelines
@@ -73,7 +73,7 @@ pipelines:
     radar:
       annotate: true
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-scala-2.13-snapshot
@@ -94,7 +94,7 @@ pipelines:
     radar:
       annotate: true
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-scala-2.12-release
@@ -112,7 +112,7 @@ pipelines:
     tag:
       expression: ${CODE_VERSION}
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
 
 - name: apple-1.5.0.x-scala-2.13-release
@@ -134,5 +134,6 @@ pipelines:
     radar:
       annotate: true
   machine:
-    baseImage: docker.apple.com/pie/boson:jdk11
+    baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
   jenkins: *jenkins_config
+  

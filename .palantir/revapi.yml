@@ -1040,6 +1040,11 @@ acceptedBreaks:
       old: "class org.apache.iceberg.types.Types.NestedField"
       new: "class org.apache.iceberg.types.Types.NestedField"
       justification: "new Constructor added"
+  "1.5.0.0-apple":
+    org.apache.iceberg:iceberg-api:
+    - code: "java.method.addedToInterface"
+      new: "method org.apache.iceberg.actions.CheckSnapshotIntegrity org.apache.iceberg.actions.CheckSnapshotIntegrity::completeCheck(boolean)"
+      justification: "Support new feature flag in CheckSnapshotIntegrity"
   apache-iceberg-0.14.0:
     org.apache.iceberg:iceberg-api:
     - code: "java.class.defaultSerializationChanged"

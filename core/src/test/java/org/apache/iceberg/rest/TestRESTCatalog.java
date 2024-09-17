@@ -31,7 +31,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +45,7 @@ import org.apache.iceberg.BaseTransaction;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.MetadataUpdate;
 import org.apache.iceberg.PartitionSpec;
@@ -50,6 +53,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.Transaction;
 import org.apache.iceberg.UpdatePartitionSpec;
 import org.apache.iceberg.UpdateSchema;
@@ -58,6 +62,14 @@ import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SessionCatalog;
 import org.apache.iceberg.catalog.TableCommit;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptedLocalOutputFile;
+import org.apache.iceberg.encryption.EncryptedOutputFile;
+import org.apache.iceberg.encryption.EncryptionManager;
+import org.apache.iceberg.encryption.EnvelopeEncryptionManager;
+import org.apache.iceberg.encryption.EnvelopeMetadata;
+import org.apache.iceberg.encryption.EnvelopeMetadataParser;
+import org.apache.iceberg.encryption.PlaintextEncryptionManager;
+import org.apache.iceberg.encryption.kms.UnitestKMS;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.NotAuthorizedException;
 import org.apache.iceberg.exceptions.NotFoundException;
@@ -2195,6 +2207,263 @@ public class TestRESTCatalog extends CatalogTests<RESTCatalog> {
   }
 
   @Test
+  public void testTableLevelEncryptionManager() {
+    Namespace namespace = Namespace.of("encryptionManagerFact");
+    TableIdentifier plainTextEncryptionManagerId =
+        TableIdentifier.of(namespace, "PlaintextEncryptionManager");
+    TableIdentifier envelopedEncryptionManagerId =
+        TableIdentifier.of(namespace, "EnvelopedEncryptionManager");
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(namespace);
+    }
+
+    // KMS configuration provide by Table Prop
+    Map<String, String> tableProperties = Maps.newHashMap();
+    tableProperties.put(
+        TableProperties.ENCRYPTION_KMS_CLIENT_IMPL, UnitestKMS.class.getCanonicalName());
+    tableProperties.put(TableProperties.ENCRYPTION_TABLE_KEY, UnitestKMS.MASTER_KEY_NAME1);
+    tableProperties.put(TableProperties.FORMAT_VERSION, "2");
+
+    Table createdPlainTextEncryptionManagerTable =
+        catalog().createTable(plainTextEncryptionManagerId, SCHEMA);
+    Table createdEnvelopedEncryptionManagerTable =
+        catalog()
+            .createTable(
+                envelopedEncryptionManagerId,
+                SCHEMA,
+                PartitionSpec.unpartitioned(),
+                tableProperties);
+
+    EncryptionManager createdPlainTextEncryptionManager =
+        createdPlainTextEncryptionManagerTable.encryption();
+    EncryptionManager createdEnvelopedEncryptionManager =
+        createdEnvelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(createdPlainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+    Assertions.assertThat(createdEnvelopedEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+
+    // loaded table encryptionManager
+    Table plainTextEncryptionManagerTable = catalog().loadTable(plainTextEncryptionManagerId);
+    Table envelopedEncryptionManagerTable = catalog().loadTable(envelopedEncryptionManagerId);
+
+    EncryptionManager plainTextEncryptionManager = plainTextEncryptionManagerTable.encryption();
+    EncryptionManager envelopedEncryptionManager = envelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(plainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+    Assertions.assertThat(envelopedEncryptionManager).isInstanceOf(EnvelopeEncryptionManager.class);
+  }
+
+  @Test
+  public void testCatalogEncryptionManager() {
+    RESTCatalogAdapter adapter = Mockito.spy(new RESTCatalogAdapter(backendCatalog));
+    RESTCatalog catalog =
+        new RESTCatalog(SessionCatalog.SessionContext.createEmpty(), (config) -> adapter);
+
+    // KMS configuration provide by catalog Prop
+    Map<String, String> catalogProperties =
+        ImmutableMap.of(
+            CatalogProperties.ENCRYPTION_KMS_CLIENT_IMPL, UnitestKMS.class.getCanonicalName());
+    catalog.initialize("prod", catalogProperties);
+
+    Namespace namespace = Namespace.of("encryptionManagerFact");
+    TableIdentifier plainTextEncryptionManagerId =
+        TableIdentifier.of(namespace, "PlaintextEncryptionManager");
+    TableIdentifier envelopedEncryptionManagerId =
+        TableIdentifier.of(namespace, "EnvelopedEncryptionManager");
+
+    if (requiresNamespaceCreate()) {
+      catalog.createNamespace(namespace);
+    }
+
+    // KMS key config provided by Table Prop
+    Map<String, String> tableProperties = Maps.newHashMap();
+    tableProperties.put(TableProperties.ENCRYPTION_TABLE_KEY, UnitestKMS.MASTER_KEY_NAME2);
+    tableProperties.put(TableProperties.FORMAT_VERSION, "2");
+
+    Table createdPlainTextEncryptionManagerTable =
+        catalog.createTable(plainTextEncryptionManagerId, SCHEMA);
+    Table createdEnvelopedEncryptionManagerTable =
+        catalog.createTable(
+            envelopedEncryptionManagerId, SCHEMA, PartitionSpec.unpartitioned(), tableProperties);
+
+    EncryptionManager createdPlainTextEncryptionManager =
+        createdPlainTextEncryptionManagerTable.encryption();
+    EncryptionManager createdEnvelopedEncryptionManager =
+        createdEnvelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(createdPlainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+    Assertions.assertThat(createdEnvelopedEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+
+    // loaded table encryptionManager
+    Table plainTextEncryptionManagerTable = catalog.loadTable(plainTextEncryptionManagerId);
+    Table envelopedEncryptionManagerTable = catalog.loadTable(envelopedEncryptionManagerId);
+
+    EncryptionManager plainTextEncryptionManager = plainTextEncryptionManagerTable.encryption();
+    EncryptionManager envelopedEncryptionManager = envelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(plainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+    Assertions.assertThat(envelopedEncryptionManager).isInstanceOf(EnvelopeEncryptionManager.class);
+  }
+
+  @Test
+  public void testCatalogEncryptionSetIgnoreTableProperties() {
+    RESTCatalogAdapter adapter = Mockito.spy(new RESTCatalogAdapter(backendCatalog));
+    RESTCatalog catalog =
+        new RESTCatalog(SessionCatalog.SessionContext.createEmpty(), (config) -> adapter);
+
+    // KMS configuration provide by catalog Prop
+    Map<String, String> catalogProperties =
+        ImmutableMap.of(
+            CatalogProperties.ENCRYPTION_KMS_CLIENT_IMPL,
+            UnitestKMS.class.getCanonicalName(),
+            CatalogProperties.ENCRYPTION_IGNORE_TABLE_PROPS,
+            "true");
+
+    catalog.initialize("prod", catalogProperties);
+
+    Namespace namespace = Namespace.of("encryptionManagerFact");
+    TableIdentifier plainTextEncryptionManagerId =
+        TableIdentifier.of(namespace, "PlaintextEncryptionManager");
+    TableIdentifier envelopedEncryptionManagerId =
+        TableIdentifier.of(namespace, "EnvelopedEncryptionManager");
+
+    if (requiresNamespaceCreate()) {
+      catalog.createNamespace(namespace);
+    }
+
+    // KMS key config provided by Table Prop
+    Map<String, String> tableProperties = Maps.newHashMap();
+    tableProperties.put(TableProperties.ENCRYPTION_TABLE_KEY, UnitestKMS.MASTER_KEY_NAME2);
+    tableProperties.put(TableProperties.FORMAT_VERSION, "2");
+
+    Table createdPlainTextEncryptionManagerTable =
+        catalog.createTable(plainTextEncryptionManagerId, SCHEMA);
+    Table createdEnvelopedEncryptionManagerTable =
+        catalog.createTable(
+            envelopedEncryptionManagerId, SCHEMA, PartitionSpec.unpartitioned(), tableProperties);
+
+    EncryptionManager createdPlainTextEncryptionManager =
+        createdPlainTextEncryptionManagerTable.encryption();
+    EncryptionManager createdEnvelopedEncryptionManager =
+        createdEnvelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(createdPlainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+
+    // When catalog prop sets encryption.ignore.table.properties to true, encryption config in
+    // TableProperties doesn't take effect
+    Assertions.assertThat(createdEnvelopedEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+
+    // loaded table encryptionManager
+    Table plainTextEncryptionManagerTable = catalog.loadTable(plainTextEncryptionManagerId);
+    Table envelopedEncryptionManagerTable = catalog.loadTable(envelopedEncryptionManagerId);
+
+    EncryptionManager plainTextEncryptionManager = plainTextEncryptionManagerTable.encryption();
+    EncryptionManager envelopedEncryptionManager = envelopedEncryptionManagerTable.encryption();
+
+    Assertions.assertThat(plainTextEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+    Assertions.assertThat(envelopedEncryptionManager)
+        .isInstanceOf(PlaintextEncryptionManager.class);
+  }
+
+  @Test
+  public void testCatalogLevelEncryptionManagerWithKeySetting() throws IOException {
+    RESTCatalogAdapter adapter = Mockito.spy(new RESTCatalogAdapter(backendCatalog));
+    RESTCatalog catalog =
+        new RESTCatalog(SessionCatalog.SessionContext.createEmpty(), (config) -> adapter);
+
+    // KMS impl and key provided by catalog Prop
+    Map<String, String> catalogProperties =
+        ImmutableMap.of(
+            CatalogProperties.ENCRYPTION_KMS_CLIENT_IMPL,
+            UnitestKMS.class.getCanonicalName(),
+            TableProperties.ENCRYPTION_TABLE_KEY,
+            UnitestKMS.MASTER_KEY_NAME1);
+    catalog.initialize("prod", catalogProperties);
+
+    Namespace namespace = Namespace.of("encryptionManagerFact");
+    TableIdentifier notSetTableEncryptionKey =
+        TableIdentifier.of(namespace, "NotSetTableEncryptionKey");
+
+    TableIdentifier setTableEncryptionKey = TableIdentifier.of(namespace, "SetTableEncryptionKey");
+
+    if (requiresNamespaceCreate()) {
+      catalog.createNamespace(namespace);
+    }
+
+    Table noTableKMSKeySetTable = catalog.createTable(notSetTableEncryptionKey, SCHEMA);
+
+    // KMS key config provided to overwrite catalog kms key setting
+    Map<String, String> tableProperties = Maps.newHashMap();
+    tableProperties.put(
+        TableProperties.ENCRYPTION_KMS_CLIENT_IMPL, UnitestKMS.class.getCanonicalName());
+    tableProperties.put(TableProperties.ENCRYPTION_TABLE_KEY, UnitestKMS.MASTER_KEY_NAME2);
+    tableProperties.put(TableProperties.FORMAT_VERSION, "2");
+    Table tableKMSKeySetTable =
+        catalog.createTable(
+            setTableEncryptionKey, SCHEMA, PartitionSpec.unpartitioned(), tableProperties);
+
+    EncryptionManager noTableKMSKeySetTableEncryptionManager = noTableKMSKeySetTable.encryption();
+    EncryptionManager tableKMSKeySetTableEncryptionManager = tableKMSKeySetTable.encryption();
+
+    Assertions.assertThat(noTableKMSKeySetTableEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+
+    Assertions.assertThat(tableKMSKeySetTableEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+
+    Path noTableKeySetManagerPath = Paths.get("/tmp/" + UUID.randomUUID() + ".parquet");
+    File noTableKeySetManagerFile = createTempFile(noTableKeySetManagerPath);
+
+    EncryptedLocalOutputFile encryptedLocalOutputFileForNoTableKeySet =
+        new EncryptedLocalOutputFile(noTableKeySetManagerFile);
+
+    EncryptedOutputFile catalogKeyEncrypted =
+        noTableKMSKeySetTableEncryptionManager.encrypt(encryptedLocalOutputFileForNoTableKeySet);
+    ByteBuffer serialized =
+        EnvelopeMetadataParser.toJson((EnvelopeMetadata) catalogKeyEncrypted.keyMetadata());
+    EnvelopeMetadata parsedMetadata = EnvelopeMetadataParser.fromJson(serialized);
+
+    Assertions.assertThat(parsedMetadata.kekId()).isEqualTo(UnitestKMS.MASTER_KEY_NAME1);
+
+    Path tableKeySetManagerPath = Paths.get("/tmp/" + UUID.randomUUID() + ".parquet");
+    File tableKeySetManagerFile = createTempFile(tableKeySetManagerPath);
+
+    EncryptedLocalOutputFile encryptedLocalOutputFileForTableKeySet =
+        new EncryptedLocalOutputFile(tableKeySetManagerFile);
+
+    EncryptedOutputFile tableKeyEncrypted =
+        tableKMSKeySetTableEncryptionManager.encrypt(encryptedLocalOutputFileForTableKeySet);
+    ByteBuffer serialized2 =
+        EnvelopeMetadataParser.toJson((EnvelopeMetadata) tableKeyEncrypted.keyMetadata());
+    EnvelopeMetadata parsedMetadataTk = EnvelopeMetadataParser.fromJson(serialized2);
+
+    // When KMS key is set on Catalog side, it will take precedence.
+    Assertions.assertThat(parsedMetadataTk.kekId()).isEqualTo(UnitestKMS.MASTER_KEY_NAME1);
+
+    // loaded table encryptionManager
+    Table loadedNoSetKMSKeyTable = catalog.loadTable(notSetTableEncryptionKey);
+    Table loadedSetKMSKeyTable = catalog.loadTable(setTableEncryptionKey);
+
+    EncryptionManager loadedNoSetKMSKeyTableEncryptionManager = loadedNoSetKMSKeyTable.encryption();
+    EncryptionManager loadedSetKMSKeyTableEncryptionManager = loadedSetKMSKeyTable.encryption();
+
+    Assertions.assertThat(loadedNoSetKMSKeyTableEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+    Assertions.assertThat(loadedSetKMSKeyTableEncryptionManager)
+        .isInstanceOf(EnvelopeEncryptionManager.class);
+  }
+
+  @Test
   public void diffAgainstSingleTable() {
     Namespace namespace = Namespace.of("namespace");
     TableIdentifier identifier = TableIdentifier.of(namespace, "multipleDiffsAgainstSingleTable");
@@ -2544,6 +2813,12 @@ public class TestRESTCatalog extends CatalogTests<RESTCatalog> {
                 .newInputFile(addSnapshot.snapshot().manifestListLocation())
                 .exists())
         .isTrue();
+  }
+
+  static File createTempFile(Path temp) throws IOException {
+    File tmpFolder = temp.resolve("parquet").toFile();
+    String filename = UUID.randomUUID().toString();
+    return new File(tmpFolder, FileFormat.PARQUET.addExtension(filename));
   }
 
   private RESTCatalog catalog(RESTCatalogAdapter adapter) {

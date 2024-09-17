@@ -45,6 +45,16 @@ public interface CheckSnapshotIntegrity
    */
   CheckSnapshotIntegrity targetVersion(String targetVersion);
 
+  /**
+   * Only check target version for referential integrity instead of incremental snapshot from table
+   * to target version. Only valid when used with targetVersion together
+   *
+   * @param completeCheck boolean to indicate whether to apply complete integrity check for
+   *     snapshots in the target version. Default to false
+   * @return this for method chaining
+   */
+  CheckSnapshotIntegrity completeCheck(boolean completeCheck);
+
   /** The action result that contains a summary of the execution. */
   interface Result {
     /** Returns locations of missing metadata/data files. */

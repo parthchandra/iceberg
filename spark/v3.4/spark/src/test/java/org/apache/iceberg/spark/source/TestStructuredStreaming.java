@@ -21,6 +21,7 @@ package org.apache.iceberg.spark.source;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.PartitionSpec;
@@ -116,8 +117,8 @@ public class TestStructuredStreaming {
       query.stop();
 
       // remove the last commit to force Spark to reprocess batch #1
-      File lastCommitFile = new File(checkpoint.toString() + "/commits/1");
-      Assert.assertTrue("The commit file must be deleted", lastCommitFile.delete());
+      File lastCommitFile = new File(checkpoint + "/commits/1");
+      deleteFileAndCrc(lastCommitFile);
 
       // restart the query from the checkpoint
       StreamingQuery restartedQuery = streamWriter.start();
@@ -176,8 +177,8 @@ public class TestStructuredStreaming {
       query.stop();
 
       // remove the last commit to force Spark to reprocess batch #1
-      File lastCommitFile = new File(checkpoint.toString() + "/commits/1");
-      Assert.assertTrue("The commit file must be deleted", lastCommitFile.delete());
+      File lastCommitFile = new File(checkpoint + "/commits/1");
+      deleteFileAndCrc(lastCommitFile);
 
       // restart the query from the checkpoint
       StreamingQuery restartedQuery = streamWriter.start();
@@ -236,8 +237,8 @@ public class TestStructuredStreaming {
       query.stop();
 
       // remove the last commit to force Spark to reprocess batch #1
-      File lastCommitFile = new File(checkpoint.toString() + "/commits/1");
-      Assert.assertTrue("The commit file must be deleted", lastCommitFile.delete());
+      File lastCommitFile = new File(checkpoint + "/commits/1");
+      deleteFileAndCrc(lastCommitFile);
 
       // restart the query from the checkpoint
       StreamingQuery restartedQuery = streamWriter.start();
@@ -299,5 +300,13 @@ public class TestStructuredStreaming {
 
   private <T> void send(List<T> records, MemoryStream<T> stream) {
     stream.addData(JavaConverters.asScalaBuffer(records));
+  }
+
+  private void deleteFileAndCrc(File file) throws IOException {
+    File crcFile = new File(file.getParent(), "." + file.getName() + ".crc");
+    if (crcFile.exists()) {
+      Assert.assertTrue("CRC file must be deleted: " + crcFile.getPath(), crcFile.delete());
+    }
+    Assert.assertTrue("Commit file must be deleted: " + file.getPath(), file.delete());
   }
 }

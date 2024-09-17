@@ -17,7 +17,7 @@
  * under the License.
  */
 
-String sparkVersion = '3.4.3.3-apple-SNAPSHOT'
+String sparkVersion = '3.4.3.18-apple-SNAPSHOT'
 String sparkMajorVersion = '3.4'
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
 
