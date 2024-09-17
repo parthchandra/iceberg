@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class SmokeTest extends SparkExtensionsTestBase {
@@ -44,7 +43,7 @@ public class SmokeTest extends SparkExtensionsTestBase {
   // Run through our Doc's Getting Started Example
   // TODO Update doc example so that it can actually be run, modifications were required for this
   // test suite to run
-  @Ignore
+  @Test
   public void testGettingStarted() throws IOException {
     // Creating a table
     sql("CREATE TABLE %s (id bigint, data string) USING iceberg", tableName);
