@@ -94,4 +94,10 @@ public interface ActionsProvider {
     throw new UnsupportedOperationException(
         this.getClass().getName() + " does not implement removeExpiredFiles");
   }
+
+  /** Instantiates an action to compute table stats. */
+  default ComputeTableStats computeTableStats(Table table) {
+    throw new UnsupportedOperationException(
+        this.getClass().getName() + " does not implement computeTableStats");
+  }
 }
