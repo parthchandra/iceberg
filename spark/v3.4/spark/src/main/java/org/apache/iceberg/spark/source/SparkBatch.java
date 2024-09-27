@@ -150,7 +150,7 @@ class SparkBatch implements Batch {
   // - Parquet vectorization is enabled
   // - only primitives or metadata columns are projected
   // - all tasks are of FileScanTask type and read only Parquet files
-  boolean useParquetBatchReads() {
+  private boolean useParquetBatchReads() {
     return readConf.parquetVectorizationEnabled()
         && expectedSchema.columns().stream().allMatch(this::supportsParquetBatchReads)
         && taskGroups.stream().allMatch(this::supportsParquetBatchReads);

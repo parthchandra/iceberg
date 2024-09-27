@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import org.apache.comet.parquet.SupportsComet;
 import org.apache.iceberg.ScanTask;
 import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
@@ -33,7 +32,6 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.metrics.ScanReport;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
-import org.apache.iceberg.spark.ParquetReaderType;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.SparkSchemaUtil;
@@ -88,7 +86,7 @@ import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsComet {
+abstract class SparkScan implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(SparkScan.class);
 
   private final JavaSparkContext sparkContext;
@@ -194,18 +192,6 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsCome
     long rowsCount = taskGroups().stream().mapToLong(ScanTaskGroup::estimatedRowsCount).sum();
     long sizeInBytes = SparkSchemaUtil.estimateSize(readSchema(), rowsCount);
     return new Stats(sizeInBytes, rowsCount);
-  }
-
-  @Override
-  public boolean isCometEnabled() {
-    if (readConf.parquetReaderType() == ParquetReaderType.COMET) {
-      SparkBatch batch = (SparkBatch) this.toBatch();
-      if (batch.useParquetBatchReads()) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   private long totalRecords(Snapshot snapshot) {
