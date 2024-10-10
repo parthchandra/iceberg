@@ -924,9 +924,14 @@ public class S3FileIOProperties implements Serializable {
    * </pre>
    */
   public <T extends S3ClientBuilder> void applyRetryConfigurations(T builder) {
+    ClientOverrideConfiguration.Builder configBuilder =
+        null != builder.overrideConfiguration()
+            ? builder.overrideConfiguration().toBuilder()
+            : ClientOverrideConfiguration.builder();
+
     builder.overrideConfiguration(
-        config ->
-            config.retryPolicy(
+        configBuilder
+            .retryPolicy(
                 // Use a retry strategy which will persistently retry throttled exceptions with
                 // exponential backoff, to give S3 a chance to autoscale.
                 // LEGACY mode works best here, as it will allow throttled exceptions to use all of
@@ -970,7 +975,8 @@ public class S3FileIOProperties implements Serializable {
                                   return 5;
                                 })
                             .build())
-                    .build()));
+                    .build())
+            .build());
   }
 
   /**
