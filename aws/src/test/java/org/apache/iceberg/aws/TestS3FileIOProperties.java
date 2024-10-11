@@ -34,6 +34,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
@@ -234,6 +235,38 @@ public class TestS3FileIOProperties {
     S3V4RestSignerClient signerClient = (S3V4RestSignerClient) signer.get();
     Assertions.assertThat(signerClient.baseSignerUri()).isEqualTo(uri);
     Assertions.assertThat(signerClient.properties()).isEqualTo(properties);
+  }
+
+  @Test
+  public void s3RemoteSigningEnabledWithUserAgentAndRetryPolicy() {
+    String uri = "http://localhost:12345";
+    Map<String, String> properties =
+        ImmutableMap.of(
+            S3FileIOProperties.REMOTE_SIGNING_ENABLED, "true", CatalogProperties.URI, uri);
+    S3FileIOProperties s3Properties = new S3FileIOProperties(properties);
+    S3ClientBuilder builder = S3Client.builder();
+
+    s3Properties.applySignerConfiguration(builder);
+    s3Properties.applyUserAgentConfigurations(builder);
+    s3Properties.applyRetryConfigurations(builder);
+
+    Optional<String> userAgent =
+        builder.overrideConfiguration().advancedOption(SdkAdvancedClientOption.USER_AGENT_PREFIX);
+    Assertions.assertThat(userAgent)
+        .isPresent()
+        .get()
+        .satisfies(x -> Assertions.assertThat(x).startsWith("s3fileio"));
+
+    Optional<Signer> signer =
+        builder.overrideConfiguration().advancedOption(SdkAdvancedClientOption.SIGNER);
+    Assertions.assertThat(signer).isPresent().get().isInstanceOf(S3V4RestSignerClient.class);
+    S3V4RestSignerClient signerClient = (S3V4RestSignerClient) signer.get();
+
+    Assertions.assertThat(signerClient.baseSignerUri()).isEqualTo(uri);
+    Assertions.assertThat(signerClient.properties()).isEqualTo(properties);
+
+    Optional<RetryPolicy> retryPolicy = builder.overrideConfiguration().retryPolicy();
+    Assertions.assertThat(retryPolicy).isPresent().get().isInstanceOf(RetryPolicy.class);
   }
 
   @Test
