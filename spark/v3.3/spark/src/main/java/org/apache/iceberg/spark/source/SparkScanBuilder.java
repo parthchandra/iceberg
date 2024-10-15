@@ -44,7 +44,6 @@ import org.apache.iceberg.expressions.ExpressionUtil;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkAggregates;
@@ -232,8 +231,7 @@ public class SparkScanBuilder
     scan = scan.filter(filterExpression());
 
     try (CloseableIterable<FileScanTask> fileScanTasks = scan.planFiles()) {
-      List<FileScanTask> tasks = ImmutableList.copyOf(fileScanTasks);
-      for (FileScanTask task : tasks) {
+      for (FileScanTask task : fileScanTasks) {
         if (!task.deletes().isEmpty()) {
           LOG.info("Skipping aggregate pushdown: detected row level deletes");
           return false;
