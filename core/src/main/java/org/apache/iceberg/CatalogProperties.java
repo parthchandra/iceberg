@@ -171,4 +171,7 @@ public class CatalogProperties {
   public static final String ENCRYPTION_KMS_CLIENT_IMPL = "encryption.kms.client-impl";
   public static final String ENCRYPTION_IGNORE_TABLE_PROPS = "encryption.ignore.table.properties";
   public static final boolean ENCRYPTION_IGNORE_TABLE_PROPS_DEFAULT = false;
+
+  public static final String LOG_ERRORS_INTERNAL = "internal.log-errors";
+  public static final boolean LOG_ERRORS_INTERNAL_DEFAULT = false;
 }
