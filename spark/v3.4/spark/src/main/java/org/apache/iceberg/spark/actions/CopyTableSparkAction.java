@@ -31,10 +31,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
+import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.FileMetadata;
 import org.apache.iceberg.HasTableOperations;
-import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestEntry;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
@@ -42,6 +45,7 @@ import org.apache.iceberg.ManifestLists;
 import org.apache.iceberg.ManifestReader;
 import org.apache.iceberg.ManifestWriter;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.SerializableTable;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StaticTableOperations;
@@ -53,10 +57,26 @@ import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableMetadataUtil;
 import org.apache.iceberg.actions.BaseCopyTableActionResult;
 import org.apache.iceberg.actions.CopyTable;
+import org.apache.iceberg.avro.Avro;
+import org.apache.iceberg.data.Record;
+import org.apache.iceberg.data.avro.DataReader;
+import org.apache.iceberg.data.avro.DataWriter;
+import org.apache.iceberg.data.orc.GenericOrcReader;
+import org.apache.iceberg.data.orc.GenericOrcWriter;
+import org.apache.iceberg.data.parquet.GenericParquetReaders;
+import org.apache.iceberg.data.parquet.GenericParquetWriter;
+import org.apache.iceberg.deletes.PositionDelete;
+import org.apache.iceberg.deletes.PositionDeleteWriter;
 import org.apache.iceberg.exceptions.RuntimeIOException;
+import org.apache.iceberg.io.CloseableIterable;
+import org.apache.iceberg.io.CloseableIterator;
+import org.apache.iceberg.io.DeleteSchemaUtil;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.orc.ORC;
+import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
@@ -502,79 +522,307 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       String targetPrefix) {
 
     return rows -> {
-      List<PathPair> dataFiles = Lists.newArrayList();
+      List<PathPair> files = Lists.newArrayList();
       while (rows.hasNext()) {
-        dataFiles.addAll(
-            writeManifest(
-                rows.next(),
-                tableBroadcast,
-                stagingLocation,
-                format,
-                specsById,
-                sourcePrefix,
-                targetPrefix));
+        ManifestFile manifestFile = rows.next();
+        switch (manifestFile.content()) {
+          case DATA:
+            files.addAll(
+                writeDataManifest(
+                    manifestFile,
+                    tableBroadcast,
+                    stagingLocation,
+                    format,
+                    specsById,
+                    sourcePrefix,
+                    targetPrefix));
+            break;
+          case DELETES:
+            files.addAll(
+                writeDeleteManifest(
+                    manifestFile,
+                    tableBroadcast,
+                    stagingLocation,
+                    format,
+                    specsById,
+                    sourcePrefix,
+                    targetPrefix));
+            break;
+          default:
+            throw new UnsupportedOperationException(
+                "Unsupported manifest type: " + manifestFile.content());
+        }
       }
-
-      return dataFiles.iterator();
+      return files.iterator();
     };
   }
 
-  private static List<PathPair> writeManifest(
+  private static List<PathPair> writeDataManifest(
       ManifestFile manifestFile,
       Broadcast<Table> tableBroadcast,
       String stagingLocation,
       int format,
-      Broadcast<Map<Integer, PartitionSpec>> specsById,
+      Broadcast<Map<Integer, PartitionSpec>> specsByIdBroadcast,
       String sourcePrefix,
       String targetPrefix)
       throws IOException {
-
     String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
-    FileIO io = tableBroadcast.value().io();
+    FileIO io = tableBroadcast.getValue().io();
     OutputFile outputFile = io.newOutputFile(stagingPath);
-    PartitionSpec spec = specsById.getValue().get(manifestFile.partitionSpecId());
-
-    Preconditions.checkArgument(
-        manifestFile.content() == ManifestContent.DATA,
-        "Delete files(Position delete files and Equality delete files) are not supported yet");
+    Map<Integer, PartitionSpec> specsById = specsByIdBroadcast.getValue();
+    PartitionSpec spec = specsById.get(manifestFile.partitionSpecId());
 
     try (ManifestWriter<DataFile> writer =
             ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
         ManifestReader<DataFile> reader =
-            ManifestFiles.read(manifestFile, io, specsById.getValue()).select(Arrays.asList("*"))) {
+            ManifestFiles.read(manifestFile, io, specsById).select(Arrays.asList("*"))) {
       return StreamSupport.stream(reader.entries().spliterator(), false)
-          .map(entry -> appendEntry(entry, writer, spec, sourcePrefix, targetPrefix))
+          .map(entry -> newDataFile(entry, spec, sourcePrefix, targetPrefix, writer))
           .collect(Collectors.toList());
     }
   }
 
-  private static PathPair appendEntry(
+  private static PathPair newDataFile(
       ManifestEntry<DataFile> entry,
-      ManifestWriter<DataFile> writer,
       PartitionSpec spec,
       String sourcePrefix,
-      String targetPrefix) {
+      String targetPrefix,
+      ManifestWriter<DataFile> writer) {
     DataFile dataFile = entry.file();
     String sourceDataFilePath = dataFile.path().toString();
     if (sourceDataFilePath.startsWith(sourcePrefix)) {
       String targetDataFilePath = newPath(sourceDataFilePath, sourcePrefix, targetPrefix);
       dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(targetDataFilePath).build();
     }
+    appendEntryWithFile(entry, writer, dataFile);
+    return new PathPair(sourceDataFilePath, dataFile.path().toString());
+  }
+
+  private static List<PathPair> writeDeleteManifest(
+      ManifestFile manifestFile,
+      Broadcast<Table> tableBroadcast,
+      String stagingLocation,
+      int format,
+      Broadcast<Map<Integer, PartitionSpec>> specsByIdBroadcast,
+      String sourcePrefix,
+      String targetPrefix)
+      throws IOException {
+    String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
+    FileIO io = tableBroadcast.getValue().io();
+    OutputFile outputFile = io.newOutputFile(stagingPath);
+    Map<Integer, PartitionSpec> specsById = specsByIdBroadcast.getValue();
+    PartitionSpec spec = specsById.get(manifestFile.partitionSpecId());
+
+    try (ManifestWriter<DeleteFile> writer =
+            ManifestFiles.writeDeleteManifest(format, spec, outputFile, manifestFile.snapshotId());
+        ManifestReader<DeleteFile> reader =
+            ManifestFiles.readDeleteManifest(manifestFile, io, specsById)
+                .select(Arrays.asList("*"))) {
+      return StreamSupport.stream(reader.entries().spliterator(), false)
+          .map(
+              entry -> {
+                try {
+                  return newDeleteFile(
+                      entry, io, spec, sourcePrefix, targetPrefix, stagingLocation, writer);
+                } catch (IOException e) {
+                  throw new RuntimeException(e);
+                }
+              })
+          .collect(Collectors.toList());
+    }
+  }
+
+  private static PathPair newDeleteFile(
+      ManifestEntry<DeleteFile> entry,
+      FileIO io,
+      PartitionSpec spec,
+      String sourcePrefix,
+      String targetPrefix,
+      String stagingLocation,
+      ManifestWriter<DeleteFile> writer)
+      throws IOException {
+
+    DeleteFile file = entry.file();
+
+    switch (file.content()) {
+      case POSITION_DELETES:
+        DeleteFile posDeleteFile =
+            rewritePositionDeleteFile(io, file, spec, sourcePrefix, stagingLocation, targetPrefix);
+        appendEntryWithFile(entry, writer, posDeleteFile);
+        String targetDeleteFilePath = newPath(file.path().toString(), sourcePrefix, targetPrefix);
+        return new PathPair(posDeleteFile.path().toString(), targetDeleteFilePath);
+      case EQUALITY_DELETES:
+        DeleteFile eqDeleteFile = newEqualityDeleteFile(file, spec, sourcePrefix, targetPrefix);
+        appendEntryWithFile(entry, writer, eqDeleteFile);
+        return new PathPair(file.path().toString(), eqDeleteFile.path().toString());
+      default:
+        throw new UnsupportedOperationException("Unsupported delete file type: " + file.content());
+    }
+  }
+
+  private static DeleteFile newEqualityDeleteFile(
+      DeleteFile file, PartitionSpec spec, String sourcePrefix, String targetPrefix) {
+    String path = file.path().toString();
+
+    if (!path.startsWith(sourcePrefix)) {
+      throw new UnsupportedOperationException(
+          "Expected delete file to be under the source prefix: "
+              + sourcePrefix
+              + " but was "
+              + path);
+    }
+    int[] equalityFieldIds = file.equalityFieldIds().stream().mapToInt(Integer::intValue).toArray();
+    String newPath = newPath(path, sourcePrefix, targetPrefix);
+    return FileMetadata.deleteFileBuilder(spec)
+        .ofEqualityDeletes(equalityFieldIds)
+        .copy(file)
+        .withPath(newPath)
+        .withSplitOffsets(file.splitOffsets())
+        .build();
+  }
+
+  private static PositionDelete newPositionDeleteRecord(
+      Record record, String sourcePrefix, String targetPrefix) {
+    PositionDelete delete = PositionDelete.create();
+    String oldPath = (String) record.get(0);
+    String newPath = oldPath;
+    if (oldPath.startsWith(sourcePrefix)) {
+      newPath = newPath(oldPath, sourcePrefix, targetPrefix);
+    }
+    delete.set(newPath, (Long) record.get(1), record.get(2));
+    return delete;
+  }
+
+  private static DeleteFile rewritePositionDeleteFile(
+      FileIO io,
+      DeleteFile current,
+      PartitionSpec spec,
+      String sourcePrefix,
+      String stagingLocation,
+      String targetPrefix)
+      throws IOException {
+    String path = current.path().toString();
+    if (!path.startsWith(sourcePrefix)) {
+      throw new UnsupportedOperationException(
+          "Expected delete file to be under the source prefix: "
+              + sourcePrefix
+              + " but was "
+              + path);
+    }
+    String newPath = stagingPath(path, stagingLocation);
+
+    OutputFile targetFile = io.newOutputFile(newPath);
+    InputFile sourceFile = io.newInputFile(path);
+
+    try (CloseableIterable<Record> reader =
+        positionDeletesReader(sourceFile, current.format(), spec)) {
+      Record record = null;
+      Schema rowSchema = null;
+      CloseableIterator<Record> recordIt = reader.iterator();
+
+      if (recordIt.hasNext()) {
+        record = recordIt.next();
+        rowSchema = record.get(2) != null ? spec.schema() : null;
+      }
+
+      PositionDeleteWriter<Record> writer =
+          positionDeletesWriter(targetFile, current.format(), spec, current.partition(), rowSchema);
+
+      try {
+        if (record != null) {
+          writer.write(newPositionDeleteRecord(record, sourcePrefix, targetPrefix));
+        }
+
+        while (recordIt.hasNext()) {
+          record = recordIt.next();
+          writer.write(newPositionDeleteRecord(record, sourcePrefix, targetPrefix));
+        }
+      } finally {
+        writer.close();
+      }
+      return writer.toDeleteFile();
+    }
+  }
+
+  private static CloseableIterable<Record> positionDeletesReader(
+      InputFile inputFile, FileFormat format, PartitionSpec spec) throws IOException {
+    Schema deleteSchema = DeleteSchemaUtil.posDeleteSchema(spec.schema());
+    switch (format) {
+      case AVRO:
+        return Avro.read(inputFile)
+            .project(deleteSchema)
+            .reuseContainers()
+            .createReaderFunc(DataReader::create)
+            .build();
+
+      case PARQUET:
+        return Parquet.read(inputFile)
+            .project(deleteSchema)
+            .reuseContainers()
+            .createReaderFunc(
+                fileSchema -> GenericParquetReaders.buildReader(deleteSchema, fileSchema))
+            .build();
+
+      case ORC:
+        return ORC.read(inputFile)
+            .project(deleteSchema)
+            .createReaderFunc(fileSchema -> GenericOrcReader.buildReader(deleteSchema, fileSchema))
+            .build();
+
+      default:
+        throw new UnsupportedOperationException("Unsupported file format: " + format);
+    }
+  }
+
+  private static PositionDeleteWriter<Record> positionDeletesWriter(
+      OutputFile outputFile,
+      FileFormat format,
+      PartitionSpec spec,
+      StructLike partition,
+      Schema rowSchema)
+      throws IOException {
+    switch (format) {
+      case AVRO:
+        return Avro.writeDeletes(outputFile)
+            .createWriterFunc(DataWriter::create)
+            .withPartition(partition)
+            .rowSchema(rowSchema)
+            .withSpec(spec)
+            .buildPositionWriter();
+      case PARQUET:
+        return Parquet.writeDeletes(outputFile)
+            .createWriterFunc(GenericParquetWriter::buildWriter)
+            .withPartition(partition)
+            .rowSchema(rowSchema)
+            .withSpec(spec)
+            .buildPositionWriter();
+      case ORC:
+        return ORC.writeDeletes(outputFile)
+            .createWriterFunc(GenericOrcWriter::buildWriter)
+            .withPartition(partition)
+            .rowSchema(rowSchema)
+            .withSpec(spec)
+            .buildPositionWriter();
+      default:
+        throw new UnsupportedOperationException("Unsupported file format: " + format);
+    }
+  }
+
+  private static <F extends ContentFile<F>> void appendEntryWithFile(
+      ManifestEntry<F> entry, ManifestWriter<F> writer, F file) {
 
     switch (entry.status()) {
       case ADDED:
-        writer.add(dataFile);
+        writer.add(file);
         break;
       case EXISTING:
         writer.existing(
-            dataFile, entry.snapshotId(), entry.dataSequenceNumber(), entry.fileSequenceNumber());
+            file, entry.snapshotId(), entry.dataSequenceNumber(), entry.fileSequenceNumber());
         break;
       case DELETED:
-        writer.delete(entry);
+        writer.delete(file, entry.dataSequenceNumber(), entry.fileSequenceNumber());
         break;
     }
-
-    return new PathPair(sourceDataFilePath, dataFile.path().toString());
   }
 
   private boolean fileNotExist(String path) {
@@ -588,8 +836,20 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     return table.io().newInputFile(path).exists();
   }
 
+  private static String relativize(String path, String prefix) {
+    String toRemove = prefix;
+    if (!toRemove.endsWith("/")) {
+      toRemove += "/";
+    }
+    if (!path.startsWith(toRemove)) {
+      throw new IllegalArgumentException(
+          String.format("Path %s does not start with %s", path, toRemove));
+    }
+    return path.substring(toRemove.length());
+  }
+
   private static String newPath(String path, String sourcePrefix, String targetPrefix) {
-    return path.replaceFirst(sourcePrefix, targetPrefix);
+    return combinePaths(targetPrefix, relativize(path, sourcePrefix));
   }
 
   private static String stagingPath(String originalPath, String stagingLocation) {
@@ -598,6 +858,15 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
   private String currentMetadataPath(Table tbl) {
     return ((HasTableOperations) tbl).operations().current().metadataFileLocation();
+  }
+
+  private static String combinePaths(String absolutePath, String relativePath) {
+    String combined = absolutePath;
+    if (!combined.endsWith("/")) {
+      combined += "/";
+    }
+    combined += relativePath;
+    return combined;
   }
 
   private static String fileName(String path) {

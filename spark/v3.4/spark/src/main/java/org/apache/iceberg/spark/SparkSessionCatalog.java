@@ -26,6 +26,7 @@ import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.source.HasIcebergCatalog;
+import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NamespaceAlreadyExistsException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchFunctionException;
@@ -51,6 +52,8 @@ import org.apache.spark.sql.connector.expressions.SortOrder;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A Spark catalog that can also load non-Iceberg tables.
@@ -61,6 +64,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & SupportsNamespaces>
     extends BaseCatalog implements CatalogExtension {
   private static final String[] DEFAULT_NAMESPACE = new String[] {"default"};
+  private static final Logger log = LoggerFactory.getLogger(SparkSessionCatalog.class);
 
   private String catalogName = null;
   private TableCatalog icebergCatalog = null;
@@ -69,6 +73,7 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
   private boolean createParquetAsIceberg = false;
   private boolean createAvroAsIceberg = false;
   private boolean createOrcAsIceberg = false;
+  private boolean logErrorsInternal = false;
 
   /**
    * Build a {@link SparkCatalog} to be used for Iceberg operations.
@@ -141,6 +146,7 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
     try {
       return icebergCatalog.loadTable(ident);
     } catch (NoSuchTableException e) {
+      logError(ident, e);
       return getSessionCatalog().loadTable(ident);
     }
   }
@@ -150,6 +156,7 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
     try {
       return icebergCatalog.loadTable(ident, version);
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
+      logError(ident, e);
       return getSessionCatalog().loadTable(ident, version);
     }
   }
@@ -159,6 +166,7 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
     try {
       return icebergCatalog.loadTable(ident, timestamp);
     } catch (org.apache.iceberg.exceptions.NoSuchTableException e) {
+      logError(ident, e);
       return getSessionCatalog().loadTable(ident, timestamp);
     }
   }
@@ -388,22 +396,35 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
 
   @Override
   public final void initialize(String name, CaseInsensitiveStringMap options) {
-    if (options.containsKey(CatalogUtil.ICEBERG_CATALOG_TYPE)
-        && options
-            .get(CatalogUtil.ICEBERG_CATALOG_TYPE)
-            .equalsIgnoreCase(CatalogUtil.ICEBERG_CATALOG_TYPE_HIVE)) {
-      validateHmsUri(options.get(CatalogProperties.URI));
-    }
+    try {
+      this.logErrorsInternal =
+          PropertyUtil.propertyAsBoolean(
+              options,
+              CatalogProperties.LOG_ERRORS_INTERNAL,
+              CatalogProperties.LOG_ERRORS_INTERNAL_DEFAULT);
 
-    this.catalogName = name;
-    this.icebergCatalog = buildSparkCatalog(name, options);
-    if (icebergCatalog instanceof StagingTableCatalog) {
-      this.asStagingCatalog = (StagingTableCatalog) icebergCatalog;
-    }
+      if (options.containsKey(CatalogUtil.ICEBERG_CATALOG_TYPE)
+          && options
+              .get(CatalogUtil.ICEBERG_CATALOG_TYPE)
+              .equalsIgnoreCase(CatalogUtil.ICEBERG_CATALOG_TYPE_HIVE)) {
+        validateHmsUri(options.get(CatalogProperties.URI));
+      }
 
-    this.createParquetAsIceberg = options.getBoolean("parquet-enabled", createParquetAsIceberg);
-    this.createAvroAsIceberg = options.getBoolean("avro-enabled", createAvroAsIceberg);
-    this.createOrcAsIceberg = options.getBoolean("orc-enabled", createOrcAsIceberg);
+      this.catalogName = name;
+      this.icebergCatalog = buildSparkCatalog(name, options);
+      if (icebergCatalog instanceof StagingTableCatalog) {
+        this.asStagingCatalog = (StagingTableCatalog) icebergCatalog;
+      }
+
+      this.createParquetAsIceberg = options.getBoolean("parquet-enabled", createParquetAsIceberg);
+      this.createAvroAsIceberg = options.getBoolean("avro-enabled", createAvroAsIceberg);
+      this.createOrcAsIceberg = options.getBoolean("orc-enabled", createOrcAsIceberg);
+    } catch (Exception e) {
+      if (logErrorsInternal) {
+        log.error("Error initializing spark session catalog", e);
+      }
+      throw e;
+    }
   }
 
   private void validateHmsUri(String catalogHmsUri) {
@@ -476,7 +497,14 @@ public class SparkSessionCatalog<T extends TableCatalog & FunctionCatalog & Supp
     try {
       return super.loadFunction(ident);
     } catch (NoSuchFunctionException e) {
+      logError(ident, e);
       return getSessionCatalog().loadFunction(ident);
+    }
+  }
+
+  private void logError(Identifier ident, Exception exception) {
+    if (logErrorsInternal) {
+      log.error("Error loading table " + ident.toString(), exception);
     }
   }
 }
