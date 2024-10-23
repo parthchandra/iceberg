@@ -23,6 +23,7 @@ import org.apache.iceberg.actions.ActionsProvider;
 import org.apache.iceberg.actions.CheckSnapshotIntegrity;
 import org.apache.iceberg.actions.ComputeTableStats;
 import org.apache.iceberg.actions.CopyTable;
+import org.apache.iceberg.actions.RemoveDanglingDeleteFiles;
 import org.apache.iceberg.actions.RemoveExpiredFiles;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.Spark3Util.CatalogAndIdentifier;
@@ -122,5 +123,10 @@ public class SparkActions implements ActionsProvider {
 
   public ComputeTableStats computeTableStats(Table table) {
     return new ComputeTableStatsSparkAction(spark, table);
+  }
+
+  @Override
+  public RemoveDanglingDeleteFiles removeDanglingDeleteFiles(Table table) {
+    return new RemoveDanglingDeletesSparkAction(spark, table);
   }
 }
