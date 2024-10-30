@@ -26,6 +26,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.spark.sql.catalyst.expressions.Expression;
+import org.apache.spark.sql.comet.CometBatchScanExec;
 import org.apache.spark.sql.execution.CommandResultExec;
 import org.apache.spark.sql.execution.SparkPlan;
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper;
@@ -46,7 +47,7 @@ public class SparkPlanUtil {
   public static List<SparkPlan> collectBatchScans(SparkPlan plan) {
     List<SparkPlan> leaves = collectLeaves(plan);
     return leaves.stream()
-        .filter(scan -> scan instanceof BatchScanExec)
+        .filter(scan -> scan instanceof BatchScanExec || scan instanceof CometBatchScanExec)
         .collect(Collectors.toList());
   }
 

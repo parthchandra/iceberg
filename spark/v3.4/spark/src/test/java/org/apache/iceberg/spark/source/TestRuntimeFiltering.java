@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark.source;
 
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.METASTOREURIS;
 import static org.apache.iceberg.PlanningMode.DISTRIBUTED;
 import static org.apache.iceberg.PlanningMode.LOCAL;
 import static org.apache.spark.sql.functions.date_add;
@@ -28,21 +29,34 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.hive.HiveCatalog;
+import org.apache.iceberg.hive.TestHiveMetastore;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
+import org.apache.iceberg.spark.ParquetReaderType;
+import org.apache.iceberg.spark.SparkSQLProperties;
+import org.apache.iceberg.spark.SparkTestBase;
 import org.apache.iceberg.spark.SparkTestBaseWithCatalog;
 import org.apache.iceberg.spark.SparkWriteOptions;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.internal.SQLConf;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -59,6 +73,36 @@ public class TestRuntimeFiltering extends SparkTestBaseWithCatalog {
 
   public TestRuntimeFiltering(PlanningMode planningMode) {
     this.planningMode = planningMode;
+  }
+
+  @BeforeClass
+  public static void startMetastoreAndSpark() {
+    SparkTestBase.metastore = new TestHiveMetastore();
+    metastore.start();
+    SparkTestBase.hiveConf = metastore.hiveConf();
+
+    SparkTestBase.spark =
+        SparkSession.builder()
+            .master("local[2]")
+            .config(SQLConf.PARTITION_OVERWRITE_MODE().key(), "dynamic")
+            .config("spark.hadoop." + METASTOREURIS.varname, hiveConf.get(METASTOREURIS.varname))
+            .config(SparkSQLProperties.PARQUET_READER_TYPE, ParquetReaderType.ICEBERG.name())
+            .config("spark.sql.legacy.respectNullabilityInTextDatasetConversion", "true")
+            .enableHiveSupport()
+            .getOrCreate();
+
+    SparkTestBase.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
+
+    SparkTestBase.catalog =
+        (HiveCatalog)
+            CatalogUtil.loadCatalog(
+                HiveCatalog.class.getName(), "hive", ImmutableMap.of(), hiveConf);
+
+    try {
+      catalog.createNamespace(Namespace.of("default"));
+    } catch (AlreadyExistsException ignored) {
+      // the default namespace already exists. ignore the create error
+    }
   }
 
   @After
