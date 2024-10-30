@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.expressions.Expressions;
@@ -585,9 +586,15 @@ public class TestFilterPushDown extends SparkTestBaseWithCatalog {
     String planAsString = sparkPlan.toString().replaceAll("#(\\d+L?)", "");
 
     if (sparkFilter != null) {
-      Assertions.assertThat(planAsString)
-          .as("Post scan filter should match")
-          .contains("Filter (" + sparkFilter + ")");
+      if (planAsString.contains("CometFilter")) {
+        Assertions.assertThat(planAsString)
+            .as("Post scan filter should match")
+            .matches("(?s).*CometFilter \\[[^]]*\\],.*\\(" + Pattern.quote(sparkFilter) + "\\).*");
+      } else {
+        Assertions.assertThat(planAsString)
+            .as("Post scan filter should match")
+            .contains("Filter (" + sparkFilter + ")");
+      }
     } else {
       Assertions.assertThat(planAsString)
           .as("Should be no post scan filter")

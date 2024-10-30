@@ -29,15 +29,21 @@ public class TableMetadataUtil {
   private TableMetadataUtil() {}
 
   public static TableMetadata replacePaths(
-      TableMetadata metadata, String sourcePrefix, String targetPrefix, FileIO io) {
-    String newLocation = newPath(metadata.location(), sourcePrefix, targetPrefix);
-    List<Snapshot> newSnapshots = updatePathInSnapshots(metadata, sourcePrefix, targetPrefix, io);
+      TableMetadata metadata,
+      String srcMetaPrefix,
+      String tgtMetaPrefix,
+      String srcPrefix,
+      String tgtPrefix,
+      FileIO io) {
+    String newLocation = newPath(metadata.location(), srcMetaPrefix, tgtMetaPrefix);
+
+    List<Snapshot> newSnapshots = updatePathInSnapshots(metadata, srcMetaPrefix, tgtMetaPrefix, io);
     List<MetadataLogEntry> metadataLogEntries =
-        updatePathInMetadataLogs(metadata, sourcePrefix, targetPrefix);
+        updatePathInMetadataLogs(metadata, srcMetaPrefix, tgtMetaPrefix);
     long snapshotId =
         metadata.currentSnapshot() == null ? -1 : metadata.currentSnapshot().snapshotId();
     Map<String, String> properties =
-        updateProperties(metadata.properties(), sourcePrefix, targetPrefix);
+        updateProperties(metadata.properties(), srcMetaPrefix, tgtMetaPrefix, srcPrefix, tgtPrefix);
 
     return new TableMetadata(
         null,
@@ -66,16 +72,64 @@ public class TableMetadataUtil {
         metadata.changes());
   }
 
+  public static TableMetadata addMetaDataFromTargetTable(
+      TableMetadata metadata, TableMetadata targetTableMetadata) {
+    List<Snapshot> targetSnapshots = Lists.newArrayList();
+    List<HistoryEntry> targetLogs = Lists.newArrayList();
+    List<MetadataLogEntry> targetMetadataLogs = Lists.newArrayList();
+    if (targetTableMetadata != null) {
+      // Add the snapshot to its snapshot list.
+      targetSnapshots.addAll(targetTableMetadata.snapshots());
+      targetLogs.addAll(targetTableMetadata.snapshotLog());
+      targetMetadataLogs.addAll(targetTableMetadata.previousFiles());
+      // add target table's current snapshot into previousFiles list.
+      targetMetadataLogs.add(
+          new MetadataLogEntry(
+              targetTableMetadata.lastUpdatedMillis(), targetTableMetadata.metadataFileLocation()));
+    }
+    targetSnapshots.add(metadata.currentSnapshot());
+    targetLogs.add(metadata.snapshotLog().get(metadata.snapshotLog().size() - 1));
+
+    return new TableMetadata(
+        metadata.metadataFileLocation(),
+        metadata.formatVersion(),
+        metadata.uuid(),
+        metadata.location(),
+        metadata.lastSequenceNumber(),
+        metadata.lastUpdatedMillis(),
+        metadata.lastColumnId(),
+        metadata.currentSchemaId(),
+        metadata.schemas(),
+        metadata.defaultSpecId(),
+        metadata.specs(),
+        metadata.lastAssignedPartitionId(),
+        metadata.defaultSortOrderId(),
+        metadata.sortOrders(),
+        metadata.properties(),
+        metadata.currentSnapshot().snapshotId(),
+        targetSnapshots,
+        null,
+        targetLogs,
+        targetMetadataLogs,
+        metadata.refs(),
+        metadata.statisticsFiles(),
+        metadata.partitionStatisticsFiles(),
+        metadata.changes());
+  }
+
   private static Map<String, String> updateProperties(
-      Map<String, String> tableProperties, String sourcePrefix, String targetPrefix) {
+      Map<String, String> tableProperties,
+      String srcMetaPrefix,
+      String tgtMetaPrefix,
+      String srcPrefix,
+      String tgtPrefix) {
     Map properties = Maps.newHashMap(tableProperties);
-    updatePathInProperty(properties, sourcePrefix, targetPrefix, TableProperties.OBJECT_STORE_PATH);
+    updatePathInProperty(properties, srcPrefix, tgtPrefix, TableProperties.OBJECT_STORE_PATH);
     updatePathInProperty(
-        properties, sourcePrefix, targetPrefix, TableProperties.WRITE_FOLDER_STORAGE_LOCATION);
+        properties, srcPrefix, tgtPrefix, TableProperties.WRITE_FOLDER_STORAGE_LOCATION);
+    updatePathInProperty(properties, srcPrefix, tgtPrefix, TableProperties.WRITE_DATA_LOCATION);
     updatePathInProperty(
-        properties, sourcePrefix, targetPrefix, TableProperties.WRITE_DATA_LOCATION);
-    updatePathInProperty(
-        properties, sourcePrefix, targetPrefix, TableProperties.WRITE_METADATA_LOCATION);
+        properties, srcMetaPrefix, tgtMetaPrefix, TableProperties.WRITE_METADATA_LOCATION);
 
     return properties;
   }
@@ -126,7 +180,7 @@ public class TableMetadataUtil {
     return newSnapshots;
   }
 
-  private static String newPath(String path, String sourcePrefix, String targetPrefix) {
+  public static String newPath(String path, String sourcePrefix, String targetPrefix) {
     return path.replaceFirst(sourcePrefix, targetPrefix);
   }
 }

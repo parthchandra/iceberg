@@ -33,6 +33,29 @@ public interface CopyTable extends Action<CopyTable, CopyTable.Result> {
   CopyTable rewriteLocationPrefix(String sourcePrefix, String targetPrefix);
 
   /**
+   * Passes the source and target metadata location prefixes that will be used to replace the source
+   * metadata location prefix with the target metadata location prefix. This is needed in the case
+   * that prefixes for data location and metadata location are different. By default,
+   * targetMetaPrefix initialized to sourcePrefix passed in rewriteLocationPrefix.
+   *
+   * @param sourceMetaPrefix the source metadata location prefix to be replaced
+   * @param targetMetaPrefix the target metadata location prefix
+   * @return this for method chaining
+   */
+  CopyTable rewriteMetaLocationPrefix(String sourceMetaPrefix, String targetMetaPrefix);
+
+  /**
+   * Snapshot id to copy. When it is configured, CopyTable will copy metadata files and data files
+   * only for the input snapshot. When it is configured, it is in the snapshot copy mode, which is
+   * different from normal table copy mode. lastCopiedVersion and endVersion cannot be configured if
+   * snapshotIdToCopy is configured.
+   *
+   * @param sId the snapshot id in the source table to be copied.
+   * @return this for method chaining
+   */
+  CopyTable snapshotIdToCopy(long sId);
+
+  /**
    * Pass the version copied last time. It is optional if the target table is provided. The default
    * value is the target table's current version. User needs to make sure whether the start version
    * is valid if target table is not provided.

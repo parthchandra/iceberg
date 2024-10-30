@@ -1045,6 +1045,21 @@ acceptedBreaks:
     - code: "java.method.addedToInterface"
       new: "method org.apache.iceberg.actions.CheckSnapshotIntegrity org.apache.iceberg.actions.CheckSnapshotIntegrity::completeCheck(boolean)"
       justification: "Support new feature flag in CheckSnapshotIntegrity"
+    - code: "java.method.addedToInterface"
+      new: "method org.apache.iceberg.actions.CopyTable org.apache.iceberg.actions.CopyTable::rewriteMetaLocationPrefix(java.lang.String,\
+        \ java.lang.String)"
+      justification: "{Add new APIs for copyTable}"
+    - code: "java.method.addedToInterface"
+      new: "method org.apache.iceberg.actions.CopyTable org.apache.iceberg.actions.CopyTable::snapshotIdToCopy(long)"
+      justification: "{Add new APIs for copyTable}"
+    org.apache.iceberg:iceberg-core:
+    - code: "java.method.numberOfParametersChanged"
+      old: "method org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ java.lang.String, java.lang.String, org.apache.iceberg.io.FileIO)"
+      new: "method org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ java.lang.String, java.lang.String, java.lang.String, java.lang.String,\
+        \ org.apache.iceberg.io.FileIO)"
+      justification: "{Support metapath prefix replacement in replacePaths}"
   apache-iceberg-0.14.0:
     org.apache.iceberg:iceberg-api:
     - code: "java.class.defaultSerializationChanged"

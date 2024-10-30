@@ -433,7 +433,6 @@ public class SparkScanBuilder
 
   private Scan buildBatchScan(Long snapshotId, Long asOfTimestamp, String branch, String tag) {
     Schema expectedSchema = schemaWithMetadataColumns();
-
     BatchScan scan =
         newBatchScan()
             .caseSensitive(caseSensitive)

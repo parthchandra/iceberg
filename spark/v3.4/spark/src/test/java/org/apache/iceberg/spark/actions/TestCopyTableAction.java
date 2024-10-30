@@ -23,13 +23,17 @@ import static org.apache.iceberg.types.Types.NestedField.optional;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.iceberg.AssertHelpers;
+import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.GenericStatisticsFile;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.PartitionSpec;
@@ -55,6 +59,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.SparkTestBase;
 import org.apache.iceberg.spark.actions.CopyTableSparkAction.PathPair;
+import org.apache.iceberg.spark.source.FourColumnRecord;
 import org.apache.iceberg.spark.source.ThreeColumnRecord;
 import org.apache.iceberg.spark.sql.MockKMS;
 import org.apache.iceberg.types.Types;
@@ -65,6 +70,7 @@ import org.apache.spark.sql.Encoder;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.assertj.core.api.Assertions;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -88,11 +94,20 @@ public class TestCopyTableAction extends SparkTestBase {
   protected String tableLocation = null;
   private Table table = null;
 
+  private String ns = "testns";
+  private String backupNs = "backupns";
+
   @Before
   public void setupTableLocation() throws Exception {
     this.tableDir = temp.newFolder();
     this.tableLocation = tableDir.toURI().toString();
     this.table = createATableWith2Snapshots(tableLocation);
+    createNameSpaces();
+  }
+
+  @After
+  public void cleanupTableSetup() throws Exception {
+    dropNameSpaces();
   }
 
   private Table createATableWith2Snapshots(String location) {
@@ -117,6 +132,16 @@ public class TestCopyTableAction extends SparkTestBase {
     }
 
     return newTable;
+  }
+
+  private void createNameSpaces() {
+    sql("CREATE DATABASE IF NOT EXISTS %s", ns);
+    sql("CREATE DATABASE IF NOT EXISTS %s", backupNs);
+  }
+
+  private void dropNameSpaces() {
+    sql("DROP DATABASE IF EXISTS %s CASCADE", ns);
+    sql("DROP DATABASE IF EXISTS %s CASCADE", backupNs);
   }
 
   @Test
@@ -614,8 +639,8 @@ public class TestCopyTableAction extends SparkTestBase {
   @Test
   public void testWithTargetTable() throws Exception {
     String sourceTableLocation = newTableLocation();
-    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 3);
     String targetTableLocation = newTableLocation();
+    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 3);
     Table targetTable = createATableWith2Snapshots(targetTableLocation);
 
     CopyTable.Result result =
@@ -658,7 +683,8 @@ public class TestCopyTableAction extends SparkTestBase {
     Map<String, String> properties = Maps.newHashMap();
     properties.put("encryption.table.key.id", MockKMS.MASTER_KEY_NAME1);
     properties.put("encryption.kms.client-impl", "org.apache.iceberg.spark.sql.MockKMS");
-    Table sourceTable = createMetastoreTable(sourceTableLocation, properties, "encryptedTbl", 1);
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", "encryptedTbl", 1);
 
     CopyTable.Result result =
         actions()
@@ -893,9 +919,33 @@ public class TestCopyTableAction extends SparkTestBase {
   private void copyTableFiles(String sourceDir, String targetDir, String stagingDir)
       throws Exception {
     FileUtils.copyDirectory(
-        new File(removePrefix(sourceDir) + "data/"), new File(removePrefix(targetDir) + "/data/"));
+        new File(removePrefix(sourceDir) + "/data/"), new File(removePrefix(targetDir) + "/data/"));
     FileUtils.copyDirectory(
         new File(removePrefix(stagingDir)), new File(removePrefix(targetDir) + "/metadata/"));
+  }
+
+  // copyTableDataAndMetaFiles handles the case there are specific meta path and data path
+  // configured for the table.
+  private void copyTableDataAndMetaFiles(
+      String sourceDir,
+      String targetDir,
+      String targetMetaDir,
+      String sourceTable,
+      String targetTable,
+      String stagingDir)
+      throws Exception {
+    String[] ext = {FileFormat.PARQUET.name().toLowerCase()};
+    Collection<File> files = FileUtils.listFiles(new File(removePrefix(sourceDir)), ext, true);
+    for (File file : files) {
+      String newPath =
+          (file.getAbsolutePath())
+              .replace(removePrefix(sourceDir), removePrefix(targetDir))
+              .replace(sourceTable, targetTable);
+      FileUtils.copyFile(file, new File(newPath));
+    }
+
+    FileUtils.copyDirectory(
+        new File(removePrefix(stagingDir)), new File(removePrefix(targetMetaDir) + "/"));
   }
 
   private void copyTableFiles(CopyTable.Result result) throws Exception {
@@ -917,7 +967,8 @@ public class TestCopyTableAction extends SparkTestBase {
   @Test
   public void testMetadataLocationChange() throws Exception {
     String sourceTableLocation = newTableLocation();
-    Table sourceTable = createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "tbl", 1);
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "default", "tbl", 1);
     String metadataFilePath = currentMetadata(sourceTable).metadataFileLocation();
 
     String newMetadataDir = "new-metadata-dir";
@@ -967,7 +1018,8 @@ public class TestCopyTableAction extends SparkTestBase {
     properties.put("format-version", "2");
     properties.put("write.delete.mode", "merge-on-read");
     String tableName = "v2tbl";
-    Table sourceTable = createMetastoreTable(sourceTableLocation, properties, tableName, 0);
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 0);
     // ingest data
     List<ThreeColumnRecord> records =
         Lists.newArrayList(
@@ -1033,12 +1085,452 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testInvalidLastCopiedVersionConfigInSnapshotMode() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 3);
+    String targetTableLocation = newTableLocation();
+
+    Assert.assertThrows(
+        "lastCopiedVersion cannot be configured when snapshotIdToCopy is configured",
+        IllegalArgumentException.class,
+        () ->
+            actions()
+                .copyTable(sourceTable)
+                .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+                .snapshotIdToCopy(sourceTable.currentSnapshot().snapshotId())
+                .lastCopiedVersion("test")
+                .execute());
+  }
+
+  @Test
+  public void testInvalidEndVersionConfigInSnapshotMode() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 3);
+    String targetTableLocation = newTableLocation();
+
+    AssertHelpers.assertThrows(
+        "endVersion cannot be configured when snapshotIdToCopy is configured",
+        IllegalArgumentException.class,
+        "Cannot configure lastCopiedVersion and endVersion in copy snapshot mode",
+        () ->
+            actions()
+                .copyTable(sourceTable)
+                .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+                .snapshotIdToCopy(sourceTable.currentSnapshot().snapshotId())
+                .endVersion("test")
+                .execute());
+  }
+
+  @Test
+  public void testInvalidSnapshotToCopyInSnapshotMode() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    Table sourceTable = createTableWithSnapshots(sourceTableLocation, 2);
+
+    // Fake it that three snapshots have been copied.
+    Table targetTable = createTableWithSnapshots(targetTableLocation, 3);
+
+    Assert.assertThrows(
+        "cannot copy a snapshot which is older than target table's current snapshot",
+        IllegalArgumentException.class,
+        () ->
+            actions()
+                .copyTable(sourceTable)
+                .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+                .snapshotIdToCopy(sourceTable.currentSnapshot().snapshotId())
+                .targetTable(targetTable)
+                .execute());
+  }
+
+  private void writeToTable(
+      String namespace,
+      String tableName,
+      int id,
+      String c2Str,
+      String c3Str,
+      String c4Str,
+      boolean threeColumn) {
+    if (threeColumn) {
+      List<ThreeColumnRecord> records =
+          Lists.newArrayList(
+              new ThreeColumnRecord(id, c2Str, c3Str),
+              new ThreeColumnRecord(id + 1, c2Str, c3Str),
+              new ThreeColumnRecord(id + 2, c2Str, c3Str));
+
+      Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+      df.select("c1", "c2", "c3")
+          .write()
+          .format("iceberg")
+          .mode("append")
+          .saveAsTable("hive." + namespace + "." + tableName);
+    } else {
+      List<FourColumnRecord> recordsd =
+          Lists.newArrayList(
+              new FourColumnRecord(id, c2Str, c3Str, c4Str),
+              new FourColumnRecord(id + 1, c2Str, c3Str, c4Str),
+              new FourColumnRecord(id + 2, c2Str, c3Str, c4Str));
+
+      Dataset<Row> dfd = spark.createDataFrame(recordsd, FourColumnRecord.class).coalesce(1);
+
+      dfd.select("c1", "c2", "c3", "c4")
+          .write()
+          .format("iceberg")
+          .mode("append")
+          .saveAsTable("hive." + ns + "." + tableName);
+    }
+  }
+
+  private List<Object[]> getExpectedData(
+      long sId, int size, String c2Str, String c3Str, String c4Str, boolean threeColumns) {
+    List<Object[]> list = Lists.newArrayList();
+
+    for (int i = 0; i < size; i++) {
+      if (threeColumns) {
+        list.add(row(sId + i, c2Str, c3Str));
+      } else {
+        if (sId + i < 7) {
+          list.add(row(sId + i, c2Str, c3Str, null));
+        } else {
+          list.add(row(sId + i, c2Str, c3Str, c4Str));
+        }
+      }
+    }
+    return ImmutableList.copyOf(list);
+  }
+
+  private void testCopyV2TableSnapshotCases(
+      Map<String, String> properties,
+      String tableName,
+      String backupTableName,
+      String sourceTableLocation,
+      String sourceTableMetaLocation,
+      String targetTableLocation,
+      String targetTableMetaLocation,
+      boolean backupOldVersion,
+      boolean setLocationInTableCreate)
+      throws Exception {
+
+    Table sourceTable =
+        createMetastoreTable(
+            setLocationInTableCreate ? sourceTableLocation : "", properties, ns, tableName, 0);
+    // ingest data
+    writeToTable(ns, tableName, 1, "AAAAAAAAAA", "AAAA", null, true);
+    writeToTable(ns, tableName, 4, "AAAAAAAAAA", "AAAA", null, true);
+    sourceTable.refresh();
+
+    // copy table and check the results
+    long snapshotId1 = sourceTable.currentSnapshot().snapshotId();
+    CopyTable ct =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .snapshotIdToCopy(snapshotId1)
+            .outputTargetFilePath();
+    // If table meta location needs to be changed.
+    if (sourceTableMetaLocation != null) {
+      ct.rewriteMetaLocationPrefix(sourceTableMetaLocation, targetTableMetaLocation);
+    }
+
+    CopyTable.Result result = ct.execute();
+
+    checkMetadataFileNum(1, 1, 2, result);
+    checkDataFileNum(2, result);
+
+    String versionFile = fileName(currentMetadata(sourceTable).metadataFileLocation());
+    TableIdentifier tableIdentifier = TableIdentifier.of(backupNs, backupTableName);
+
+    // copy the metadata files and data files, register the table into backup namespace.
+    if (sourceTableMetaLocation != null) {
+      copyTableDataAndMetaFiles(
+          sourceTableLocation,
+          targetTableLocation,
+          targetTableMetaLocation,
+          tableName,
+          backupTableName,
+          stagingDir(result));
+
+      catalog.registerTable(tableIdentifier, targetTableMetaLocation + "/" + versionFile);
+    } else {
+      copyTableFiles(sourceTableLocation, targetTableLocation, stagingDir(result));
+      catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+    }
+
+    Table targetTable = catalog.loadTable(tableIdentifier);
+    Assert.assertEquals(0, currentMetadata(targetTable).previousFiles().size());
+    Assert.assertEquals(1, currentMetadata(targetTable).snapshots().size());
+    Assert.assertEquals(snapshotId1, currentMetadata(targetTable).currentSnapshot().snapshotId());
+
+    // verify data rows
+    assertEquals(
+        "Rows should match",
+        getExpectedData(1L, 6, "AAAAAAAAAA", "AAAA", null, true),
+        sql("select * from hive.%s.%s ORDER BY c1", backupNs, backupTableName));
+
+    // Change Schema
+    sourceTable.updateSchema().addColumn("c4", Types.StringType.get()).commit();
+    writeToTable(ns, tableName, 7, "AAAAAAAAAA", "AAAA", "ABCD", false);
+
+    long snapshotId2 = sourceTable.currentSnapshot().snapshotId();
+    String versionFile2 = fileName(currentMetadata(sourceTable).metadataFileLocation());
+    writeToTable(ns, tableName, 10, "AAAAAAAAAA", "AAAA", "ABCD", false);
+    sourceTable.refresh();
+
+    // copy table and check the results
+    long snapshotId3 = sourceTable.currentSnapshot().snapshotId();
+    CopyTable ct1 =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .snapshotIdToCopy(backupOldVersion ? snapshotId2 : snapshotId3)
+            .targetTable(targetTable)
+            .outputTargetFilePath();
+    if (sourceTableMetaLocation != null) {
+      ct1.rewriteMetaLocationPrefix(sourceTableMetaLocation, targetTableMetaLocation);
+    }
+
+    CopyTable.Result result1 = ct1.execute();
+
+    checkMetadataFileNum(1, 1, backupOldVersion ? 3 : 4, result1);
+    checkDataFileNum(backupOldVersion ? 3 : 4, result1);
+
+    // copy the metadata files and data files
+    String versionFile3 = fileName(currentMetadata(sourceTable).metadataFileLocation());
+    String versionFileNew = backupOldVersion ? versionFile2 : versionFile3;
+
+    HiveMetaStoreClient msc = new HiveMetaStoreClient(hiveConf);
+    org.apache.hadoop.hive.metastore.api.Table hmsTable =
+        msc.getTable(backupNs, tableIdentifier.name());
+    Map<String, String> params = hmsTable.getParameters();
+
+    if (sourceTableMetaLocation != null) {
+      copyTableDataAndMetaFiles(
+          sourceTableLocation,
+          targetTableLocation,
+          targetTableMetaLocation,
+          tableName,
+          backupTableName,
+          stagingDir(result1));
+      params.put(
+          BaseMetastoreTableOperations.METADATA_LOCATION_PROP,
+          targetTableMetaLocation + "/" + versionFileNew);
+    } else {
+      copyTableFiles(sourceTableLocation, targetTableLocation, stagingDir(result1));
+      params.put(
+          BaseMetastoreTableOperations.METADATA_LOCATION_PROP,
+          targetTableLocation + "/metadata/" + versionFileNew);
+    }
+
+    hmsTable.setParameters(params);
+    msc.alter_table(backupNs, tableIdentifier.name(), hmsTable);
+    targetTable.refresh();
+
+    Assert.assertEquals(1, currentMetadata(targetTable).previousFiles().size());
+    Assert.assertEquals(2, currentMetadata(targetTable).snapshots().size());
+    Assert.assertEquals(
+        backupOldVersion ? snapshotId2 : snapshotId3,
+        currentMetadata(targetTable).currentSnapshot().snapshotId());
+    Assert.assertEquals(snapshotId1, currentMetadata(targetTable).snapshots().get(0).snapshotId());
+
+    int size = backupOldVersion ? 9 : 12;
+    assertEquals(
+        "Rows should match",
+        getExpectedData(1L, size, "AAAAAAAAAA", "AAAA", "ABCD", false),
+        sql("select * from hive.%s.%s ORDER BY c1", backupNs, backupTableName));
+
+    // Make sure the old snapshot does not break.
+    assertEquals(
+        "Rows should match",
+        getExpectedData(1L, 6, "AAAAAAAAAA", "AAAA", null, true),
+        sql(
+            "select * from hive.%s.%s VERSION AS OF %d ORDER BY c1",
+            backupNs, backupTableName, snapshotId1));
+  }
+
+  @Test
+  public void testCopyV2TableSnapshot() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+
+    String tableName = "v2tbls";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        null,
+        targetTableLocation,
+        null,
+        false,
+        true);
+  }
+
+  @Test
+  public void testCopyV2TableSnapshotWithConfiguredPaths() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    String sourceTableMetaLocation = newTableLocation();
+    String targetTableMetaLocation = newTableLocation();
+
+    String tableName = "v2tblsdatapath";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put("write.data.path", sourceTableLocation);
+    properties.put("write.metadata.path", sourceTableMetaLocation);
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        sourceTableMetaLocation,
+        targetTableLocation,
+        targetTableMetaLocation,
+        false,
+        false);
+  }
+
+  @Test
+  public void testCopyV2TableOldSnapshotWithConfiguredPaths() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    String sourceTableMetaLocation = newTableLocation();
+    String targetTableMetaLocation = newTableLocation();
+
+    String tableName = "v2tbloldsdatapath";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put("write.data.path", sourceTableLocation);
+    properties.put("write.metadata.path", sourceTableMetaLocation);
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        sourceTableMetaLocation,
+        targetTableLocation,
+        targetTableMetaLocation,
+        true,
+        false);
+  }
+
+  @Test
+  public void testCopyV2TableCompressedMetaData() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+
+    String tableName = "metadatacompressed";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put(TableProperties.METADATA_COMPRESSION, "gzip");
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        null,
+        targetTableLocation,
+        null,
+        false,
+        true);
+  }
+
+  @Test
+  public void testCopyV2TableCompressedMetaDataWithConfiguredPaths() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    String sourceTableMetaLocation = newTableLocation();
+    String targetTableMetaLocation = newTableLocation();
+
+    String tableName = "metadatacompressedpaths";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put("write.data.path", sourceTableLocation);
+    properties.put("write.metadata.path", sourceTableMetaLocation);
+    properties.put(TableProperties.METADATA_COMPRESSION, "gzip");
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        sourceTableMetaLocation,
+        targetTableLocation,
+        targetTableMetaLocation,
+        false,
+        false);
+  }
+
+  @Test
+  public void testCopyV2TableEncryption() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+
+    String tableName = "encryption";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put("encryption.table.key.id", MockKMS.MASTER_KEY_NAME1);
+    properties.put("encryption.kms.client-impl", "org.apache.iceberg.spark.sql.MockKMS");
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        null,
+        targetTableLocation,
+        null,
+        false,
+        true);
+  }
+
+  @Test
+  public void testCopyV2TableEncryptionWithConfiguredPaths() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+    String sourceTableMetaLocation = newTableLocation();
+    String targetTableMetaLocation = newTableLocation();
+
+    String tableName = "encryptionpaths";
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.object-storage.enabled", "true");
+    properties.put("write.data.path", sourceTableLocation);
+    properties.put("write.metadata.path", sourceTableMetaLocation);
+    properties.put("encryption.table.key.id", MockKMS.MASTER_KEY_NAME1);
+    properties.put("encryption.kms.client-impl", "org.apache.iceberg.spark.sql.MockKMS");
+    testCopyV2TableSnapshotCases(
+        properties,
+        tableName,
+        tableName,
+        sourceTableLocation,
+        sourceTableMetaLocation,
+        targetTableLocation,
+        targetTableMetaLocation,
+        false,
+        false);
+  }
+
+  @Test
   public void testStatisticFile() throws IOException {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();
     properties.put("format-version", "2");
     String tableName = "v2tblwithstats";
-    Table sourceTable = createMetastoreTable(sourceTableLocation, properties, tableName, 0);
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 0);
 
     TableMetadata metadata = currentMetadata(sourceTable);
     TableMetadata withStatistics =
@@ -1069,7 +1561,8 @@ public class TestCopyTableAction extends SparkTestBase {
     Map<String, String> properties = Maps.newHashMap();
     properties.put(TableProperties.METADATA_COMPRESSION, "gzip");
     Table sourceTable =
-        createMetastoreTable(sourceTableLocation, properties, "testMetadataCompression", 2);
+        createMetastoreTable(
+            sourceTableLocation, properties, "default", "testMetadataCompression", 2);
 
     TableMetadata currentMetadata = currentMetadata(sourceTable);
 
@@ -1105,7 +1598,8 @@ public class TestCopyTableAction extends SparkTestBase {
   @Test
   public void testDataFileLocationChange() throws Exception {
     String sourceTableLocation = newTableLocation();
-    Table sourceTable = createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "tbl1", 1);
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "default", "tbl1", 1);
     String metadataFilePath = currentMetadata(sourceTable).metadataFileLocation();
 
     String newMetadataDir = "new-data-dir";
@@ -1197,7 +1691,11 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   private Table createMetastoreTable(
-      String location, Map<String, String> properties, String tableName, int snapshotNumber) {
+      String location,
+      Map<String, String> properties,
+      String namespace,
+      String tableName,
+      int snapshotNumber) {
     spark.conf().set("spark.sql.catalog.hive", SparkCatalog.class.getName());
     spark.conf().set("spark.sql.catalog.hive.type", "hive");
     spark.conf().set("spark.sql.catalog.hive.default-namespace", "default");
@@ -1208,21 +1706,31 @@ public class TestCopyTableAction extends SparkTestBase {
     String tblProperties =
         propertiesStr.substring(0, propertiesStr.length() > 0 ? propertiesStr.length() - 1 : 0);
 
+    sql("DROP TABLE IF EXISTS hive.%s.%s", namespace, tableName);
     if (tblProperties.isEmpty()) {
-      sql(
-          "CREATE TABLE hive.default.%s (c1 bigint, c2 string, c3 string) USING iceberg LOCATION '%s'",
-          tableName, location);
+      String sqlStr =
+          String.format(
+              "CREATE TABLE hive.%s.%s (c1 bigint, c2 string, c3 string)", namespace, tableName);
+      if (!location.isEmpty()) {
+        sqlStr = String.format("%s USING iceberg LOCATION '%s'", sqlStr, location);
+      }
+      sql(sqlStr);
     } else {
-      sql(
-          "CREATE TABLE hive.default.%s (c1 bigint, c2 string, c3 string) USING iceberg LOCATION '%s' TBLPROPERTIES "
-              + "(%s)",
-          tableName, location, tblProperties);
+      String sqlStr =
+          String.format(
+              "CREATE TABLE hive.%s.%s (c1 bigint, c2 string, c3 string)", namespace, tableName);
+      if (!location.isEmpty()) {
+        sqlStr = String.format("%s USING iceberg LOCATION '%s'", sqlStr, location);
+      }
+
+      sqlStr = String.format("%s TBLPROPERTIES (%s)", sqlStr, tblProperties);
+      sql(sqlStr);
     }
 
     for (int i = 0; i < snapshotNumber; i++) {
-      sql("insert into hive.default.%s values (%s, 'AAAAAAAAAA', 'AAAA')", tableName, i);
+      sql("insert into hive.%s.%s values (%s, 'AAAAAAAAAA', 'AAAA')", namespace, tableName, i);
     }
-    return catalog.loadTable(TableIdentifier.of("default", tableName));
+    return catalog.loadTable(TableIdentifier.of(namespace, tableName));
   }
 
   private static String fileName(String path) {
