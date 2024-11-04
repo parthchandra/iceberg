@@ -42,8 +42,7 @@ class TestDeleteFilesProcessor extends OperatorTestBase {
       ImmutableSet.of(
           "metadata/v1.metadata.json",
           "metadata/version-hint.text",
-          "metadata/.version-hint.text.crc",
-          "metadata/.v1.metadata.json.crc");
+          "metadata/.version-hint.text.crc");
 
   private Table table;
 

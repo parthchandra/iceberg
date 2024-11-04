@@ -244,7 +244,8 @@ public class OperatorTestBase {
 
     @Override
     public void open() {
-      // do nothing
+      MAINTENANCE_LOCK.unlock();
+      RECOVERY_LOCK.unlock();
     }
 
     @Override
