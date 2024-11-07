@@ -106,6 +106,8 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 @Testcontainers
+// TODO: enable once CI supports docker
+@Disabled
 public class TestS3FileIO {
   @Container private static final MinIOContainer MINIO = MinioUtil.createContainer();
 
