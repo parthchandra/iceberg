@@ -23,6 +23,7 @@ import static org.apache.iceberg.types.Types.NestedField.optional;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +79,9 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 public class TestCopyTableAction extends SparkTestBase {
+
+  @Rule public TemporaryFolder staging = new TemporaryFolder();
+
   protected ActionsProvider actions() {
     return SparkActions.get();
   }
@@ -330,8 +334,16 @@ public class TestCopyTableAction extends SparkTestBase {
 
     sourceTable.newRowDelta().addDeletes(positionDeletes).commit();
 
+    Assert.assertEquals(
+        "The number of rows should be", 1, spark.read().format("iceberg").load(location).count());
+
     CopyTable.Result result =
-        actions().copyTable(sourceTable).rewriteLocationPrefix(location, targetLocation).execute();
+        actions()
+            .copyTable(sourceTable)
+            .stagingLocation(stagingWithScheme())
+            .outputTargetFilePath()
+            .rewriteLocationPrefix(location, targetLocation)
+            .execute();
 
     // We have one more snapshot, an additional manifest list, and a new (delete) manifest
     checkMetadataFileNum(4, 3, 3, result);
@@ -339,7 +351,7 @@ public class TestCopyTableAction extends SparkTestBase {
     checkDataFileNum(3, result);
 
     // copy the metadata files and data files
-    copyTableFiles(location, targetLocation, stagingDir(result));
+    copyTableFiles(result);
 
     // Positional delete affects a single row, so only one row must remain
     Assert.assertEquals(
@@ -1751,5 +1763,10 @@ public class TestCopyTableAction extends SparkTestBase {
         .load(path)
         .as(encoder)
         .collectAsList();
+  }
+
+  private String stagingWithScheme() {
+    String location = staging.getRoot().getAbsolutePath();
+    return Paths.get(location).toAbsolutePath().toUri().toString();
   }
 }
