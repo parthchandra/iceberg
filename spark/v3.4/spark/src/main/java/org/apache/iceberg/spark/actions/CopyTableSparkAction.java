@@ -777,9 +777,14 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       case POSITION_DELETES:
         DeleteFile posDeleteFile =
             rewritePositionDeleteFile(io, file, spec, sourcePrefix, stagingLocation, targetPrefix);
-        appendEntryWithFile(entry, writer, posDeleteFile);
         String targetDeleteFilePath = newPath(file.path().toString(), sourcePrefix, targetPrefix);
-        return new PathPair(posDeleteFile.path().toString(), targetDeleteFilePath);
+        DeleteFile movedFile =
+            FileMetadata.deleteFileBuilder(spec)
+                .copy(posDeleteFile)
+                .withPath(targetDeleteFilePath)
+                .build();
+        appendEntryWithFile(entry, writer, movedFile);
+        return new PathPair(posDeleteFile.path().toString(), movedFile.path().toString());
       case EQUALITY_DELETES:
         DeleteFile eqDeleteFile = newEqualityDeleteFile(file, spec, sourcePrefix, targetPrefix);
         appendEntryWithFile(entry, writer, eqDeleteFile);
