@@ -71,13 +71,16 @@ public class TestCatalogLoader extends TestBase {
   public void testHadoopCatalogLoader() throws IOException, ClassNotFoundException {
     Map<String, String> properties = Maps.newHashMap();
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, "file:" + warehouse);
+    properties.put(CatalogProperties.FILE_IO_IMPL, HadoopFileIO.class.getName());
     CatalogLoader loader = CatalogLoader.hadoop("my_catalog", hiveConf, properties);
     validateCatalogLoader(loader);
   }
 
   @Test
   public void testHiveCatalogLoader() throws IOException, ClassNotFoundException {
-    CatalogLoader loader = CatalogLoader.hive("my_catalog", hiveConf, Maps.newHashMap());
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(CatalogProperties.FILE_IO_IMPL, HadoopFileIO.class.getName());
+    CatalogLoader loader = CatalogLoader.hive("my_catalog", hiveConf, properties);
     validateCatalogLoader(loader);
   }
 

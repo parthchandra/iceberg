@@ -51,20 +51,20 @@ public interface CatalogLoader extends Serializable, Cloneable {
 
   static CatalogLoader hadoop(
       String name, Configuration hadoopConf, Map<String, String> properties) {
-    return new HadoopCatalogLoader(name, hadoopConf, properties);
+    return new HadoopCatalogLoader(name, hadoopConf, addDefaultFileIO(properties));
   }
 
   static CatalogLoader hive(String name, Configuration hadoopConf, Map<String, String> properties) {
-    return new HiveCatalogLoader(name, hadoopConf, properties);
+    return new HiveCatalogLoader(name, hadoopConf, addDefaultFileIO(properties));
   }
 
   static CatalogLoader rest(String name, Configuration hadoopConf, Map<String, String> properties) {
-    return new RESTCatalogLoader(name, hadoopConf, properties);
+    return new RESTCatalogLoader(name, hadoopConf, addDefaultFileIO(properties));
   }
 
   static CatalogLoader custom(
       String name, Map<String, String> properties, Configuration hadoopConf, String impl) {
-    return new CustomCatalogLoader(name, properties, hadoopConf, impl);
+    return new CustomCatalogLoader(name, addDefaultFileIO(properties), hadoopConf, impl);
   }
 
   class HadoopCatalogLoader implements CatalogLoader {
@@ -211,5 +211,11 @@ public interface CatalogLoader extends Serializable, Cloneable {
     public String toString() {
       return MoreObjects.toStringHelper(this).add("name", name).add("impl", impl).toString();
     }
+  }
+
+  static Map<String, String> addDefaultFileIO(Map<String, String> properties) {
+    Map<String, String> withFileIO = Maps.newHashMap(properties);
+    withFileIO.putIfAbsent(CatalogProperties.FILE_IO_IMPL, "org.apache.iceberg.flink.FlinkFileIO");
+    return withFileIO;
   }
 }

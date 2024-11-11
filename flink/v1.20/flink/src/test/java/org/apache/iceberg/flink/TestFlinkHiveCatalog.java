@@ -91,8 +91,8 @@ public class TestFlinkHiveCatalog extends TestBase {
     Path dataPath = tablePath.resolve("data");
     assertThat(dataPath).exists();
     assertThat(Files.list(dataPath).count())
-        .as("Should have a .crc file and a .parquet file")
-        .isEqualTo(2);
+        .as("FlinkFileIO Should have no .crc file and a .parquet file")
+        .isEqualTo(1);
 
     sql("DROP TABLE test_table");
     dropDatabase("test_db", false);

@@ -26,8 +26,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.Map;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -73,10 +75,12 @@ public class TestCatalogTableLoader extends TestBase {
 
   @Test
   public void testHiveCatalogTableLoader() throws IOException, ClassNotFoundException {
-    CatalogLoader loader = CatalogLoader.hive("my_catalog", hiveConf, Maps.newHashMap());
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put(CatalogProperties.FILE_IO_IMPL, HadoopFileIO.class.getName());
+    CatalogLoader loader = CatalogLoader.hive("my_catalog", hiveConf, properties);
     javaSerdes(loader).loadCatalog().createTable(IDENTIFIER, SCHEMA);
 
-    CatalogLoader catalogLoader = CatalogLoader.hive("my_catalog", hiveConf, Maps.newHashMap());
+    CatalogLoader catalogLoader = CatalogLoader.hive("my_catalog", hiveConf, properties);
     validateTableLoader(TableLoader.fromCatalog(catalogLoader, IDENTIFIER));
   }
 

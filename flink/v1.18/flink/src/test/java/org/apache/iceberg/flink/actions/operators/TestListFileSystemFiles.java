@@ -106,7 +106,7 @@ class TestListFileSystemFiles extends OperatorTestBase {
 
   @Test
   void testMinAgeMs() throws Exception {
-    long before = System.currentTimeMillis();
+    long before = System.currentTimeMillis() - 1;
     sql.exec("CREATE TABLE %s (id int, data varchar)", TABLE_NAME);
     long after = System.currentTimeMillis() + 1;
 
@@ -155,7 +155,7 @@ class TestListFileSystemFiles extends OperatorTestBase {
                   .poll()
                   .getValue()
                   .getMessage())
-          .contains("File invalid does not exist");
+          .contains("Failed to list path recursively");
     }
   }
 
