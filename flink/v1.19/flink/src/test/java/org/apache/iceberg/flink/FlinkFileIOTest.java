@@ -153,6 +153,8 @@ class FlinkFileIOTest {
     OutputFile outputFile = testFlinkFileIO.newOutputFile(randomFilePath.getPath());
     try (PositionOutputStream outputStream = outputFile.create()) {
       outputStream.write(expected);
+      outputStream.close();
+      assertThat(outputStream.getPos()).isPositive();
     }
 
     // Read

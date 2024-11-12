@@ -18,11 +18,11 @@
  */
 package org.apache.iceberg.flink;
 
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
-import org.apache.flink.core.fs.FSDataOutputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
@@ -87,12 +87,12 @@ public class FlinkOutputFile implements OutputFile, NativelyEncryptedFile {
   /** PositionOutputStream implementation for FSDataOutputStream. */
   private static class FlinkPositionOutputStream extends PositionOutputStream
       implements DelegatingOutputStream {
-    private final FSDataOutputStream stream;
+    private final PositionCachedStream stream;
     private final StackTraceElement[] createStack;
     private boolean closed;
 
-    FlinkPositionOutputStream(FSDataOutputStream stream) {
-      this.stream = stream;
+    FlinkPositionOutputStream(OutputStream stream) {
+      this.stream = new PositionCachedStream(stream, 0L);
       this.createStack = Thread.currentThread().getStackTrace();
       this.closed = false;
     }
@@ -103,8 +103,8 @@ public class FlinkOutputFile implements OutputFile, NativelyEncryptedFile {
     }
 
     @Override
-    public long getPos() throws IOException {
-      return stream.getPos();
+    public long getPos() {
+      return stream.position();
     }
 
     @Override
@@ -154,5 +154,38 @@ public class FlinkOutputFile implements OutputFile, NativelyEncryptedFile {
   @Override
   public void setNativeCryptoParameters(NativeFileCryptoParameters nativeCryptoParameters) {
     this.nativeDecryptionParameters = nativeCryptoParameters;
+  }
+
+  // Created based on FSDataOutputStream#PositionCache
+  private static class PositionCachedStream extends FilterOutputStream {
+    private long position;
+
+    private PositionCachedStream(OutputStream out, long pos) {
+      super(out);
+      this.position = pos;
+    }
+
+    @Override
+    public void write(int b) throws IOException {
+      this.out.write(b);
+      ++this.position;
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+      this.out.write(b, off, len);
+      this.position += len;
+    }
+
+    private long position() {
+      return this.position;
+    }
+
+    @Override
+    public void close() throws IOException {
+      if (this.out != null) {
+        this.out.close();
+      }
+    }
   }
 }
