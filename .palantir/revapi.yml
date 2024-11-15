@@ -1046,6 +1046,9 @@ acceptedBreaks:
       new: "method org.apache.iceberg.actions.CheckSnapshotIntegrity org.apache.iceberg.actions.CheckSnapshotIntegrity::completeCheck(boolean)"
       justification: "Support new feature flag in CheckSnapshotIntegrity"
     - code: "java.method.addedToInterface"
+      new: "method org.apache.iceberg.actions.CopyTable org.apache.iceberg.actions.CopyTable::executeWith(java.util.concurrent.ExecutorService)"
+      justification: "Support parallized version file rewrite in CopyTableSparkAction"
+    - code: "java.method.addedToInterface"
       new: "method org.apache.iceberg.actions.CopyTable org.apache.iceberg.actions.CopyTable::rewriteMetaLocationPrefix(java.lang.String,\
         \ java.lang.String)"
       justification: "{Add new APIs for copyTable}"

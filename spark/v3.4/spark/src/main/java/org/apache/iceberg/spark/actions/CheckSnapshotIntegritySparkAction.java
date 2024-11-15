@@ -46,11 +46,10 @@ public class CheckSnapshotIntegritySparkAction
 
   private static final Logger LOG =
       LoggerFactory.getLogger(CheckSnapshotIntegritySparkAction.class);
-  private static final ExecutorService DEFAULT_EXECUTOR_SERVICE = null;
 
   private final Table table;
   private final Set<String> missingFiles = Collections.synchronizedSet(Sets.newHashSet());
-  private ExecutorService executorService = DEFAULT_EXECUTOR_SERVICE;
+  private ExecutorService executorService = null;
   private String targetVersion;
   private Table targetTable;
   private boolean completeCheck = false;
