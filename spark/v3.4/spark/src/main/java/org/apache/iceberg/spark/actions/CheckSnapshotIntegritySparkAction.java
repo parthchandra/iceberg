@@ -25,10 +25,12 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ReachableFileUtil;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.BaseCheckSnapshotIntegrityResult;
 import org.apache.iceberg.actions.CheckSnapshotIntegrity;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
 import org.apache.iceberg.util.Tasks;
@@ -44,11 +46,10 @@ public class CheckSnapshotIntegritySparkAction
 
   private static final Logger LOG =
       LoggerFactory.getLogger(CheckSnapshotIntegritySparkAction.class);
-  private static final ExecutorService DEFAULT_EXECUTOR_SERVICE = null;
 
   private final Table table;
   private final Set<String> missingFiles = Collections.synchronizedSet(Sets.newHashSet());
-  private ExecutorService executorService = DEFAULT_EXECUTOR_SERVICE;
+  private ExecutorService executorService = null;
   private String targetVersion;
   private Table targetTable;
   private boolean completeCheck = false;
@@ -142,7 +143,12 @@ public class CheckSnapshotIntegritySparkAction
 
   private List<String> filesToCheck() {
     Dataset<Row> targetFileDF = fileDS(targetTable).select("path");
-    if (!completeCheck) {
+    if (completeCheck) {
+      targetFileDF =
+          targetFileDF
+              // version-hint belong to table instead of target version
+              .except(versionHintFileDS(targetTable).select("path"));
+    } else {
       // check only incremental files
       Dataset<Row> currentFileDF = fileDS(table).select("path");
       targetFileDF = targetFileDF.except(currentFileDF);
@@ -158,6 +164,13 @@ public class CheckSnapshotIntegritySparkAction
 
   private Dataset<FileInfo> metadataFileDS(Table tbl) {
     return manifestDS(tbl).union(manifestListDS(tbl)).union(otherMetadataFileDS(tbl));
+  }
+
+  private Dataset<FileInfo> versionHintFileDS(Table tbl) {
+    List<String> versionHintFilePath = List.of(ReachableFileUtil.versionHintLocation(tbl));
+    List<FileInfo> fileInfoList =
+        Lists.transform(versionHintFilePath, path -> new FileInfo(path, OTHERS));
+    return spark().createDataset(fileInfoList, FileInfo.ENCODER);
   }
 
   private boolean fileExist(String path) {

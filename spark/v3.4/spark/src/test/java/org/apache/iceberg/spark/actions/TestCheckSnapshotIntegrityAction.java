@@ -28,6 +28,7 @@ import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.ReachableFileUtil;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
@@ -113,6 +114,8 @@ public class TestCheckSnapshotIntegrityAction extends SparkTestBase {
 
     // delete v3 manifest-list files
     table.io().deleteFile(manifestListFileLocation);
+    // delete version-hint as v3 is no longer the desired version with corrupted manifest-list
+    table.io().deleteFile(ReachableFileUtil.versionHintLocation(table));
 
     // fail as v3 is now corrupted
     AssertHelpers.assertThrows(

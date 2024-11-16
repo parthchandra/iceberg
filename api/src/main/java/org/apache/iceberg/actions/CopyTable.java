@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.actions;
 
+import java.util.concurrent.ExecutorService;
 import org.apache.iceberg.Table;
 
 public interface CopyTable extends Action<CopyTable, CopyTable.Result> {
@@ -106,6 +107,17 @@ public interface CopyTable extends Action<CopyTable, CopyTable.Result> {
    * @return this for method chaining
    */
   CopyTable outputTargetFilePath();
+
+  /**
+   * Passes an alternative executor service that will be used for version file and manifest list
+   * rewrite. If this method is not called, version file and manifest list rewrite will still be
+   * running by a single threaded executor service.
+   *
+   * @param executorService an executor service to parallelize tasks to rewrite metadata version
+   *     files
+   * @return this for method chaining
+   */
+  CopyTable executeWith(ExecutorService executorService);
 
   /** The action result that contains a summary of the execution. */
   interface Result {

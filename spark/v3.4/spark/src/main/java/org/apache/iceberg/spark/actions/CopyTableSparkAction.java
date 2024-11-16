@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.iceberg.ContentFile;
@@ -81,6 +82,7 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
+import org.apache.iceberg.util.Tasks;
 import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
@@ -101,6 +103,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private static final String METADATA_FILE_LIST_DIR = "metadata-file-list-to-move";
 
   private final Table table;
+  private ExecutorService executorService = null;
   private final Set<PathPair> metadataFilesToMove = Collections.synchronizedSet(Sets.newHashSet());
   private final Set<String> manifestFilePaths = Collections.synchronizedSet(Sets.newHashSet());
   private final Set<ManifestFile> manifestFilesToRewrite =
@@ -210,6 +213,12 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   @Override
   public CopyTable outputTargetFilePath() {
     this.outputTargetFilePath = true;
+    return this;
+  }
+
+  @Override
+  public CopyTable executeWith(ExecutorService service) {
+    this.executorService = service;
     return this;
   }
 
@@ -419,7 +428,12 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
         isCopySnapshotMode()
             ? Sets.newHashSet(tableMetadata.currentSnapshot())
             : Sets.difference(snapshotSet(endVersion), snapshotSet(startVersion));
-    validSnapshots.forEach(snapshot -> rewriteManifestList(snapshot, tableMetadata));
+
+    Tasks.foreach(validSnapshots)
+        .noRetry()
+        .throwFailureWhenFinished()
+        .executeWith(executorService)
+        .run(snapshot -> rewriteManifestList(snapshot, tableMetadata.formatVersion()));
 
     // rebuild manifest files
     Set<PathPair> dataFilesToMove = rewriteManifests(tableMetadata);
@@ -492,23 +506,33 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     }
 
     List<MetadataLogEntry> versions = newMetadata.previousFiles();
+
+    // iteratively determine versioned file scope from latest until startVersion
+    List<String> versionFilePaths = Lists.newArrayList();
     for (int i = versions.size() - 1; i >= 0; i--) {
       String versionFilePath = versions.get(i).file();
       if (versionFilePath.equals(startVersion)) {
         break;
       }
-
       Preconditions.checkArgument(
           fileExist(versionFilePath),
           String.format("Version file %s doesn't exist", versionFilePath));
-      TableMetadata tableMetadata =
-          new StaticTableOperations(versionFilePath, table.io()).current();
-
-      tableMetadata.snapshots().forEach(snapshot -> allSnapshotIds.add(snapshot.snapshotId()));
-
-      rewriteVersionFile(tableMetadata, versionFilePath);
+      versionFilePaths.add(versionFilePath);
     }
 
+    Tasks.foreach(versionFilePaths)
+        .noRetry()
+        .throwFailureWhenFinished()
+        .executeWith(executorService)
+        .run(
+            versionFilePath -> {
+              TableMetadata versionedMeta =
+                  new StaticTableOperations(versionFilePath, table.io()).current();
+              versionedMeta
+                  .snapshots()
+                  .forEach(snapshot -> allSnapshotIds.add(snapshot.snapshotId()));
+              rewriteVersionFile(versionedMeta, versionFilePath);
+            });
     return allSnapshotIds;
   }
 
@@ -534,14 +558,14 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
             TableMetadataUtil.newPath(versionFilePath, sourceMetaPrefix, targetMetaPrefix)));
   }
 
-  private void rewriteManifestList(Snapshot snapshot, TableMetadata tableMetadata) {
+  private void rewriteManifestList(Snapshot snapshot, int formatVersion) {
     List<ManifestFile> manifestFiles = manifestFilesInSnapshot(snapshot);
     String path = snapshot.manifestListLocation();
     String stagingPath = stagingPath(path, stagingDir);
     OutputFile outputFile = table.io().newOutputFile(stagingPath);
     try (FileAppender<ManifestFile> writer =
         ManifestLists.write(
-            tableMetadata.formatVersion(),
+            formatVersion,
             outputFile,
             snapshot.snapshotId(),
             snapshot.parentId(),

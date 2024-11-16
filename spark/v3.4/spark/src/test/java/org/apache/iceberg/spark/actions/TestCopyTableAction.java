@@ -25,8 +25,12 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Paths;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
@@ -414,6 +418,47 @@ public class TestCopyTableAction extends SparkTestBase {
         "The number of rows should be",
         2,
         spark.read().format("iceberg").load(targetLocation).count());
+  }
+
+  @Test
+  public void testCopyWithThreadPool() throws Exception {
+    String location = newTableLocation();
+    Table sourceTable =
+        createTableWithSnapshots(
+            location,
+            1,
+            Collections.singletonMap(TableProperties.METADATA_PREVIOUS_VERSIONS_MAX, "10000"));
+
+    AtomicInteger threadsIndex = new AtomicInteger(0);
+    ExecutorService executorService =
+        Executors.newFixedThreadPool(
+            8,
+            runnable -> {
+              Thread thread = new Thread(runnable);
+              thread.setName("copy-service" + threadsIndex.getAndIncrement());
+              thread.setDaemon(true);
+              return thread;
+            });
+
+    // create 600 more snapshots
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    for (int i = 0; i < 600; i++) {
+      df.select("c1", "c2", "c3").write().format("iceberg").mode("append").save(location);
+    }
+
+    sourceTable.refresh();
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(location, newTableLocation())
+            .lastCopiedVersion("v2.metadata.json")
+            .executeWith(executorService)
+            .execute();
+
+    checkMetadataFileNum(600, 600, 600, result);
+    checkDataFileNum(600, result);
   }
 
   @Test
