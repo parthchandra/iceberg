@@ -111,7 +111,7 @@ public class AwsKmsClient implements KmsClient {
         kmsClientTableProperties.get(
             ENCRYPTION_KMS_CLIENT_CUSTOM_PROPERTIES_PREFIX + "." + AwsProperties.CLIENT_FACTORY));
     if (kms == null) {
-      synchronized (kms) {
+      synchronized (this) {
         if (kms == null) {
           kms = AwsClientFactories.from(factoryProperties)::kms;
         }
@@ -121,7 +121,7 @@ public class AwsKmsClient implements KmsClient {
 
   private software.amazon.awssdk.services.kms.KmsClient client() {
     if (client == null) {
-      synchronized (client) {
+      synchronized (this) {
         if (client == null) {
           client = kms.get();
         }
