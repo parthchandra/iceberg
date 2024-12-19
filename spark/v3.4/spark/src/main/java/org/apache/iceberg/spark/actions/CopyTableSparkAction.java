@@ -50,6 +50,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.SerializableTable;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StaticTableOperations;
+import org.apache.iceberg.StatisticsFile;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
@@ -409,10 +410,6 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private void rebuildMetadata() {
     TableMetadata tableMetadata = ((HasTableOperations) endStaticTable).operations().current();
 
-    Preconditions.checkArgument(
-        tableMetadata.statisticsFiles() == null || tableMetadata.statisticsFiles().size() == 0,
-        "Statistic files are not supported yet.");
-
     // rebuild version files
     Set<Long> allSnapshotIds = rewriteVersionFiles(tableMetadata);
 
@@ -556,6 +553,30 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
         new PathPair(
             stagingPath,
             TableMetadataUtil.newPath(versionFilePath, sourceMetaPrefix, targetMetaPrefix)));
+
+    validateAndStageStatisticsFiles(
+        metadata.formatVersion(), metadata.statisticsFiles(), newTableMetadata.statisticsFiles());
+  }
+
+  private void validateAndStageStatisticsFiles(
+      int formatVersion, List<StatisticsFile> beforeStats, List<StatisticsFile> afterStats) {
+    if (beforeStats == null || beforeStats.isEmpty()) {
+      return;
+    }
+
+    Preconditions.checkArgument(formatVersion <= 2, "Statistics files with v3 is not supported");
+    Preconditions.checkArgument(
+        beforeStats.size() == afterStats.size(),
+        "Before and after path rewrite, statistics file count should be same");
+
+    for (int i = 0; i < beforeStats.size(); i++) {
+      StatisticsFile before = beforeStats.get(i);
+      StatisticsFile after = afterStats.get(i);
+      Preconditions.checkArgument(
+          before.fileSizeInBytes() == after.fileSizeInBytes(),
+          "Before and after path rewrite, statistics file size should be same");
+      metadataFilesToMove.add(new PathPair(stagingPath(before.path(), stagingDir), after.path()));
+    }
   }
 
   private void rewriteManifestList(Snapshot snapshot, int formatVersion) {

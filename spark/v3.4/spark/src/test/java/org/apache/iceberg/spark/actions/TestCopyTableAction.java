@@ -39,14 +39,12 @@ import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
-import org.apache.iceberg.GenericStatisticsFile;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
-import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.actions.ActionsProvider;
@@ -57,7 +55,6 @@ import org.apache.iceberg.data.GenericRecord;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.io.FileIO;
-import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
@@ -943,6 +940,15 @@ public class TestCopyTableAction extends SparkTestBase {
 
   protected void checkMetadataFileNum(
       int versionFileCount, int manifestListCount, int manifestFileCount, CopyTable.Result result) {
+    checkMetadataFileNum(versionFileCount, manifestListCount, manifestFileCount, 0, result);
+  }
+
+  protected void checkMetadataFileNum(
+      int versionFileCount,
+      int manifestListCount,
+      int manifestFileCount,
+      int statisticsFileCount,
+      CopyTable.Result result) {
     List<String> filesToMove =
         spark
             .read()
@@ -962,6 +968,10 @@ public class TestCopyTableAction extends SparkTestBase {
         "The rebuilt Manifest file number should be",
         manifestFileCount,
         filesToMove.stream().filter(f -> f.endsWith("-m0.avro")).count());
+    Assert.assertEquals(
+        "The rebuilt table statistics file number should be",
+        statisticsFileCount,
+        filesToMove.stream().filter(f -> f.endsWith(".stats")).count());
   }
 
   private String stagingDir(CopyTable.Result result) {
@@ -1581,35 +1591,61 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
-  public void testStatisticFile() throws IOException {
+  public void testTableWithOneStatisticsFile() throws IOException {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();
     properties.put("format-version", "2");
     String tableName = "v2tblwithstats";
     Table sourceTable =
-        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 0);
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 1);
 
-    TableMetadata metadata = currentMetadata(sourceTable);
-    TableMetadata withStatistics =
-        TableMetadata.buildFrom(metadata)
-            .setStatistics(
-                43,
-                new GenericStatisticsFile(
-                    43, "/some/path/to/stats/file", 128, 27, ImmutableList.of()))
-            .build();
+    actions().computeTableStats(sourceTable).execute();
 
-    OutputFile file = sourceTable.io().newOutputFile(metadata.metadataFileLocation());
-    TableMetadataParser.overwrite(withStatistics, file);
+    Assert.assertEquals(
+        "Should include 1 statistics file after compute stats",
+        1,
+        sourceTable.statisticsFiles().size());
 
-    Assert.assertThrows(
-        "Should fail to copy a table with the statistics field",
-        IllegalArgumentException.class,
-        () -> {
-          actions()
-              .copyTable(sourceTable)
-              .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
-              .execute();
-        });
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+            .execute();
+
+    checkMetadataFileNum(3, 1, 1, 1, result);
+    checkDataFileNum(1, result);
+  }
+
+  @Test
+  public void testTableWithManyStatisticsFiles() throws IOException {
+    String sourceTableLocation = newTableLocation();
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    String namespace = "default";
+    String tableName = "v2tblwithmanystats";
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, namespace, tableName, 0);
+
+    int iterations = 10;
+    for (int i = 0; i < iterations; i++) {
+      sql("insert into hive.%s.%s values (%s, 'AAAAAAAAAA', 'AAAA')", namespace, tableName, i);
+      sourceTable.refresh();
+      actions().computeTableStats(sourceTable).execute();
+    }
+    sourceTable.refresh();
+    Assert.assertEquals(
+        "Should include desired count of statistics file in latest table metadata",
+        iterations,
+        sourceTable.statisticsFiles().size());
+
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+            .execute();
+
+    checkMetadataFileNum(iterations * 2 + 1, iterations, iterations, iterations, result);
+    checkDataFileNum(iterations, result);
   }
 
   @Test
