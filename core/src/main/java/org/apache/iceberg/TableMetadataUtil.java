@@ -20,6 +20,7 @@ package org.apache.iceberg;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.apache.iceberg.TableMetadata.MetadataLogEntry;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
@@ -67,7 +68,7 @@ public class TableMetadataUtil {
         metadata.snapshotLog(),
         metadataLogEntries,
         metadata.refs(),
-        metadata.statisticsFiles(),
+        updatePathInStatisticsFiles(metadata.statisticsFiles(), srcMetaPrefix, tgtMetaPrefix),
         metadata.partitionStatisticsFiles(),
         metadata.changes());
   }
@@ -132,6 +133,20 @@ public class TableMetadataUtil {
         properties, srcMetaPrefix, tgtMetaPrefix, TableProperties.WRITE_METADATA_LOCATION);
 
     return properties;
+  }
+
+  private static List<StatisticsFile> updatePathInStatisticsFiles(
+      List<StatisticsFile> statisticsFiles, String srcMetaPrefix, String tgtMetaPrefix) {
+    return statisticsFiles.stream()
+        .map(
+            existing ->
+                new GenericStatisticsFile(
+                    existing.snapshotId(),
+                    newPath(existing.path(), srcMetaPrefix, tgtMetaPrefix),
+                    existing.fileSizeInBytes(),
+                    existing.fileFooterSizeInBytes(),
+                    existing.blobMetadata()))
+        .collect(Collectors.toList());
   }
 
   private static void updatePathInProperty(
