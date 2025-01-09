@@ -79,6 +79,10 @@ import org.apache.iceberg.util.SerializableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @deprecated use {@link IcebergSink} instead
+ */
+@Deprecated
 public class FlinkSink {
   private static final Logger LOG = LoggerFactory.getLogger(FlinkSink.class);
 

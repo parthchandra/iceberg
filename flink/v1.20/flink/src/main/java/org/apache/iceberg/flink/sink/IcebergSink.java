@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.apache.flink.annotation.Experimental;
+import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.sink2.Committer;
@@ -119,7 +119,7 @@ import org.slf4j.LoggerFactory;
  *               +-----------------------------------------------------------------------------------+
  * }</pre>
  */
-@Experimental
+@PublicEvolving
 public class IcebergSink
     implements Sink<RowData>,
         SupportsPreWriteTopology<RowData>,
