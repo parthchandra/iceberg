@@ -46,7 +46,7 @@ class CometPositionColumnReader extends CometColumnReader {
     }
 
     PositionColumnReader(ColumnDescriptor descriptor, long position) {
-      super(DataTypes.LongType, descriptor, false);
+      super(DataTypes.LongType, descriptor, false, false);
       this.position = position;
     }
 
