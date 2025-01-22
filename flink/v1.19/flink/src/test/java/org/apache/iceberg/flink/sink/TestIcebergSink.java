@@ -457,6 +457,23 @@ public class TestIcebergSink extends TestFlinkIcebergSinkBase {
     assertThatThrownBy(() -> env.execute()).hasRootCauseInstanceOf(NullPointerException.class);
   }
 
+  @TestTemplate
+  void testCheckFiles() throws Exception {
+    List<Row> rows = createRows("");
+    DataStream<Row> dataStream =
+        env.addSource(createBoundedSource(rows), ROW_TYPE_INFO).uid("mySourceId");
+
+    IcebergSink.forRow(dataStream, SimpleDataUtil.FLINK_SCHEMA)
+        .table(table)
+        .tableLoader(tableLoader)
+        .tableSchema(SimpleDataUtil.FLINK_SCHEMA)
+        .writeParallelism(parallelism)
+        .checkFiles(true)
+        .append();
+
+    env.execute();
+  }
+
   private void testWriteRow(TableSchema tableSchema, DistributionMode distributionMode)
       throws Exception {
     List<Row> rows = createRows("");

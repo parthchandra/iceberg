@@ -112,6 +112,7 @@ class FileChecker implements Serializable {
       for (@SuppressWarnings("unused") Object o : toClose) {
         // just read through the files
       }
+      metrics.increaseFilesChecked();
     } catch (Exception e) {
       metrics.increaseFailedFileChecks();
       LOG.warn("Error checking file: {}", contentFile.path(), e);

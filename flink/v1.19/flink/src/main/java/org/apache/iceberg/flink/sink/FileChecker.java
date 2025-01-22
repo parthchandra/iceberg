@@ -20,7 +20,7 @@ package org.apache.iceberg.flink.sink;
 
 import java.io.Serializable;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Set;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Schema;
@@ -51,7 +51,7 @@ class FileChecker implements Serializable {
       FileIO io,
       FileFormat format,
       Schema dataSchema,
-      List<Integer> equalityFieldIds,
+      Set<Integer> equalityFieldIds,
       boolean upsert) {
     this.io = io;
     this.format = format;
@@ -112,6 +112,7 @@ class FileChecker implements Serializable {
       for (@SuppressWarnings("unused") Object o : toClose) {
         // just read through the files
       }
+      metrics.increaseFilesChecked();
     } catch (Exception e) {
       metrics.increaseFailedFileChecks();
       LOG.warn("Error checking file: {}", contentFile.path(), e);

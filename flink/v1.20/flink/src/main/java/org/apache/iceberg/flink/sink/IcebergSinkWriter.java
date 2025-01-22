@@ -21,6 +21,8 @@ package org.apache.iceberg.flink.sink;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.sink2.CommittingSinkWriter;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.table.data.RowData;
@@ -42,6 +44,7 @@ class IcebergSinkWriter implements CommittingSinkWriter<RowData, WriteResult> {
 
   private final String fullTableName;
   private final TaskWriterFactory<RowData> taskWriterFactory;
+  private final FileChecker fileChecker;
   private final IcebergStreamWriterMetrics metrics;
   private TaskWriter<RowData> writer;
   private final int subTaskId;
@@ -50,11 +53,13 @@ class IcebergSinkWriter implements CommittingSinkWriter<RowData, WriteResult> {
   IcebergSinkWriter(
       String fullTableName,
       TaskWriterFactory<RowData> taskWriterFactory,
+      @Nullable FileChecker fileChecker,
       IcebergStreamWriterMetrics metrics,
       int subTaskId,
       int attemptId) {
     this.fullTableName = fullTableName;
     this.taskWriterFactory = taskWriterFactory;
+    this.fileChecker = fileChecker;
     // Initialize the task writer factory.
     taskWriterFactory.initialize(subTaskId, attemptId);
     // Initialize the task writer.
@@ -108,6 +113,16 @@ class IcebergSinkWriter implements CommittingSinkWriter<RowData, WriteResult> {
         attemptId,
         result.dataFiles().length,
         result.deleteFiles().length);
+
+    if (fileChecker != null) {
+      fileChecker.check(result, metrics);
+    }
+
     return Lists.newArrayList(result);
+  }
+
+  @VisibleForTesting
+  IcebergStreamWriterMetrics getMetrics() {
+    return metrics;
   }
 }

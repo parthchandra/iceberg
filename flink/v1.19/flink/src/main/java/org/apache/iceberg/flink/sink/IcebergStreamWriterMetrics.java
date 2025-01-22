@@ -21,6 +21,7 @@ package org.apache.iceberg.flink.sink;
 import com.codahale.metrics.SlidingWindowReservoir;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Histogram;
@@ -40,6 +41,7 @@ class IcebergStreamWriterMetrics {
   private final Histogram dataFilesSizeHistogram;
   private final Histogram deleteFilesSizeHistogram;
   private final Counter failedFileChecks;
+  private final Counter succeededFileChecks;
 
   IcebergStreamWriterMetrics(MetricGroup metrics, String fullTableName) {
     MetricGroup writerMetrics =
@@ -63,6 +65,7 @@ class IcebergStreamWriterMetrics {
             "deleteFilesSizeHistogram",
             new DropwizardHistogramWrapper(dropwizardDeleteFilesSizeHistogram));
     this.failedFileChecks = writerMetrics.counter("failedFileChecks");
+    this.succeededFileChecks = writerMetrics.counter("succeededFileChecks");
   }
 
   void updateFlushResult(WriteResult result) {
@@ -92,5 +95,14 @@ class IcebergStreamWriterMetrics {
 
   void increaseFailedFileChecks() {
     failedFileChecks.inc();
+  }
+
+  void increaseFilesChecked() {
+    succeededFileChecks.inc();
+  }
+
+  @VisibleForTesting
+  Counter getSucceededFileChecks() {
+    return succeededFileChecks;
   }
 }
