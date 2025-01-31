@@ -751,6 +751,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
             ManifestFiles.read(manifestFile, io, specsById).select(Arrays.asList("*"))) {
       return StreamSupport.stream(reader.entries().spliterator(), false)
           .map(entry -> newDataFile(entry, spec, sourcePrefix, targetPrefix, writer))
+          .filter(PathPair::valid)
           .collect(Collectors.toList());
     }
   }
@@ -769,7 +770,12 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(targetDataFilePath).build();
     }
     appendEntryWithFile(entry, writer, dataFile);
-    return new PathPair(sourceDataFilePath, dataFile.path().toString());
+    // Keep non-live entry but exclude deleted data files as part of copyPlan
+    if (entry.isLive()) {
+      return new PathPair(sourceDataFilePath, dataFile.path().toString());
+    } else {
+      return new PathPair();
+    }
   }
 
   private static List<PathPair> writeDeleteManifest(
@@ -802,6 +808,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                   throw new RuntimeException(e);
                 }
               })
+          .filter(PathPair::valid)
           .collect(Collectors.toList());
     }
   }
@@ -829,11 +836,22 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                 .withPath(targetDeleteFilePath)
                 .build();
         appendEntryWithFile(entry, writer, movedFile);
-        return new PathPair(posDeleteFile.path().toString(), movedFile.path().toString());
+        // Keep non-live entry but exclude deleted position delete files as part of copyPlan
+        if (entry.isLive()) {
+          return new PathPair(posDeleteFile.path().toString(), movedFile.path().toString());
+        } else {
+          return new PathPair();
+        }
       case EQUALITY_DELETES:
         DeleteFile eqDeleteFile = newEqualityDeleteFile(file, spec, sourcePrefix, targetPrefix);
         appendEntryWithFile(entry, writer, eqDeleteFile);
-        return new PathPair(file.path().toString(), eqDeleteFile.path().toString());
+        // Keep non-live entry but exclude deleted equality delete files as part of copyPlan
+        if (entry.isLive()) {
+          // No need to rewrite equality delete files as they do not contain absolute file paths.
+          return new PathPair(file.path().toString(), eqDeleteFile.path().toString());
+        } else {
+          return new PathPair();
+        }
       default:
         throw new UnsupportedOperationException("Unsupported delete file type: " + file.content());
     }
@@ -1080,6 +1098,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     public PathPair(String source, String target) {
       this.source = source;
       this.target = target;
+    }
+
+    public boolean valid() {
+      return this.source != null && this.target != null;
     }
 
     public static PathPair of(String source, String target) {

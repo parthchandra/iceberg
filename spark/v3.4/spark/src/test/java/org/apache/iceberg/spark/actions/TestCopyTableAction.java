@@ -49,6 +49,7 @@ import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.actions.ActionsProvider;
 import org.apache.iceberg.actions.CopyTable;
+import org.apache.iceberg.actions.ExpireSnapshots;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.FileHelpers;
 import org.apache.iceberg.data.GenericRecord;
@@ -111,7 +112,7 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @After
-  public void cleanupTableSetup() throws Exception {
+  public void cleanupTableSetup() {
     dropNameSpaces();
   }
 
@@ -125,6 +126,11 @@ public class TestCopyTableAction extends SparkTestBase {
 
   protected Table createTableWithSnapshots(
       String location, int snapshotNumber, Map<String, String> properties) {
+    return createTableWithSnapshots(location, snapshotNumber, properties, "append");
+  }
+
+  protected Table createTableWithSnapshots(
+      String location, int snapshotNumber, Map<String, String> properties, String mode) {
     Table newTable = TABLES.create(SCHEMA, PartitionSpec.unpartitioned(), properties, location);
 
     List<ThreeColumnRecord> records =
@@ -133,7 +139,7 @@ public class TestCopyTableAction extends SparkTestBase {
     Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
 
     for (int i = 0; i < snapshotNumber; i++) {
-      df.select("c1", "c2", "c3").write().format("iceberg").mode("append").save(location);
+      df.select("c1", "c2", "c3").write().format("iceberg").mode(mode).save(location);
     }
 
     return newTable;
@@ -237,6 +243,46 @@ public class TestCopyTableAction extends SparkTestBase {
     Assert.assertTrue(
         "Should NOT have the parent snapshot file",
         rebuiltFiles.stream().filter(c -> c.contains(parentSnapshotId)).count() == 0);
+  }
+
+  @Test
+  public void testSkipCopyOfDeletedDataFilesBySnapshotExpiration() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Table sourceTable =
+        createTableWithSnapshots(sourceTableLocation, 3, Maps.newHashMap(), "overwrite");
+
+    // check the data file location before the rebuild
+    int initialAllDataFilesCount = 3;
+    List<String> validDataFiles =
+        spark
+            .read()
+            .format("iceberg")
+            .load(sourceTableLocation + "#all_files")
+            .select("file_path")
+            .as(Encoders.STRING())
+            .collectAsList();
+    Assert.assertEquals(
+        "Should have 3 data files in 3 snapshots", initialAllDataFilesCount, validDataFiles.size());
+
+    // expire first out of 3 snapshots
+    int expiredDataFileCount = 1;
+    ExpireSnapshots.Result expireResult =
+        actions()
+            .expireSnapshots(sourceTable)
+            .retainLast(2)
+            .expireOlderThan(sourceTable.currentSnapshot().timestampMillis())
+            .execute();
+    Assert.assertEquals(
+        "Expired 1 data file", expiredDataFileCount, expireResult.deletedDataFilesCount());
+
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, newTableLocation())
+            .execute();
+
+    checkMetadataFileNum(5, 2, 2, result);
+    checkDataFileNum(initialAllDataFilesCount - expiredDataFileCount, result);
   }
 
   @Test
