@@ -178,7 +178,7 @@ public class TestRemoveOrphanFilesProcedure extends SparkExtensionsTestBase {
     Table table = validationCatalog.loadTable(tableIdent);
 
     // produce orphan files in the table location using parquet
-    sql("CREATE TABLE p (id bigint) USING parquet LOCATION '%s'", table.location());
+    sql("CREATE TABLE p (id bigint) USING parquet LOCATION '%s'", table.location() + "/data");
     sql("INSERT INTO TABLE p VALUES (1)");
 
     // wait to ensure files are old enough

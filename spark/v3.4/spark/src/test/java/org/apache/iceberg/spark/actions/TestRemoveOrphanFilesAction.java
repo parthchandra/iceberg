@@ -401,6 +401,31 @@ public abstract class TestRemoveOrphanFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testRemoveOrphansFileInTableLocation() {
+    Table table = TABLES.create(SCHEMA, SPEC, Maps.newHashMap(), tableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+    Dataset<Row> df = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+
+    df.select("c1", "c2", "c3").write().format("iceberg").mode("append").save(tableLocation);
+
+    // add a file to root table location
+    df.write().mode("append").parquet(tableLocation + "/c2_trunc=AA/c3=AAAA");
+
+    long timestamp = System.currentTimeMillis();
+
+    waitUntilAfter(System.currentTimeMillis() + 1000L);
+
+    SparkActions actions = SparkActions.get();
+
+    DeleteOrphanFiles.Result result =
+        actions.deleteOrphanFiles(table).olderThan(timestamp).execute();
+
+    Assert.assertEquals(0, Iterables.size(result.orphanFileLocations()));
+  }
+
+  @Test
   public void testRemoveUnreachableMetadataVersionFiles() throws InterruptedException {
     Map<String, String> props = Maps.newHashMap();
     props.put(TableProperties.WRITE_DATA_LOCATION, tableLocation);
