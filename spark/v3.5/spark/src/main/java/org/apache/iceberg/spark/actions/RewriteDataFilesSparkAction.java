@@ -84,6 +84,8 @@ public class RewriteDataFilesSparkAction
           TARGET_FILE_SIZE_BYTES,
           USE_STARTING_SEQUENCE_NUMBER,
           REWRITE_JOB_ORDER,
+          OUTPUT_SPEC_ID);
+          REWRITE_JOB_ORDER,
           REMOVE_DANGLING_DELETES);
 
   private static final RewriteDataFilesSparkAction.Result EMPTY_RESULT =
