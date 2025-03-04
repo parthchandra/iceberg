@@ -25,7 +25,7 @@ aliyun-sdk-oss = "3.10.2"
 antlr = "4.9.3"
 aircompressor = "0.27"
 arrow = "15.0.0"
-avro = "1.11.3"
+avro = "1.11.4"
 assertj-core = "3.25.3"
 awaitility = "4.2.0"
 awssdk-bom = "2.24.5"
@@ -70,8 +70,7 @@ microprofile-openapi-api = "3.1.1"
 mockito = "4.11.0"
 mockserver = "5.15.0"
 nessie = "0.77.1"
-netty-buffer = "4.1.107.Final"
-netty-buffer-compat = "4.1.107.Final"
+netty-buffer = "4.1.118.Final"
 object-client-bundle = "3.3.2"
 orc = "1.9.2"
 parquet = "1.13.1.2-apple"
@@ -164,7 +163,6 @@ kafka-connect-json = { module = "org.apache.kafka:connect-json", version.ref = "
 microprofile-openapi-api = { module = "org.eclipse.microprofile.openapi:microprofile-openapi-api", version.ref = "microprofile-openapi-api" }
 nessie-client = { module = "org.projectnessie.nessie:nessie-client", version.ref = "nessie" }
 netty-buffer = { module = "io.netty:netty-buffer", version.ref = "netty-buffer" }
-netty-buffer-compat = { module = "io.netty:netty-buffer", version.ref = "netty-buffer-compat" }
 object-client-bundle = { module = "com.emc.ecs:object-client-bundle", version.ref = "object-client-bundle" }
 orc-core = { module = "org.apache.orc:orc-core", version.ref = "orc" }
 parquet-avro = { module = "org.apache.parquet:parquet-avro", version.ref = "parquet" }
