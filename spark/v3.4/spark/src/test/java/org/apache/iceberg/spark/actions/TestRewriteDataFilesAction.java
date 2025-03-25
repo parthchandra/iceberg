@@ -1562,11 +1562,11 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
 
   @Test
   public void testBinPackRewriterWithSpecificOutputSpec() {
-    Table table = createTable(10);
-    shouldHaveFiles(table, 10);
-    table.updateSpec().addField(Expressions.truncate("c2", 2)).commit();
+    Table table = createTable();
     int outputSpecId = table.spec().specId();
-    table.updateSpec().addField(Expressions.bucket("c3", 2)).commit();
+    table.updateSpec().addField(Expressions.truncate("c2", 2)).commit();
+    writeRecords(10, SCALE);
+    shouldHaveFiles(table, 10);
 
     long dataSizeBefore = testDataSize(table);
     long count = currentData().size();
