@@ -763,11 +763,19 @@ public class OAuth2Util {
         long startTimeMillis,
         AuthSession parent,
         String credential) {
+      // issued_token_type is required in RFC 8693 but not in RFC 6749,
+      // thus assume type is access_token for compatibility with RFC 6749.
+      // See https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3
+      // for an example of a response that does not include the issued token type.
+      String issuedTokenType = response.issuedTokenType();
+      if (issuedTokenType == null) {
+        issuedTokenType = OAuth2Properties.ACCESS_TOKEN_TYPE;
+      }
       AuthSession session =
           new AuthSession(
               parent.headers(),
               response.token(),
-              response.issuedTokenType(),
+              issuedTokenType,
               credential,
               parent.scope(),
               parent.oauth2ServerUri(),

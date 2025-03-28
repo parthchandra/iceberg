@@ -67,7 +67,9 @@ abstract class SparkSizeBasedDataRewriter extends SizeBasedDataRewriter {
       FileScanTask scanTask = group.get(0);
       Comparator<StructLike> structLikeComparator =
           Comparators.forType(scanTask.spec().partitionType());
-      boolean sameSpec = scanTask.spec().equals(table().spec());
+      // https://github.com/apache/iceberg/pull/9803 support output spec to differ from existing
+      // spec used in scan tasks
+      boolean sameSpec = scanTask.spec().equals(outputSpec());
       if (sameSpec) {
         boolean partitionValuesSame =
             newFiles.stream()

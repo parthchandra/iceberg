@@ -330,7 +330,7 @@ public class DeleteOrphanFilesSparkAction extends BaseSparkAction<DeleteOrphanFi
                 matchingFiles));
 
     JavaRDD<String> matchingFileRDD =
-        sparkContext().parallelize(matchingFiles.stream().toList(), 1);
+        sparkContext().parallelize(Lists.newArrayList(matchingFiles), 1);
 
     if (subDirs.isEmpty()) {
       return spark().createDataset(matchingFileRDD.rdd(), Encoders.STRING());
