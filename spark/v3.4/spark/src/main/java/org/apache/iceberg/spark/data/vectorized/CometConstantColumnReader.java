@@ -27,7 +27,7 @@ class CometConstantColumnReader<T> extends CometColumnReader {
   CometConstantColumnReader(T value, Types.NestedField field) {
     super(field);
     this.value = value;
-    delegate = new ConstantColumnReader(getSparkType(), getDescriptor(), value, false);
+    delegate = new ConstantColumnReader(getSparkType(), getDescriptor(), value, true);
   }
 
   @Override

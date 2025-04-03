@@ -78,7 +78,7 @@ class CometColumnReader implements VectorizedReader<CometVector> {
   CometColumnReader(DataType sparkType, ColumnDescriptor descriptor) {
     this.sparkType = sparkType;
     this.descriptor = descriptor;
-    this.vector = new CometVector(sparkType, false);
+    this.vector = new CometVector(sparkType, true);
   }
 
   CometColumnReader(Types.NestedField field) {
@@ -86,7 +86,7 @@ class CometColumnReader implements VectorizedReader<CometVector> {
     StructField structField = new StructField(field.name(), dataType, false, Metadata.empty());
     this.sparkType = dataType;
     this.descriptor = TypeUtil.convertToParquet(structField);
-    this.vector = new CometVector(sparkType, false);
+    this.vector = new CometVector(sparkType, true);
   }
 
   public AbstractColumnReader getDelegate() {
@@ -105,7 +105,7 @@ class CometColumnReader implements VectorizedReader<CometVector> {
 
     CometSchemaImporter importer = new CometSchemaImporter(new RootAllocator());
 
-    delegate = Utils.getColumnReader(sparkType, descriptor, importer, batchSize, false, false);
+    delegate = Utils.getColumnReader(sparkType, descriptor, importer, batchSize, true, false);
     initialized = true;
   }
 
