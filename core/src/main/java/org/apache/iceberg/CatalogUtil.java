@@ -500,7 +500,10 @@ public class CatalogUtil {
     DynConstructors.Ctor<EncryptionManagerFactory> ctor;
     try {
       ctor =
-          DynConstructors.builder(EncryptionManagerFactory.class).hiddenImpl(impl).buildChecked();
+          DynConstructors.builder(EncryptionManagerFactory.class)
+              .loader(CatalogUtil.class.getClassLoader())
+              .hiddenImpl(impl)
+              .buildChecked();
     } catch (NoSuchMethodException e) {
       throw new IllegalArgumentException(
           String.format(
