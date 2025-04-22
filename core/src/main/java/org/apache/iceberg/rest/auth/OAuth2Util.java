@@ -44,6 +44,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.rest.ErrorHandlers;
 import org.apache.iceberg.rest.RESTClient;
+import org.apache.iceberg.rest.RESTSessionCatalog;
 import org.apache.iceberg.rest.RESTUtil;
 import org.apache.iceberg.rest.ResourcePaths;
 import org.apache.iceberg.rest.responses.OAuthTokenResponse;
@@ -464,9 +465,31 @@ public class OAuth2Util {
     private final String credential;
     private final String scope;
     private volatile boolean keepRefreshed = true;
+    private RESTSessionCatalog.TokenRefreshMode refreshMode =
+        RESTSessionCatalog.TokenRefreshMode.LEGACY;
     private final String oauth2ServerUri;
 
     private Map<String, String> optionalOAuthParams = ImmutableMap.of();
+
+    public AuthSession(
+        Map<String, String> baseHeaders,
+        String token,
+        String tokenType,
+        String credential,
+        String scope,
+        String oauth2ServerUri,
+        Map<String, String> optionalOAuthParams,
+        RESTSessionCatalog.TokenRefreshMode refreshMode) {
+      this.headers = RESTUtil.merge(baseHeaders, authHeaders(token));
+      this.token = token;
+      this.tokenType = tokenType;
+      this.expiresAtMillis = OAuth2Util.expiresAtMillis(token);
+      this.credential = credential;
+      this.scope = scope;
+      this.oauth2ServerUri = oauth2ServerUri;
+      this.optionalOAuthParams = optionalOAuthParams;
+      this.refreshMode = refreshMode;
+    }
 
     public AuthSession(
         Map<String, String> baseHeaders,
@@ -626,7 +649,10 @@ public class OAuth2Util {
     }
 
     private OAuthTokenResponse refreshCurrentToken(RESTClient client) {
-      if (null != expiresAtMillis && expiresAtMillis <= System.currentTimeMillis()) {
+      if (RESTSessionCatalog.TokenRefreshMode.AUTHENTICATE == refreshMode) {
+        return fetchToken(
+            client, headers(), credential, scope, oauth2ServerUri, optionalOAuthParams);
+      } else if (null != expiresAtMillis && expiresAtMillis <= System.currentTimeMillis()) {
         // the token has already expired, attempt to refresh using the credential
         return refreshExpiredToken(client);
       } else {
@@ -637,7 +663,10 @@ public class OAuth2Util {
     }
 
     private OAuthTokenResponse refreshExpiredToken(RESTClient client) {
-      if (credential != null) {
+      if (RESTSessionCatalog.TokenRefreshMode.AUTHENTICATE == refreshMode) {
+        return fetchToken(
+            client, headers(), credential, scope, oauth2ServerUri, optionalOAuthParams);
+      } else if (credential != null) {
         Map<String, String> basicHeaders = RESTUtil.merge(headers(), basicAuthHeaders(credential));
         return refreshToken(
             client, basicHeaders, token, tokenType, scope, oauth2ServerUri, optionalOAuthParams);
@@ -733,7 +762,8 @@ public class OAuth2Util {
         RESTClient client,
         ScheduledExecutorService executor,
         String credential,
-        AuthSession parent) {
+        AuthSession parent,
+        RESTSessionCatalog.TokenRefreshMode refreshMode) {
       long startTimeMillis = System.currentTimeMillis();
       OAuthTokenResponse response =
           fetchToken(
@@ -743,7 +773,8 @@ public class OAuth2Util {
               parent.scope(),
               parent.oauth2ServerUri(),
               parent.optionalOAuthParams());
-      return fromTokenResponse(client, executor, response, startTimeMillis, parent, credential);
+      return fromTokenResponse(
+          client, executor, response, startTimeMillis, parent, credential, refreshMode);
     }
 
     public static AuthSession fromTokenResponse(
@@ -751,9 +782,10 @@ public class OAuth2Util {
         ScheduledExecutorService executor,
         OAuthTokenResponse response,
         long startTimeMillis,
-        AuthSession parent) {
+        AuthSession parent,
+        RESTSessionCatalog.TokenRefreshMode refreshMode) {
       return fromTokenResponse(
-          client, executor, response, startTimeMillis, parent, parent.credential());
+          client, executor, response, startTimeMillis, parent, parent.credential(), refreshMode);
     }
 
     private static AuthSession fromTokenResponse(
@@ -762,7 +794,8 @@ public class OAuth2Util {
         OAuthTokenResponse response,
         long startTimeMillis,
         AuthSession parent,
-        String credential) {
+        String credential,
+        RESTSessionCatalog.TokenRefreshMode refreshMode) {
       // issued_token_type is required in RFC 8693 but not in RFC 6749,
       // thus assume type is access_token for compatibility with RFC 6749.
       // See https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3
@@ -779,7 +812,8 @@ public class OAuth2Util {
               credential,
               parent.scope(),
               parent.oauth2ServerUri(),
-              parent.optionalOAuthParams());
+              parent.optionalOAuthParams(),
+              refreshMode);
 
       Long expiresAtMillis = session.expiresAtMillis();
       if (null == expiresAtMillis && response.expiresInSeconds() != null) {
@@ -811,7 +845,13 @@ public class OAuth2Util {
               parent.scope(),
               parent.oauth2ServerUri(),
               parent.optionalOAuthParams());
-      return fromTokenResponse(client, executor, response, startTimeMillis, parent);
+      return fromTokenResponse(
+          client,
+          executor,
+          response,
+          startTimeMillis,
+          parent,
+          RESTSessionCatalog.TokenRefreshMode.LEGACY);
     }
   }
 }
