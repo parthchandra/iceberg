@@ -188,4 +188,9 @@ public class DateTimeUtil {
   private static OffsetDateTime toOffsetDateTime(long epochSecond, long nanoAdjustment) {
     return Instant.ofEpochSecond(epochSecond, nanoAdjustment).atOffset(ZoneOffset.UTC);
   }
+
+  public static int hoursToDays(int hours) {
+    LocalDate date = EPOCH.toLocalDateTime().plusHours(hours).toLocalDate();
+    return daysFromDate(date);
+  }
 }

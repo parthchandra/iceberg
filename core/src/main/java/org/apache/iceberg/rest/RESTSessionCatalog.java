@@ -130,6 +130,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
   private Cache<TableOperations, FileIO> fileIOCloser;
   private AuthSession catalogAuth = null;
   private boolean keepTokenRefreshed = true;
+  private TokenRefreshMode refreshMode = TokenRefreshMode.LEGACY;
   private RESTClient client = null;
   private ResourcePaths paths = null;
   private SnapshotMode snapshotMode = null;
@@ -150,6 +151,11 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
     Map<String, String> params() {
       return ImmutableMap.of("snapshots", this.name().toLowerCase(Locale.US));
     }
+  }
+
+  public enum TokenRefreshMode {
+    LEGACY,
+    AUTHENTICATE;
   }
 
   public RESTSessionCatalog() {
@@ -205,6 +211,12 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
     // build the final configuration and set up the catalog's auth
     Map<String, String> mergedProps = config.merge(props);
     Map<String, String> baseHeaders = configHeaders(mergedProps);
+    String tokenRefreshModeFromProp =
+        PropertyUtil.propertyAsString(
+            mergedProps,
+            OAuth2Properties.TOKEN_REFRESH_MODE,
+            OAuth2Properties.TOKEN_REFRESH_MODE_DEFAULT);
+    LOG.debug("Refresh token mode from properties is {}", tokenRefreshModeFromProp);
 
     this.sessions = newSessionCache(mergedProps);
     this.tableSessions = newSessionCache(mergedProps);
@@ -213,6 +225,11 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
             mergedProps,
             OAuth2Properties.TOKEN_REFRESH_ENABLED,
             OAuth2Properties.TOKEN_REFRESH_ENABLED_DEFAULT);
+    this.refreshMode =
+        OAuth2Properties.TOKEN_REFRESH_MODE_AUTHENTICATE.equals(tokenRefreshModeFromProp)
+            ? TokenRefreshMode.AUTHENTICATE
+            : TokenRefreshMode.LEGACY;
+
     this.client = clientBuilder.apply(mergedProps);
     this.paths = ResourcePaths.forCatalogProperties(mergedProps);
 
@@ -223,7 +240,12 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
     if (authResponse != null) {
       this.catalogAuth =
           AuthSession.fromTokenResponse(
-              client, tokenRefreshExecutor(), authResponse, startTimeMillis, catalogAuth);
+              client,
+              tokenRefreshExecutor(),
+              authResponse,
+              startTimeMillis,
+              catalogAuth,
+              refreshMode);
     } else if (token != null) {
       this.catalogAuth =
           AuthSession.fromAccessToken(
@@ -355,7 +377,6 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
       response = loadInternal(context, identifier, snapshotMode);
       loadedIdent = identifier;
       metadataType = null;
-
     } catch (NoSuchTableException original) {
       metadataType = MetadataTableType.from(identifier.name());
       if (metadataType != null) {
@@ -954,7 +975,8 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
                     client,
                     tokenRefreshExecutor(),
                     credentials.get(OAuth2Properties.CREDENTIAL),
-                    parent));
+                    parent,
+                    refreshMode));
       }
 
       for (String tokenType : TOKEN_PREFERENCE_ORDER) {

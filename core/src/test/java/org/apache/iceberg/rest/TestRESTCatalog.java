@@ -1504,11 +1504,14 @@ public class TestRESTCatalog extends CatalogTests<RESTCatalog> {
               // verify that a second exchange occurs
               Map<String, String> secondRefreshRequest =
                   ImmutableMap.of(
-                      "grant_type", "urn:ietf:params:oauth:grant-type:token-exchange",
+                      "grant_type",
+                      "urn:ietf:params:oauth:grant-type:token-exchange",
                       "subject_token",
-                          "token-exchange-token:sub=client-credentials-token:sub=catalog",
-                      "subject_token_type", "urn:ietf:params:oauth:token-type:access_token",
-                      "scope", "catalog");
+                      "token-exchange-token:sub=client-credentials-token:sub=catalog",
+                      "subject_token_type",
+                      "urn:ietf:params:oauth:token-type:access_token",
+                      "scope",
+                      "catalog");
               Map<String, String> secondRefreshHeaders =
                   ImmutableMap.of(
                       "Authorization",
@@ -2171,6 +2174,63 @@ public class TestRESTCatalog extends CatalogTests<RESTCatalog> {
             "catalog:12345",
             OAuth2Properties.TOKEN_REFRESH_ENABLED,
             "false",
+            OAuth2Properties.OAUTH2_SERVER_URI,
+            oauth2ServerUri));
+
+    // fetch token from client credential
+    Map<String, String> fetchTokenFromCredential =
+        ImmutableMap.of(
+            "grant_type",
+            "client_credentials",
+            "client_id",
+            "catalog",
+            "client_secret",
+            "12345",
+            "scope",
+            "catalog");
+    Mockito.verify(adapter)
+        .execute(
+            eq(HTTPMethod.POST),
+            eq(oauth2ServerUri),
+            any(),
+            Mockito.argThat(fetchTokenFromCredential::equals),
+            eq(OAuthTokenResponse.class),
+            eq(ImmutableMap.of()),
+            any());
+
+    Mockito.verify(adapter)
+        .execute(
+            eq(HTTPMethod.GET),
+            eq("v1/config"),
+            any(),
+            any(),
+            eq(ConfigResponse.class),
+            eq(catalogHeaders),
+            any());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"v1/oauth/tokens", "https://auth-server.com/token"})
+  public void testConfigureCatalogTokenRefreshMode(String oauth2ServerUri) {
+    Map<String, String> catalogHeaders =
+        ImmutableMap.of("Authorization", "Bearer client-credentials-token:sub=catalog");
+
+    RESTCatalogAdapter adapter = Mockito.spy(new RESTCatalogAdapter(backendCatalog));
+
+    SessionCatalog.SessionContext context =
+        new SessionCatalog.SessionContext(
+            UUID.randomUUID().toString(), "user", ImmutableMap.of(), ImmutableMap.of());
+
+    RESTCatalog catalog = new RESTCatalog(context, (config) -> adapter);
+    catalog.initialize(
+        "prod",
+        ImmutableMap.of(
+            CatalogProperties.URI,
+            "ignored",
+            OAuth2Properties.CREDENTIAL,
+            "catalog:12345",
+            OAuth2Properties.TOKEN_REFRESH_MODE,
+            OAuth2Properties.TOKEN_REFRESH_MODE_AUTHENTICATE,
             OAuth2Properties.OAUTH2_SERVER_URI,
             oauth2ServerUri));
 
