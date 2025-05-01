@@ -55,6 +55,11 @@ public interface AuthConfig {
   }
 
   @Value.Default
+  default OAuth2Properties.TokenRefreshMode refreshMode() {
+    return OAuth2Properties.TokenRefreshMode.LEGACY;
+  }
+
+  @Value.Default
   default boolean keepRefreshed() {
     return true;
   }

@@ -46,6 +46,16 @@ public class OAuth2Properties {
 
   public static final boolean TOKEN_REFRESH_ENABLED_DEFAULT = true;
 
+  public static final String TOKEN_REFRESH_MODE = "token-refresh-mode";
+  public static final String TOKEN_REFRESH_MODE_AUTHENTICATE = "authenticate";
+  public static final String TOKEN_REFRESH_MODE_LEGACY = "legacy";
+  public static final String TOKEN_REFRESH_MODE_DEFAULT = TOKEN_REFRESH_MODE_LEGACY;
+
+  public enum TokenRefreshMode {
+    LEGACY,
+    AUTHENTICATE;
+  }
+
   /** Additional scope for OAuth2. */
   public static final String SCOPE = "scope";
 

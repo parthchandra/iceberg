@@ -511,6 +511,10 @@ public class OAuth2Util {
       return config.oauth2ServerUri();
     }
 
+    public OAuth2Properties.TokenRefreshMode tokenRefreshMode() {
+      return config.refreshMode();
+    }
+
     public Map<String, String> optionalOAuthParams() {
       return config.optionalOAuthParams();
     }
@@ -584,7 +588,10 @@ public class OAuth2Util {
     }
 
     private OAuthTokenResponse refreshCurrentToken(RESTClient client) {
-      if (null != expiresAtMillis() && expiresAtMillis() <= System.currentTimeMillis()) {
+      if (OAuth2Properties.TokenRefreshMode.AUTHENTICATE == tokenRefreshMode()) {
+        return fetchToken(
+            client, headers(), credential(), scope(), oauth2ServerUri(), optionalOAuthParams());
+      } else if (null != expiresAtMillis() && expiresAtMillis() <= System.currentTimeMillis()) {
         // the token has already expired, attempt to refresh using the credential
         return refreshExpiredToken(client);
       } else {
@@ -601,7 +608,10 @@ public class OAuth2Util {
     }
 
     private OAuthTokenResponse refreshExpiredToken(RESTClient client) {
-      if (credential() != null) {
+      if (OAuth2Properties.TokenRefreshMode.AUTHENTICATE == tokenRefreshMode()) {
+        return fetchToken(
+            client, headers(), credential(), scope(), oauth2ServerUri(), optionalOAuthParams());
+      } else if (credential() != null) {
         Map<String, String> basicHeaders =
             RESTUtil.merge(headers(), basicAuthHeaders(credential()));
         return refreshToken(

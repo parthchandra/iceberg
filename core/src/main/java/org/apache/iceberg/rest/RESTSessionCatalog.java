@@ -67,6 +67,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.rest.auth.AuthManager;
 import org.apache.iceberg.rest.auth.AuthManagers;
 import org.apache.iceberg.rest.auth.AuthSession;
+import org.apache.iceberg.rest.auth.OAuth2Properties;
 import org.apache.iceberg.rest.credentials.Credential;
 import org.apache.iceberg.rest.requests.CommitTransactionRequest;
 import org.apache.iceberg.rest.requests.CreateNamespaceRequest;
@@ -206,6 +207,12 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
 
     // build the final configuration and set up the catalog's auth
     Map<String, String> mergedProps = config.merge(props);
+    String tokenRefreshModeFromProp =
+        PropertyUtil.propertyAsString(
+            mergedProps,
+            OAuth2Properties.TOKEN_REFRESH_MODE,
+            OAuth2Properties.TOKEN_REFRESH_MODE_DEFAULT);
+    LOG.debug("Refresh token mode from properties is {}", tokenRefreshModeFromProp);
 
     if (config.endpoints().isEmpty()) {
       this.endpoints =
