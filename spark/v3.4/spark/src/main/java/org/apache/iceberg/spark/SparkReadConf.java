@@ -356,7 +356,6 @@ public class SparkReadConf {
     return confParser
         .enumConf(ParquetReaderType::valueOf)
         .sessionConf(SparkSQLProperties.PARQUET_READER_TYPE)
-        .defaultValue(SparkSQLProperties.PARQUET_READER_TYPE_DEFAULT)
         .parse();
   }
 }
