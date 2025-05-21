@@ -26,10 +26,16 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.CredentialsProvider;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequest;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
@@ -39,6 +45,7 @@ import org.apache.hc.client5.http.io.HttpClientConnectionManager;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequestInterceptor;
 import org.apache.hc.core5.http.HttpStatus;
 import org.apache.hc.core5.http.Method;
@@ -55,6 +62,7 @@ import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.exceptions.RESTException;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.base.Strings;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.rest.responses.ErrorResponse;
 import org.apache.iceberg.util.PropertyUtil;
@@ -74,10 +82,19 @@ public class HTTPClient implements RESTClient {
   static final String CLIENT_GIT_COMMIT_SHORT_HEADER = "X-Client-Git-Commit-Short";
 
   private static final String REST_MAX_RETRIES = "rest.client.max-retries";
-  private static final String REST_MAX_CONNECTIONS = "rest.client.max-connections";
-  private static final int REST_MAX_CONNECTIONS_DEFAULT = 100;
-  private static final String REST_MAX_CONNECTIONS_PER_ROUTE = "rest.client.connections-per-route";
-  private static final int REST_MAX_CONNECTIONS_PER_ROUTE_DEFAULT = 100;
+  static final String REST_MAX_CONNECTIONS = "rest.client.max-connections";
+  static final int REST_MAX_CONNECTIONS_DEFAULT = 100;
+  static final String REST_MAX_CONNECTIONS_PER_ROUTE = "rest.client.connections-per-route";
+  static final int REST_MAX_CONNECTIONS_PER_ROUTE_DEFAULT = 100;
+  static final String REST_PROXY_HOSTNAME = "rest.client.proxy.hostname";
+  static final String REST_PROXY_PORT = "rest.client.proxy.port";
+  static final String REST_PROXY_USERNAME = "rest.client.proxy.username";
+  static final String REST_PROXY_PASSWORD = "rest.client.proxy.password";
+
+  @VisibleForTesting
+  static final String REST_CONNECTION_TIMEOUT_MS = "rest.client.connection-timeout-ms";
+
+  @VisibleForTesting static final String REST_SOCKET_TIMEOUT_MS = "rest.client.socket-timeout-ms";
 
   private final String uri;
   private final CloseableHttpClient httpClient;
@@ -85,25 +102,18 @@ public class HTTPClient implements RESTClient {
 
   private HTTPClient(
       String uri,
+      HttpHost proxy,
+      CredentialsProvider proxyCredsProvider,
       Map<String, String> baseHeaders,
       ObjectMapper objectMapper,
       HttpRequestInterceptor requestInterceptor,
-      Map<String, String> properties) {
+      Map<String, String> properties,
+      HttpClientConnectionManager connectionManager) {
     this.uri = uri;
     this.mapper = objectMapper;
 
     HttpClientBuilder clientBuilder = HttpClients.custom();
 
-    HttpClientConnectionManager connectionManager =
-        PoolingHttpClientConnectionManagerBuilder.create()
-            .useSystemProperties()
-            .setMaxConnTotal(Integer.getInteger(REST_MAX_CONNECTIONS, REST_MAX_CONNECTIONS_DEFAULT))
-            .setMaxConnPerRoute(
-                PropertyUtil.propertyAsInt(
-                    properties,
-                    REST_MAX_CONNECTIONS_PER_ROUTE,
-                    REST_MAX_CONNECTIONS_PER_ROUTE_DEFAULT))
-            .build();
     clientBuilder.setConnectionManager(connectionManager);
 
     if (baseHeaders != null) {
@@ -119,6 +129,14 @@ public class HTTPClient implements RESTClient {
 
     int maxRetries = PropertyUtil.propertyAsInt(properties, REST_MAX_RETRIES, 5);
     clientBuilder.setRetryStrategy(new ExponentialHttpRequestRetryStrategy(maxRetries));
+
+    if (proxy != null) {
+      if (proxyCredsProvider != null) {
+        clientBuilder.setDefaultCredentialsProvider(proxyCredsProvider);
+      }
+
+      clientBuilder.setProxy(proxy);
+    }
 
     this.httpClient = clientBuilder.build();
   }
@@ -448,6 +466,47 @@ public class HTTPClient implements RESTClient {
     return instance;
   }
 
+  static HttpClientConnectionManager configureConnectionManager(Map<String, String> properties) {
+    PoolingHttpClientConnectionManagerBuilder connectionManagerBuilder =
+        PoolingHttpClientConnectionManagerBuilder.create();
+    ConnectionConfig connectionConfig = configureConnectionConfig(properties);
+    if (connectionConfig != null) {
+      connectionManagerBuilder.setDefaultConnectionConfig(connectionConfig);
+    }
+
+    return connectionManagerBuilder
+        .useSystemProperties()
+        .setMaxConnTotal(Integer.getInteger(REST_MAX_CONNECTIONS, REST_MAX_CONNECTIONS_DEFAULT))
+        .setMaxConnPerRoute(
+            PropertyUtil.propertyAsInt(
+                properties, REST_MAX_CONNECTIONS_PER_ROUTE, REST_MAX_CONNECTIONS_PER_ROUTE_DEFAULT))
+        .build();
+  }
+
+  @VisibleForTesting
+  static ConnectionConfig configureConnectionConfig(Map<String, String> properties) {
+    Long connectionTimeoutMillis =
+        PropertyUtil.propertyAsNullableLong(properties, REST_CONNECTION_TIMEOUT_MS);
+    Integer socketTimeoutMillis =
+        PropertyUtil.propertyAsNullableInt(properties, REST_SOCKET_TIMEOUT_MS);
+
+    if (connectionTimeoutMillis == null && socketTimeoutMillis == null) {
+      return null;
+    }
+
+    ConnectionConfig.Builder connConfigBuilder = ConnectionConfig.custom();
+
+    if (connectionTimeoutMillis != null) {
+      connConfigBuilder.setConnectTimeout(connectionTimeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    if (socketTimeoutMillis != null) {
+      connConfigBuilder.setSocketTimeout(socketTimeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    return connConfigBuilder.build();
+  }
+
   public static Builder builder(Map<String, String> properties) {
     return new Builder(properties);
   }
@@ -457,6 +516,8 @@ public class HTTPClient implements RESTClient {
     private final Map<String, String> baseHeaders = Maps.newHashMap();
     private String uri;
     private ObjectMapper mapper = RESTObjectMapper.mapper();
+    private HttpHost proxy;
+    private CredentialsProvider proxyCredentialsProvider;
 
     private Builder(Map<String, String> properties) {
       this.properties = properties;
@@ -465,6 +526,19 @@ public class HTTPClient implements RESTClient {
     public Builder uri(String path) {
       Preconditions.checkNotNull(path, "Invalid uri for http client: null");
       this.uri = RESTUtil.stripTrailingSlash(path);
+      return this;
+    }
+
+    public Builder withProxy(String hostname, int port) {
+      Preconditions.checkNotNull(hostname, "Invalid hostname for http client proxy: null");
+      this.proxy = new HttpHost(hostname, port);
+      return this;
+    }
+
+    public Builder withProxyCredentialsProvider(CredentialsProvider credentialsProvider) {
+      Preconditions.checkNotNull(
+          credentialsProvider, "Invalid credentials provider for http client proxy: null");
+      this.proxyCredentialsProvider = credentialsProvider;
       return this;
     }
 
@@ -493,7 +567,46 @@ public class HTTPClient implements RESTClient {
         interceptor = loadInterceptorDynamically(SIGV4_REQUEST_INTERCEPTOR_IMPL, properties);
       }
 
-      return new HTTPClient(uri, baseHeaders, mapper, interceptor, properties);
+      String proxyHostname =
+          PropertyUtil.propertyAsString(properties, HTTPClient.REST_PROXY_HOSTNAME, null);
+
+      Integer proxyPort =
+          PropertyUtil.propertyAsNullableInt(properties, HTTPClient.REST_PROXY_PORT);
+
+      if (!Strings.isNullOrEmpty(proxyHostname) && proxyPort != null) {
+        withProxy(proxyHostname, proxyPort);
+
+        String proxyUsername =
+            PropertyUtil.propertyAsString(properties, HTTPClient.REST_PROXY_USERNAME, null);
+
+        String proxyPassword =
+            PropertyUtil.propertyAsString(properties, HTTPClient.REST_PROXY_PASSWORD, null);
+
+        if (!Strings.isNullOrEmpty(proxyUsername) && !Strings.isNullOrEmpty(proxyPassword)) {
+          // currently only basic auth is supported
+          BasicCredentialsProvider credentialProvider = new BasicCredentialsProvider();
+          credentialProvider.setCredentials(
+              new AuthScope(proxyHostname, proxyPort),
+              new UsernamePasswordCredentials(proxyUsername, proxyPassword.toCharArray()));
+
+          withProxyCredentialsProvider(credentialProvider);
+        }
+      }
+
+      if (this.proxyCredentialsProvider != null) {
+        Preconditions.checkNotNull(
+            proxy, "Invalid http client proxy for proxy credentials provider: null");
+      }
+
+      return new HTTPClient(
+          uri,
+          proxy,
+          proxyCredentialsProvider,
+          baseHeaders,
+          mapper,
+          interceptor,
+          properties,
+          configureConnectionManager(properties));
     }
   }
 
