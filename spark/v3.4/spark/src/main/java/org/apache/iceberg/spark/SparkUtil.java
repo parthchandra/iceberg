@@ -293,13 +293,20 @@ public class SparkUtil {
   }
 
   public static boolean cometEnabled(SparkSession spark, SparkReadConf readConf) {
-    return Boolean.parseBoolean(
-            spark
-                .conf()
-                .get(
-                    CometConf.COMET_ENABLED().key(),
-                    CometConf.COMET_ENABLED().defaultValueString()))
-        && readConf.parquetReaderType() == ParquetReaderType.COMET;
+    boolean cometEnabled =
+        Boolean.parseBoolean(
+                spark
+                    .conf()
+                    .get(
+                        CometConf.COMET_ENABLED().key(),
+                        CometConf.COMET_ENABLED().defaultValueString()))
+            && Boolean.parseBoolean(
+                spark
+                    .conf()
+                    .get(
+                        CometConf.COMET_NATIVE_SCAN_ENABLED().key(),
+                        CometConf.COMET_NATIVE_SCAN_ENABLED().defaultValueString()));
+    return cometEnabled && readConf.parquetReaderType() == ParquetReaderType.COMET;
   }
 
   private static List<BlockManagerId> fetchPeers(BlockManager blockManager) {

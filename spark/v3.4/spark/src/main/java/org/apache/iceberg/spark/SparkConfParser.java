@@ -219,7 +219,6 @@ class SparkConfParser {
     }
 
     public T parse() {
-      Preconditions.checkArgument(defaultValue != null, "Default value cannot be null");
       return parse(toEnum, defaultValue);
     }
 
