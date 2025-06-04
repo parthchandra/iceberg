@@ -270,8 +270,8 @@ public class TestFlinkIcebergSinkV2Base {
                       expectedRecords,
                       branch))
           .isInstanceOf(IllegalStateException.class)
-          .hasMessageStartingWith(
-              "In 'hash' distribution mode with equality fields set, partition field")
+          .hasMessageStartingWith("In 'hash' distribution mode with equality fields set")
+          .hasMessageContaining("data")
           .hasMessageContaining("should be included in equality fields:");
 
     } else {
