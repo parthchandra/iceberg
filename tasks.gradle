@@ -19,11 +19,10 @@
 
 
 task aggregateJavadoc(type: Javadoc) {
-  def javadocTasks = subprojects.findAll { it.name != 'iceberg-bom' }.javadoc
-  dependsOn javadocTasks
-  source javadocTasks.source
+  dependsOn subprojects.javadoc
+  source subprojects.javadoc.source
   destinationDir project.rootProject.file("site/docs/javadoc/${getJavadocVersion()}")
-  classpath = project.rootProject.files(javadocTasks.classpath)
+  classpath = project.rootProject.files(subprojects.javadoc.classpath)
 
   final JAVADOC_FIX_SEARCH_STR = '\n\n' +
           'getURLPrefix = function(ui) {\n' +

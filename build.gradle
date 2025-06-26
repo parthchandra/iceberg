@@ -40,6 +40,11 @@ buildscript {
   }
 }
 
+plugins {
+  id 'com.apple.rio.group' version '5.0.1'
+  id 'com.apple.rio.binary' version '5.0.1' apply false
+}
+
 String scalaVersion = System.getProperty("scalaVersion") != null ? System.getProperty("scalaVersion") : System.getProperty("defaultScalaVersion")
 String sparkVersionsString = System.getProperty("sparkVersions") != null ? System.getProperty("sparkVersions") : System.getProperty("defaultSparkVersions")
 List<String> sparkVersions = sparkVersionsString != null && !sparkVersionsString.isEmpty() ? sparkVersionsString.split(",") : []
@@ -124,11 +129,6 @@ allprojects {
 }
 
 subprojects {
-  if (it.name == 'iceberg-bom') {
-    // the BOM does not build anything, the code below expects "source code"
-    return
-  }
-
   apply plugin: 'java-library'
 
   if (project.name in REVAPI_PROJECTS) {
@@ -1104,40 +1104,3 @@ apply from: 'baseline.gradle'
 apply from: 'deploy.gradle'
 apply from: 'tasks.gradle'
 
-project(':iceberg-bom') {
-  apply plugin: 'java-platform'
-
-  dependencies {
-    constraints {
-      // The Iceberg-Build builds for only one Scala version at a time, so the BOM would also
-      // only contain artifacts for that single Scala version. The following code ensures that
-      // the BOM references the artifacts for all Scala versions.
-      def sparkScalaPattern = ~"(.*)-([0-9][.][0-9]+)_([0-9][.][0-9]+)"
-      def sparkScalaVersions = [
-        "3.4": ["2.12", "2.13"],
-        "3.5": ["2.12", "2.13"],
-      ]
-      rootProject.allprojects.forEach {
-        // Do not include ':iceberg-spark', the bom itself and the root project.
-        if (it.name != 'iceberg-bom' && it != rootProject && it.childProjects.isEmpty()) {
-          if (it.name.startsWith("iceberg-spark-")) {
-            def sparkScalaMatcher = sparkScalaPattern.matcher(it.name)
-            if (!sparkScalaMatcher.find()) {
-              throw new GradleException("Expected a Spark/Scala version combination in Gradle project name ${it.name}")
-            }
-            def prjName = sparkScalaMatcher.group(1)
-            def sparkVer = sparkScalaMatcher.group(2)
-            for (def scalaVer in sparkScalaVersions[sparkVer]) {
-              add("api", "${it.group}:$prjName-${sparkVer}_$scalaVer:${it.version}")
-            }
-          } else {
-            add("api", project(it.path))
-          }
-        }
-      }
-    }
-  }
-
-  // Needed to get the "faked" Scala artifacts into the bom
-  javaPlatform { allowDependencies() }
-}
