@@ -317,6 +317,7 @@ public class TestSparkMetadataColumns extends TestBase {
         sql("SELECT _spec_id, _partition, _renamed_spec_id FROM %s", TABLE_NAME));
   }
 
+  @TestTemplate
   public void testRowLineageColumnsResolvedInV3OrHigher() {
     if (formatVersion >= 3) {
       // Test against an empty table to ensure column resolution in formats supporting row lineage
@@ -336,6 +337,8 @@ public class TestSparkMetadataColumns extends TestBase {
           .hasMessageContaining(
               "A column, variable, or function parameter with name `_last_updated_sequence_number` cannot be resolved");
     }
+  }
+
   private void createAndInitTable() throws IOException {
     Map<String, String> properties = Maps.newHashMap();
     properties.put(FORMAT_VERSION, String.valueOf(formatVersion));
