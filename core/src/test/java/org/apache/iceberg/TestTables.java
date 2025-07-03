@@ -87,8 +87,14 @@ public class TestTables {
       MetricsReporter reporter) {
     TestTableOperations ops = new TestTableOperations(name, temp);
 
+    // create test tables with OSS default values to avoid changing tests
+    ImmutableMap<String, String> properties =
+            ImmutableMap.of(
+                    TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
+                    TableProperties.MANIFEST_MERGE_ENABLED, "true");
+
     return createTable(
-        temp, name, schema, spec, formatVersion, ImmutableMap.of(), sortOrder, reporter, ops);
+        temp, name, schema, spec, formatVersion, properties, sortOrder, reporter, ops);
   }
 
   public static TestTable create(

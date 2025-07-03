@@ -116,7 +116,7 @@ public class TableProperties {
   public static final int MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100;
 
   public static final String MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled";
-  public static final boolean MANIFEST_MERGE_ENABLED_DEFAULT = true;
+  public static final boolean MANIFEST_MERGE_ENABLED_DEFAULT = false;
 
   public static final String DEFAULT_FILE_FORMAT = "write.format.default";
   public static final String DELETE_DEFAULT_FILE_FORMAT = "write.delete.format.default";
@@ -327,7 +327,7 @@ public class TableProperties {
 
   public static final String SNAPSHOT_ID_INHERITANCE_ENABLED =
       "compatibility.snapshot-id-inheritance.enabled";
-  public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = false;
+  public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = true;
 
   public static final String ENGINE_HIVE_ENABLED = "engine.hive.enabled";
   public static final boolean ENGINE_HIVE_ENABLED_DEFAULT = false;

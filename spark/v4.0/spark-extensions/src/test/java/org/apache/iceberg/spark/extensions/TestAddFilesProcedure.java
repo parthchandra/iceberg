@@ -1337,12 +1337,9 @@ public class TestAddFilesProcedure extends ExtensionsTestBase {
       List<Object[]> result, long expectedAddedFilesCount, long expectedChangedPartitionCount) {
     Object[] output = Iterables.getOnlyElement(result);
     assertThat(output[0]).isEqualTo(expectedAddedFilesCount);
-    if (formatVersion == 1) {
-      assertThat(output[1]).isEqualTo(expectedChangedPartitionCount);
-    } else {
-      // the number of changed partitions may not be populated in v2 tables
-      assertThat(output[1]).isIn(expectedChangedPartitionCount, null);
-    }
+    // the number of changed partitions may not be populated
+    // this happens in v2 tables or if the snapshot ID inheritance is enabled (always internally)
+    assertThat(output[1]).isIn(expectedChangedPartitionCount, null);
   }
 
   private void manifestSpecMatchesTableSpec() throws NoSuchTableException, ParseException {
