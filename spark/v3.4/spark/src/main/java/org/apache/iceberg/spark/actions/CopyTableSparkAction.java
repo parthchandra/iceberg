@@ -433,7 +433,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
         .run(snapshot -> rewriteManifestList(snapshot, tableMetadata.formatVersion()));
 
     // rebuild manifest files
-    Set<PathPair> dataFilesToMove = rewriteManifests(tableMetadata);
+    Set<PathPair> dataFilesToMove = rewriteManifests(diffSnapshotIds, tableMetadata);
 
     metadataFileListPath = saveFileList(metadataFilesToMove, METADATA_FILE_LIST_DIR);
     dataFileListPath = saveFileList(dataFilesToMove, DATA_FILE_LIST_DIR);
@@ -655,7 +655,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   /** Rewrite manifest files in a distributed manner and return rewritten data files path pairs. */
-  private Set<PathPair> rewriteManifests(TableMetadata tableMetadata) {
+  private Set<PathPair> rewriteManifests(Set<Long> deltaSnapshotIds, TableMetadata tableMetadata) {
     if (manifestFilesToRewrite.isEmpty()) {
       return Sets.newHashSet();
     }
@@ -667,6 +667,8 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     Broadcast<Table> serializableTable = sparkContext().broadcast(SerializableTable.copyOf(table));
     Broadcast<Map<Integer, PartitionSpec>> specsById =
         sparkContext().broadcast(tableMetadata.specsById());
+    Broadcast<Set<Long>> serializableDeltaSnapshotIds =
+        sparkContext().broadcast(Sets.newHashSet(deltaSnapshotIds));
 
     List<PathPair> dataFiles =
         manifestDS
@@ -674,6 +676,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
             .mapPartitions(
                 toManifests(
                     serializableTable,
+                    serializableDeltaSnapshotIds,
                     stagingDir,
                     tableMetadata.formatVersion(),
                     specsById,
@@ -689,6 +692,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
   private static MapPartitionsFunction<ManifestFile, PathPair> toManifests(
       Broadcast<Table> tableBroadcast,
+      Broadcast<Set<Long>> deltaSnapshotIds,
       String stagingLocation,
       int format,
       Broadcast<Map<Integer, PartitionSpec>> specsById,
@@ -704,6 +708,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                 writeDataManifest(
                     manifestFile,
                     tableBroadcast,
+                    deltaSnapshotIds,
                     stagingLocation,
                     format,
                     specsById,
@@ -733,6 +738,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private static List<PathPair> writeDataManifest(
       ManifestFile manifestFile,
       Broadcast<Table> tableBroadcast,
+      Broadcast<Set<Long>> snapshotIds,
       String stagingLocation,
       int format,
       Broadcast<Map<Integer, PartitionSpec>> specsByIdBroadcast,
@@ -744,13 +750,16 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     OutputFile outputFile = io.newOutputFile(stagingPath);
     Map<Integer, PartitionSpec> specsById = specsByIdBroadcast.getValue();
     PartitionSpec spec = specsById.get(manifestFile.partitionSpecId());
+    Set<Long> deltaSnapshotIds = snapshotIds.value();
 
     try (ManifestWriter<DataFile> writer =
             ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
         ManifestReader<DataFile> reader =
             ManifestFiles.read(manifestFile, io, specsById).select(Arrays.asList("*"))) {
       return StreamSupport.stream(reader.entries().spliterator(), false)
-          .map(entry -> newDataFile(entry, spec, sourcePrefix, targetPrefix, writer))
+          .map(
+              entry ->
+                  newDataFile(entry, deltaSnapshotIds, spec, sourcePrefix, targetPrefix, writer))
           .filter(PathPair::valid)
           .collect(Collectors.toList());
     }
@@ -758,6 +767,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
   private static PathPair newDataFile(
       ManifestEntry<DataFile> entry,
+      Set<Long> snapshotIds,
       PartitionSpec spec,
       String sourcePrefix,
       String targetPrefix,
@@ -770,8 +780,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(targetDataFilePath).build();
     }
     appendEntryWithFile(entry, writer, dataFile);
-    // Keep non-live entry but exclude deleted data files as part of copyPlan
-    if (entry.isLive()) {
+    // keep the following entries in metadata but exclude them from copyPlan
+    // 1) deleted data files
+    // 2) entries not changed by snapshotIds
+    if (entry.isLive() && snapshotIds.contains(entry.snapshotId())) {
       return new PathPair(sourceDataFilePath, dataFile.path().toString());
     } else {
       return new PathPair();
