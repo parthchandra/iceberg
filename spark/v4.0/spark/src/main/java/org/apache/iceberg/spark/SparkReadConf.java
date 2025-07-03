@@ -25,7 +25,6 @@ import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.exceptions.ValidationException;
-import org.apache.iceberg.hadoop.Util;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.SparkConf;
 import org.apache.spark.sql.SparkSession;
@@ -76,12 +75,11 @@ public class SparkReadConf {
   }
 
   public boolean localityEnabled() {
-    boolean defaultValue = Util.mayHaveBlockLocations(table.io(), table.location());
     return confParser
         .booleanConf()
         .option(SparkReadOptions.LOCALITY)
         .sessionConf(SparkSQLProperties.LOCALITY)
-        .defaultValue(defaultValue)
+        .defaultValue(false)
         .parse();
   }
 
