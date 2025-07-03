@@ -220,7 +220,7 @@ public class HiveTableTest extends HiveTableBaseTest {
 
     List<ManifestFile> manifests = table.currentSnapshot().allManifests(table.io());
 
-    assertThat(catalog.dropTable(TABLE_IDENTIFIER))
+    assertThat(catalog.dropTable(TABLE_IDENTIFIER, true))
         .as("Drop (table and data) should return true and drop the table")
         .isTrue();
     assertThat(catalog.tableExists(TABLE_IDENTIFIER)).as("Table should not exist").isFalse();

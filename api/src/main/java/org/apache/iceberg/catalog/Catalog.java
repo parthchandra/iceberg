@@ -292,7 +292,7 @@ public interface Catalog {
    * @return true if the table was dropped, false if the table did not exist
    */
   default boolean dropTable(TableIdentifier identifier) {
-    return dropTable(identifier, true /* drop data and metadata files */);
+    return dropTable(identifier, false /* drop data and metadata files */);
   }
 
   /**
