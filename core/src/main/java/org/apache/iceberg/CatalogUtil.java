@@ -240,7 +240,11 @@ public class CatalogUtil {
     Preconditions.checkNotNull(impl, "Cannot initialize custom Catalog, impl class name is null");
     DynConstructors.Ctor<Catalog> ctor;
     try {
-      ctor = DynConstructors.builder(Catalog.class).impl(impl).buildChecked();
+      ctor =
+          DynConstructors.builder(Catalog.class)
+              .loader(CatalogUtil.class.getClassLoader())
+              .impl(impl)
+              .buildChecked();
     } catch (NoSuchMethodException e) {
       throw new IllegalArgumentException(
           String.format("Cannot initialize Catalog implementation %s: %s", impl, e.getMessage()),
