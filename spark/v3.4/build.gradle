@@ -199,13 +199,6 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     }
   }
 
-  // Include these "shadow" dependencies so that shadowJar will list them as
-  // a dependencies (even though they have been excluded from the uber jar)
-  dependencies {
-    shadow libs.parquet.column
-    shadow libs.parquet.hadoop
-  }
-
   configurations {
     implementation {
       exclude group: 'org.apache.spark'
@@ -275,12 +268,6 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     from(projectDir) {
       include 'LICENSE'
       include 'NOTICE'
-    }
-
-    dependencies {
-      exclude(dependency('org.apache.avro:avro:.*'))
-      exclude(dependency('org.apache.parquet:.*'))
-      exclude(dependency('org.apache.yetus:audience-annotations:.*'))
     }
 
     // Relocate dependencies to avoid conflicts
