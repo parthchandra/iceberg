@@ -148,7 +148,8 @@ public class TestSparkCompressionUtil {
   @Test
   public void testSparkDefaults() {
     assertThat(package$.MODULE$.SHUFFLE_COMPRESS().defaultValueString()).isEqualTo("true");
-    assertThat(package$.MODULE$.IO_COMPRESSION_CODEC().defaultValueString()).isEqualTo("lz4");
+    // Default codec in Apple Spark is zstd
+    assertThat(package$.MODULE$.IO_COMPRESSION_CODEC().defaultValueString()).isEqualTo("zstd");
   }
 
   private void configureShuffle(String codec, boolean compress) {
