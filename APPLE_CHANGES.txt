@@ -1,0 +1,40 @@
+This contains the changes after `apache-iceberg-1.9.1`
+
+Base Branch: Upstream release of 1.9.1 release tag https://github.pie.apple.com/IPR/apache-incubator-iceberg/tree/apache-iceberg-1.9.1
+
+# After `1.9.1`
+Spark 4.0: Migrate Iceberg Stored Procedures to Spark built-in implementations (#13106)
+Spark: Port prefix listing option in remove orphan files to Spark 3.4 and Spark 4.0 (#13264)
+Spark: initial support for Spark 4.0
+Spark: Copy back 4.0 as 3.5
+Spark: Move 3.5 as 4.0
+Spark 3.4: Migrate SparkCatalogTestBase related tests to JUnit5 (#13007)
+Spark 3.4: Migrate tests in sql (#12934)
+Spark 3.4: Migrate sql tests to JUnit5 (#12945)
+Spark 3.4: Migrate Partition Transform tests (#12941)
+Data, Spark 3.4, 3.5: Add flag to handle missing files for `importSparkTable` (#12212)
+Spark: Use newArrayListWithExpectedSize in NDVSketchUtil (#12907)
+Spark 3.4: Migrate SparkTestBaseWithCatalog related tests to JUnit5 (#13015)
+Spark 3.4: Migrate source and spark tests to JUnit5 (#12998)
+Spark 3.4: Migrate SparkTestBase related tests to JUnit5 (#13031)
+Core: Support incremental compute for partition stats (#12629)
+Parquet: Fix to ensure that last updated sequence numbers for V2 and earlier tables are null (#13001)
+Spark 3.4: Migrate tests in spark.data including refactoring Spark 3.5 tests (#13038)
+Spark 3.4: Migrate other JUnit 4 dependant tests to JUnit 5 (#13044)
+Spark 3.4: Migrate tests in spark.source including refactoring Spark 3.5 tests (#13040)
+Core: Refactor and use InternalData for partition stats (#12946)
+Spark: Update Spark Parquet vectorized read tests to uses Iceberg Record instead of Avro GenericRecord (#12925)
+Spark 3.5: Update MERGE and UPDATE for row lineage (#12736)
+Spark: Update RewriteDataFilesSparkAction and RewritePositionDeleteFilesSparkAction to use the new APIs (#12692)
+Build: Bump Comet from 0.5.0 to 0.8.1 (#12974)
+
+
+# Internal patches
+Internal: Migrate to Apple Spark (#1603)
+Internal: Don't drop files by default (#1602)
+Internal: Disable locality by default (#1601)
+Internal: Change default table property values (#1600)
+Internal: Fix table location in Iceberg Hive tables (#1599)
+Internal: Rio build with Spark 4.0 (#1598)
+Internal: Change default Spark version to 3.5 for rio builds (#1483)
+Internal: Rio changes for Apple internal release (#1482)
