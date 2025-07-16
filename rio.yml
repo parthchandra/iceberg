@@ -44,6 +44,13 @@ pipelines:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
+  - group: flink-prb
+    branchName: apple-1.9.1.x
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - apple/flink-build.sh
+
   # publish pipelines
   - name: apple-1.9.1.x-scala-2.13-snapshot
     branchName: apple-1.9.1.x
@@ -55,6 +62,7 @@ pipelines:
         - ./gradlew -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal
         - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
         - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+        - apple/flink-publish.sh
     package:
       freeform:
         - publish:
@@ -76,6 +84,7 @@ pipelines:
         - ./gradlew -Priorelease -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal
         - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
         - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+        - apple/flink-release.sh
     package:
       release: true
       freeform:
