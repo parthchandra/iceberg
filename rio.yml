@@ -46,6 +46,8 @@ pipelines:
 
   - group: flink-prb
     branchName: apple-1.9.1.x
+    machine:
+      baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     build:
       template: freestyle:v4:prb
       steps:
