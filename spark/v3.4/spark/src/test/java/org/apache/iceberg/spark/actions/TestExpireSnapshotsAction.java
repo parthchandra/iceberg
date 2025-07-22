@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark.actions;
 
+import static org.apache.iceberg.spark.actions.ExpireSnapshotsSparkAction.LOG_EXPIRE_FILES;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 
 import java.io.File;
@@ -1339,6 +1340,7 @@ public class TestExpireSnapshotsAction extends SparkTestBase {
         .expireSnapshots(table)
         .expireOlderThan(after)
         .deleteWith(deletedFiles::add)
+        .option(LOG_EXPIRE_FILES, "true")
         .execute();
 
     // C, D should be retained (live)
