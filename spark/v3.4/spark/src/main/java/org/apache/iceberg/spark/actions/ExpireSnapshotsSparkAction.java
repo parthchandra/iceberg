@@ -168,18 +168,6 @@ public class ExpireSnapshotsSparkAction extends BaseSparkAction<ExpireSnapshotsS
       Set<Long> deletedSnapshotIds = findExpiredSnapshotIds(originalMetadata, updatedMetadata);
       Dataset<FileInfo> deleteCandidateFileDS = fileDS(originalMetadata, deletedSnapshotIds);
 
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Files identified for deletion by ExpireSnapshotsSparkAction:");
-        expiredFileDS
-            .collectAsList()
-            .forEach(
-                fileInfo ->
-                    LOG.debug(
-                        "File to delete: {}, from snapshot: {}",
-                        fileInfo.location(),
-                        fileInfo.snapshotId()));
-      }
-
       // determine expired files
       this.expiredFileDS = deleteCandidateFileDS.except(validFileDS);
     }
