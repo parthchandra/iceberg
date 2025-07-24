@@ -28,6 +28,17 @@ Spark 3.5: Update MERGE and UPDATE for row lineage (#12736)
 Spark: Update RewriteDataFilesSparkAction and RewritePositionDeleteFilesSparkAction to use the new APIs (#12692)
 Build: Bump Comet from 0.5.0 to 0.8.1 (#12974)
 
+## Flink
+Flink: DynamicSink: Convert existing required fields to optional when missing in the data schema (#13659)
+Flink: Clean up UpdateSchema instantiator method in TestEvolveSchemaVisitor (#13640)
+Flink: Dynamic Sink: Ensure parent for newly added struct is resolved from current schema (#13639)
+Flink: Add support for Flink 2.0
+Core: Keep track of data files to be removed for orphaned DV detection (#13222)
+Backport: Flink Dynamic Iceberg Sink
+Flink: Backport IcerbegSink RANGE distribution to Flink 1.19 (#13228)
+Flink: port range distribution to v2 iceberg sink (#12071)
+Flink: Backport add StreamingStartingStrategy.INCREMENTAL_FROM_LATEST_SNAPSHOT_EXCLUSIVE to Flink 1.19, 1.18, 1.20
+
 
 # Internal patches
 Internal: Change Default Optimize Threshold (#1625)
@@ -39,3 +50,20 @@ Internal: Fix table location in Iceberg Hive tables (#1599)
 Internal: Rio build with Spark 4.0 (#1598)
 Internal: Change default Spark version to 3.5 for rio builds (#1483)
 Internal: Rio changes for Apple internal release (#1482)
+
+## Flink
+Internal: Add Flink build files
+Internal: rdar://148456709 (Fail to refresh IAS token to connect with ARC) (#1545)
+Internal: Migrate to Apple Hive
+Internal: Flink: CommitDecorator
+Internal: [Stream-1184] Add CheckFiles feature to V2 Sink (#1448)
+[INTERNAL] Deprecate FlinkSink in favor of IcebergSink
+Flink: Maintenance - TableManager + ExpireSnapshots (#11144)
+Internal: Flink: FlinkFileIO implementation - fix position calculation after close
+Internal: STREAM-382 - Make FlinkFileIO default for 1.7 and document usage
+Internal: Flink: Flink Maintenance Flows
+Internal: Flink: Adjust internal TableMaintenance to 1.9 core changes
+Internal: Flink: Added flink watermark to snapshot summary for completion signal - implemented by Shiyan
+Internal: Flink: Add configuration to FlinkSink check the files after write (#1137)
+Internal: Flink: FlinkFileIO implementation (#1199)
+Internal: Flink: Add logging for split serialization failure (#1151)
