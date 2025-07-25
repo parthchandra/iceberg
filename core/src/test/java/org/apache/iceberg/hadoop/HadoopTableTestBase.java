@@ -122,9 +122,9 @@ public class HadoopTableTestBase {
 
     // create test tables with OSS default values to avoid changing tests
     ImmutableMap<String, String> properties =
-            ImmutableMap.of(
-                    TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
-                    TableProperties.MANIFEST_MERGE_ENABLED, "true");
+        ImmutableMap.of(
+            TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
+            TableProperties.MANIFEST_MERGE_ENABLED, "true");
     this.table = TABLES.create(SCHEMA, SPEC, properties, tableLocation);
   }
 

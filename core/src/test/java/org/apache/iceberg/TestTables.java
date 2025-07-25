@@ -89,9 +89,9 @@ public class TestTables {
 
     // create test tables with OSS default values to avoid changing tests
     ImmutableMap<String, String> properties =
-            ImmutableMap.of(
-                    TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
-                    TableProperties.MANIFEST_MERGE_ENABLED, "true");
+        ImmutableMap.of(
+            TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
+            TableProperties.MANIFEST_MERGE_ENABLED, "true");
 
     return createTable(
         temp, name, schema, spec, formatVersion, properties, sortOrder, reporter, ops);
