@@ -1219,6 +1219,14 @@ acceptedBreaks:
         \ org.apache.iceberg.catalog.TableIdentifier)"
       justification: "Break is acceptable because class is exposed outside of its\
         \ visibility scope"
+    - code: "java.field.constantValueChanged"
+      old: "field org.apache.iceberg.TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT"
+      new: "field org.apache.iceberg.TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT"
+      justification: "Internal property changes"
+    - code: "java.field.constantValueChanged"
+      old: "field org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT"
+      new: "field org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT"
+      justification: "Internal property changes"
     org.apache.iceberg:iceberg-parquet:
     - code: "java.class.visibilityReduced"
       old: "class org.apache.iceberg.data.parquet.BaseParquetReaders<T extends java.lang.Object>"
