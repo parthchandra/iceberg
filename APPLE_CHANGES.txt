@@ -30,6 +30,7 @@ Build: Bump Comet from 0.5.0 to 0.8.1 (#12974)
 
 
 # Internal patches
+Internal: Change Default Optimize Threshold (#1625)
 Internal: Migrate to Apple Spark (#1603)
 Internal: Don't drop files by default (#1602)
 Internal: Disable locality by default (#1601)
