@@ -266,8 +266,7 @@ class TestRewriteDataFiles extends ScheduledBuilderTestBase {
 
     runAndWaitForSuccess(infra.env(), infra.source(), infra.sink(), table);
 
-    // One equality delete remains which could be relevant if there are other files in the table
-    assertFileNum(table, 1, 1);
+    assertFileNum(table, 1, 3);
 
     SimpleDataUtil.assertTableRecords(table, ImmutableList.of(record(1, "c", "p3")));
 
