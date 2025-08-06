@@ -192,69 +192,6 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
         List<ParquetColumnSpec> specs = Lists.newArrayList();
 
         for (ColumnDescriptor descriptor : columnDescriptors) {
-          //          String[] path = descriptor.getPath();
-          //          PrimitiveType primitiveType = descriptor.getPrimitiveType();
-          //          String physicalType = primitiveType.getPrimitiveTypeName().name();
-          //
-          //          int typeLength =
-          //              primitiveType.getPrimitiveTypeName()
-          //                      == PrimitiveType.PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
-          //                  ? primitiveType.getTypeLength()
-          //                  : 0;
-          //
-          //          boolean isRepeated = primitiveType.getRepetition() ==
-          // Type.Repetition.REPEATED;
-          //
-          //          // ToDo: extract this into a Util method
-          //          String logicalTypeName = null;
-          //          Map<String, String> logicalTypeParams = Maps.newHashMap();
-          //          LogicalTypeAnnotation logicalType = primitiveType.getLogicalTypeAnnotation();
-          //
-          //          if (logicalType != null) {
-          //            logicalTypeName = logicalType.getClass().getSimpleName();
-          //
-          //            // Handle specific logical types
-          //            if (logicalType instanceof
-          // LogicalTypeAnnotation.DecimalLogicalTypeAnnotation) {
-          //              LogicalTypeAnnotation.DecimalLogicalTypeAnnotation decimal =
-          //                  (LogicalTypeAnnotation.DecimalLogicalTypeAnnotation) logicalType;
-          //              logicalTypeParams.put("precision",
-          // String.valueOf(decimal.getPrecision()));
-          //              logicalTypeParams.put("scale", String.valueOf(decimal.getScale()));
-          //            } else if (logicalType
-          //                instanceof LogicalTypeAnnotation.TimestampLogicalTypeAnnotation) {
-          //              LogicalTypeAnnotation.TimestampLogicalTypeAnnotation timestamp =
-          //                  (LogicalTypeAnnotation.TimestampLogicalTypeAnnotation) logicalType;
-          //              logicalTypeParams.put("isAdjustedToUTC",
-          // String.valueOf(timestamp.isAdjustedToUTC()));
-          //              logicalTypeParams.put("unit", timestamp.getUnit().name());
-          //            } else if (logicalType instanceof
-          // LogicalTypeAnnotation.TimeLogicalTypeAnnotation) {
-          //              LogicalTypeAnnotation.TimeLogicalTypeAnnotation time =
-          //                  (LogicalTypeAnnotation.TimeLogicalTypeAnnotation) logicalType;
-          //              logicalTypeParams.put("isAdjustedToUTC",
-          // String.valueOf(time.isAdjustedToUTC()));
-          //              logicalTypeParams.put("unit", time.getUnit().name());
-          //            } else if (logicalType instanceof
-          // LogicalTypeAnnotation.IntLogicalTypeAnnotation) {
-          //              LogicalTypeAnnotation.IntLogicalTypeAnnotation intType =
-          //                  (LogicalTypeAnnotation.IntLogicalTypeAnnotation) logicalType;
-          //              logicalTypeParams.put("isSigned", String.valueOf(intType.isSigned()));
-          //              logicalTypeParams.put("bitWidth", String.valueOf(intType.getBitWidth()));
-          //            }
-          //          }
-          //
-          //          ParquetColumnSpec spec =
-          //              new ParquetColumnSpec(
-          //                  1, // ToDo: pass in the correct id
-          //                  path,
-          //                  physicalType,
-          //                  typeLength,
-          //                  isRepeated,
-          //                  descriptor.getMaxDefinitionLevel(),
-          //                  descriptor.getMaxRepetitionLevel(),
-          //                  logicalTypeName,
-          //                  logicalTypeParams);
           ParquetColumnSpec spec = CometTypeUtils.descriptorToParquetColumnSpec(descriptor);
           specs.add(spec);
         }
