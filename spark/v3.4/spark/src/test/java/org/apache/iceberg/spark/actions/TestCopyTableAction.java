@@ -40,8 +40,12 @@ import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ManifestContent;
+import org.apache.iceberg.ManifestFiles;
+import org.apache.iceberg.ManifestReader;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
@@ -1210,6 +1214,8 @@ public class TestCopyTableAction extends SparkTestBase {
     // two rows
     Assert.assertEquals(2, originalData.size());
 
+    checkRealFileSizes(sourceTable);
+
     // copy table and check the results
     String targetTableLocation = newTableLocation();
     CopyTable.Result result =
@@ -1229,7 +1235,10 @@ public class TestCopyTableAction extends SparkTestBase {
     String versionFile = fileName(currentMetadata(sourceTable).metadataFileLocation());
     String targetTableName = "copiedV2Table";
     TableIdentifier tableIdentifier = TableIdentifier.of("default", targetTableName);
-    catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+    Table tbl =
+        catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+
+    checkRealFileSizes(tbl);
 
     List<Object[]> copiedData =
         rowsToJava(
@@ -1241,6 +1250,41 @@ public class TestCopyTableAction extends SparkTestBase {
                 .collectAsList());
 
     assertEquals("Rows must match", originalData, copiedData);
+  }
+
+  private static void checkRealFileSizes(Table tbl) {
+    Snapshot snapshot = tbl.currentSnapshot();
+    snapshot.allManifests(tbl.io()).stream()
+        .filter(mf -> mf.snapshotId().equals(snapshot.snapshotId()))
+        .forEach(
+            manifestFile -> {
+              File realFile = new File(URI.create(manifestFile.path()));
+              Assert.assertEquals(
+                  "Real size in bytes must equal with declared in manifest " + manifestFile.path(),
+                  manifestFile.length(),
+                  realFile.length());
+
+              try (ManifestReader<?> reader =
+                  ManifestContent.DELETES.equals(manifestFile.content())
+                      ? ManifestFiles.readDeleteManifest(
+                          manifestFile,
+                          tbl.io(),
+                          ((HasTableOperations) tbl).operations().current().specsById())
+                      : ManifestFiles.read(manifestFile, tbl.io())) {
+                reader.forEach(
+                    dataFile -> {
+                      File realDataFileFile = new File(URI.create((String) dataFile.path()));
+
+                      Assert.assertEquals(
+                          "Real size in bytes must equal with declared in dataFile "
+                              + dataFile.path(),
+                          realDataFileFile.length(),
+                          dataFile.fileSizeInBytes());
+                    });
+              } catch (IOException e) {
+                throw new RuntimeException(e);
+              }
+            });
   }
 
   @Test
@@ -1420,6 +1464,8 @@ public class TestCopyTableAction extends SparkTestBase {
     Assert.assertEquals(0, currentMetadata(targetTable).previousFiles().size());
     Assert.assertEquals(1, currentMetadata(targetTable).snapshots().size());
     Assert.assertEquals(snapshotId1, currentMetadata(targetTable).currentSnapshot().snapshotId());
+
+    checkRealFileSizes(targetTable);
 
     // verify data rows
     assertEquals(
