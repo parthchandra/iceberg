@@ -29,10 +29,13 @@ import java.util.UUID;
 import org.apache.iceberg.azure.AzureProperties;
 import org.apache.iceberg.io.IOUtil;
 import org.apache.iceberg.metrics.MetricsContext;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+// TODO: enable once CI supports docker
+@Disabled
 public class ADLSOutputStreamTest extends BaseAzuriteTest {
 
   private final Random random = new Random(1);

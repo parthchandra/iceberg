@@ -48,8 +48,11 @@ import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+// TODO: enable once CI supports docker
+@Disabled
 public class ADLSFileIOTest extends BaseAzuriteTest {
 
   @Test

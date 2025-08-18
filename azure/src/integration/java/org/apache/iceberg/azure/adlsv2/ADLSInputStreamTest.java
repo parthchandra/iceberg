@@ -30,8 +30,11 @@ import org.apache.iceberg.io.IOUtil;
 import org.apache.iceberg.io.RangeReadable;
 import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.metrics.MetricsContext;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+// TODO: enable once CI supports docker
+@Disabled
 public class ADLSInputStreamTest extends BaseAzuriteTest {
 
   private static final String FILE_PATH = "path/to/file";
