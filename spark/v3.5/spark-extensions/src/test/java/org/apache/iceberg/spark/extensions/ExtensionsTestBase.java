@@ -57,6 +57,14 @@ public abstract class ExtensionsTestBase extends CatalogTestBase {
             .config("spark.sql.legacy.respectNullabilityInTextDatasetConversion", "true")
             .config(
                 SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), String.valueOf(RANDOM.nextBoolean()))
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config("spark.comet.exec.shuffle.enabled", "false")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.comet.schemaEvolution.enabled", "true")
             .enableHiveSupport()
             .getOrCreate();
 

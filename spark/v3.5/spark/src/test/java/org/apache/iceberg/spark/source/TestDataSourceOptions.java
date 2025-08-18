@@ -75,7 +75,18 @@ public class TestDataSourceOptions extends TestBaseWithCatalog {
 
   @BeforeAll
   public static void startSpark() {
-    TestDataSourceOptions.spark = SparkSession.builder().master("local[2]").getOrCreate();
+    TestDataSourceOptions.spark =
+        SparkSession.builder()
+            .master("local[2]")
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config("spark.comet.exec.shuffle.enabled", "false")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.comet.schemaEvolution.enabled", "true")
+            .getOrCreate();
   }
 
   @AfterAll
