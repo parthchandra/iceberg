@@ -348,6 +348,97 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testV2TableIncrementalCopyWithDeleteManifests() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.delete.mode", "merge-on-read");
+    String tableName = "v2tblinc";
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 0);
+
+    // Step 1: Create initial data and delete manifests in snapshot 1
+    List<ThreeColumnRecord> records1 =
+        Lists.newArrayList(
+            new ThreeColumnRecord(1, "AAAA", "AAAA"), new ThreeColumnRecord(2, "BBBB", "BBBB"));
+
+    Dataset<Row> df1 = spark.createDataFrame(records1, ThreeColumnRecord.class);
+    df1.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .saveAsTable("hive.default." + tableName);
+    sourceTable.refresh();
+
+    // Create delete manifests - these will be the problematic ones
+    spark.sql("DELETE FROM hive.default." + tableName + " WHERE c1 = 2");
+    sourceTable.refresh();
+    String snapshot1Version = fileName(currentMetadata(sourceTable).metadataFileLocation());
+
+    // Step 2: Perform FULL copy of snapshot 1 (includes delete manifests)
+    CopyTable.Result result1 =
+        actions()
+            .copyTable(sourceTable)
+            .outputTargetFilePath()
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .execute();
+
+    copyTableFiles(result1);
+
+    String targetTableName = "copiedV2TableIncFail";
+    TableIdentifier tableIdentifier = TableIdentifier.of("default", targetTableName);
+    Table targetTable =
+        catalog.registerTable(
+            tableIdentifier, targetTableLocation + "/metadata/" + snapshot1Version);
+
+    // Step 3: Add NEW data in snapshot 2 (NO deletes, so old delete manifests get carried forward)
+    List<ThreeColumnRecord> records2 =
+        Lists.newArrayList(
+            new ThreeColumnRecord(3, "CCCC", "CCCC"), new ThreeColumnRecord(4, "DDDD", "DDDD"));
+
+    Dataset<Row> df2 = spark.createDataFrame(records2, ThreeColumnRecord.class);
+    df2.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .saveAsTable("hive.default." + tableName);
+    sourceTable.refresh();
+    String snapshot2Version = fileName(currentMetadata(sourceTable).metadataFileLocation());
+
+    // Step 4: INCREMENTAL copy from snapshot 1 to 2
+    // Key: This will create new manifest lists that reference old delete manifests
+    // The old delete manifests get path-rewritten but NOT size-rewritten
+    // because they weren't actually reprocessed (only new data manifests were)
+    CopyTable.Result result2 =
+        actions()
+            .copyTable(sourceTable)
+            .outputTargetFilePath()
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .lastCopiedVersion(snapshot1Version) // Start from snapshot 1
+            .endVersion(snapshot2Version) // Copy up to snapshot 2
+            .execute();
+
+    copyTableFiles(result2);
+
+    // Update target table metadata to final version
+    HiveMetaStoreClient msc = new HiveMetaStoreClient(hiveConf);
+    org.apache.hadoop.hive.metastore.api.Table hmsTable = msc.getTable("default", targetTableName);
+    Map<String, String> params = hmsTable.getParameters();
+    params.put(
+        BaseMetastoreTableOperations.METADATA_LOCATION_PROP,
+        targetTableLocation + "/metadata/" + snapshot2Version);
+    hmsTable.setParameters(params);
+    msc.alter_table("default", targetTableName, hmsTable);
+    targetTable.refresh();
+
+    // Step 5: Manifest sizes should be equal
+    // Old delete manifests from snapshot 1 are referenced in snapshot 2's manifest list
+    checkRealFileSizes(targetTable);
+  }
+
+  @Test
   public void testFullTableCopy() throws Exception {
     CopyTable.Result result =
         actions()
@@ -1531,6 +1622,8 @@ public class TestCopyTableAction extends SparkTestBase {
     hmsTable.setParameters(params);
     msc.alter_table(backupNs, tableIdentifier.name(), hmsTable);
     targetTable.refresh();
+
+    checkRealFileSizes(targetTable);
 
     Assert.assertEquals(1, currentMetadata(targetTable).previousFiles().size());
     Assert.assertEquals(2, currentMetadata(targetTable).snapshots().size());

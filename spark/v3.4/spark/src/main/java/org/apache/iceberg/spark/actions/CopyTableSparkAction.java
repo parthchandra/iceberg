@@ -610,14 +610,14 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       Snapshot snapshot, int formatVersion, Map<String, Long> rewrittenManifestSizesMap) {
     String path = snapshot.manifestListLocation();
     String stagingPath = stagingPath(path, stagingDir);
-    OutputFile outputFile = table.io().newOutputFile(stagingPath);
-    try (FileAppender<ManifestFile> writer =
-        ManifestLists.write(
-            formatVersion,
-            outputFile,
-            snapshot.snapshotId(),
-            snapshot.parentId(),
-            snapshot.sequenceNumber())) {
+    try (FileIO fileIO = table.io();
+        FileAppender<ManifestFile> writer =
+            ManifestLists.write(
+                formatVersion,
+                fileIO.newOutputFile(stagingPath),
+                snapshot.snapshotId(),
+                snapshot.parentId(),
+                snapshot.sequenceNumber())) {
 
       for (ManifestFile file : manifestFilesInAllSnapshots.get(snapshot.snapshotId())) {
         ManifestFile newFile = file.copy();
@@ -631,6 +631,13 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
           if (rewrittenManifestSizesMap.containsKey(manifestFileName)) {
             ((StructLike) newFile).set(1, rewrittenManifestSizesMap.get(manifestFileName));
+          } else {
+            // This manifest was NOT rewritten but path changed - calculate new size
+            InputFile inputFile = fileIO.newInputFile(newFile.path());
+            if (inputFile.exists()) {
+              long actualSize = inputFile.getLength();
+              ((StructLike) newFile).set(1, actualSize);
+            }
           }
         }
         writer.add(newFile);
@@ -727,7 +734,20 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
         dataFiles.stream()
             .collect(
                 Collectors.toMap(
-                    PathPairWithManifestSize::getFileName, PathPairWithManifestSize::getFileSize));
+                    PathPairWithManifestSize::getFileName,
+                    PathPairWithManifestSize::getFileSize,
+                    (existing, replacement) -> {
+                      // During incremental copy, same manifest can appear multiple times
+                      // Verify sizes are consistent and use the existing value
+                      if (!existing.equals(replacement)) {
+                        LOG.warn(
+                            "Manifest file {} has inconsistent sizes: {} vs {}",
+                            "unknown",
+                            existing,
+                            replacement);
+                      }
+                      return existing;
+                    }));
 
     LOG.info("Prepared rewrittenManifestSizesMap: {}", rewrittenManifestSizesMap);
 
