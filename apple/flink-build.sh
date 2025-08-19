@@ -12,6 +12,6 @@ BUILD_ARGS+=" -Dorg.gradle.jvmargs=-Xmx4G"
 #   for i in `grep iceberg /tmp/dep|cut -d ':' -f 2|sort|uniq|grep -v '\*'|grep -v project`;do echo -n ":${i}:build ";done
 ./gradlew ${GRADLE_ARGS} :iceberg-aliyun:build :iceberg-api:build :iceberg-aws:build :iceberg-azure:build :iceberg-bundled-guava:build :iceberg-common:build :iceberg-core:build :iceberg-data:build :iceberg-flink:build :iceberg-gcp:build :iceberg-hive-metastore:build :iceberg-nessie:build :iceberg-orc:build :iceberg-parquet:build
 # The build and test of the flink jars
-./gradlew ${GRADLE_ARGS} :iceberg-flink:iceberg-flink-2.0:build :iceberg-flink:iceberg-flink-1.20:build :iceberg-flink:iceberg-flink-1.19:build :iceberg-flink:iceberg-flink-1.18:build ${BUILD_ARGS}
+./gradlew ${GRADLE_ARGS} :iceberg-flink:iceberg-flink-2.1:build :iceberg-flink:iceberg-flink-1.20:build :iceberg-flink:iceberg-flink-1.19:build :iceberg-flink:iceberg-flink-1.18:build ${BUILD_ARGS}
 # The build and test of the runtime jars
-./gradlew ${GRADLE_ARGS} :iceberg-flink:iceberg-flink-runtime-2.0:build :iceberg-flink:iceberg-flink-runtime-1.20:build :iceberg-flink:iceberg-flink-runtime-1.19:build :iceberg-flink:iceberg-flink-runtime-1.18:build ${BUILD_ARGS}
+./gradlew ${GRADLE_ARGS} :iceberg-flink:iceberg-flink-runtime-2.1:build :iceberg-flink:iceberg-flink-runtime-1.20:build :iceberg-flink:iceberg-flink-runtime-1.19:build :iceberg-flink:iceberg-flink-runtime-1.18:build ${BUILD_ARGS}
