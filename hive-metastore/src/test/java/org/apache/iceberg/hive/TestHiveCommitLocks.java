@@ -76,6 +76,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.AdditionalAnswers;
@@ -208,6 +209,7 @@ public class TestHiveCommitLocks {
   }
 
   @Test
+  @Disabled("Apple Hive does not support this.")
   public void testMultipleAlterTableForNoLock() throws Exception {
     Table table = catalog.loadTable(TABLE_IDENTIFIER);
     table.updateProperties().set(TableProperties.HIVE_LOCK_ENABLED, "false").commit();
