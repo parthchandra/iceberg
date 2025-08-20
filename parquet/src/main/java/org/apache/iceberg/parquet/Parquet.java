@@ -30,6 +30,7 @@ import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENA
 import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_FPP_PREFIX;
 import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES;
 import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT;
+import static org.apache.iceberg.TableProperties.PARQUET_COLUMN_STATS_ENABLED_PREFIX;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION_DEFAULT;
 import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION_LEVEL;
@@ -55,6 +56,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -118,6 +120,7 @@ import org.apache.parquet.hadoop.api.ReadSupport;
 import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -309,6 +312,49 @@ public class Parquet {
           .build();
     }
 
+    private <T> void setBloomFilterConfig(
+        Context context,
+        Map<String, String> colNameToParquetPathMap,
+        BiConsumer<String, Boolean> withBloomFilterEnabled,
+        BiConsumer<String, Double> withBloomFilterFPP) {
+
+      context
+          .columnBloomFilterEnabled()
+          .forEach(
+              (colPath, isEnabled) -> {
+                String parquetColumnPath = colNameToParquetPathMap.get(colPath);
+                if (parquetColumnPath == null) {
+                  LOG.warn("Skipping bloom filter config for missing field: {}", colPath);
+                  return;
+                }
+
+                withBloomFilterEnabled.accept(parquetColumnPath, Boolean.valueOf(isEnabled));
+                String fpp = context.columnBloomFilterFpp().get(colPath);
+                if (fpp != null) {
+                  withBloomFilterFPP.accept(parquetColumnPath, Double.parseDouble(fpp));
+                }
+              });
+    }
+
+    private <T> void setColumnStatsConfig(
+        Context context,
+        Map<String, String> colNameToParquetPathMap,
+        BiConsumer<String, Boolean> withColumnStatsEnabled) {
+
+      context
+          .columnStatsEnabled()
+          .forEach(
+              (colPath, isEnabled) -> {
+                String parquetColumnPath = colNameToParquetPathMap.get(colPath);
+                if (parquetColumnPath == null) {
+                  LOG.warn("Skipping column stats config for missing field: {}", colPath);
+                  return;
+                }
+
+                withColumnStatsEnabled.accept(parquetColumnPath, Boolean.valueOf(isEnabled));
+              });
+    }
+
     public <D> FileAppender<D> build() throws IOException {
       Preconditions.checkNotNull(schema, "Schema is required");
       Preconditions.checkNotNull(name, "Table name is required and cannot be null");
@@ -328,8 +374,6 @@ public class Parquet {
       int rowGroupCheckMinRecordCount = context.rowGroupCheckMinRecordCount();
       int rowGroupCheckMaxRecordCount = context.rowGroupCheckMaxRecordCount();
       int bloomFilterMaxBytes = context.bloomFilterMaxBytes();
-      Map<String, String> columnBloomFilterFpp = context.columnBloomFilterFpp();
-      Map<String, String> columnBloomFilterEnabled = context.columnBloomFilterEnabled();
       boolean dictionaryEnabled = context.dictionaryEnabled();
 
       if (compressionLevel != null) {
@@ -353,6 +397,18 @@ public class Parquet {
       set("parquet.avro.write-old-list-structure", "false");
       MessageType type = ParquetSchemaUtil.convert(schema, name);
 
+      Map<String, String> colNameToParquetPathMap =
+          type.getColumns().stream()
+              .filter(
+                  col -> {
+                    Type.ID id = col.getPrimitiveType().getId();
+                    return (id != null) && (schema.findColumnName(id.intValue()) != null);
+                  })
+              .collect(
+                  Collectors.toMap(
+                      col -> schema.findColumnName(col.getPrimitiveType().getId().intValue()),
+                      col -> String.join(".", col.getPath())));
+
       if (createWriterFunc != null) {
         Preconditions.checkArgument(
             writeSupport == null, "Cannot write with both write support and Parquet value writer");
@@ -372,17 +428,13 @@ public class Parquet {
                 .withMaxRowCountForPageSizeCheck(rowGroupCheckMaxRecordCount)
                 .withMaxBloomFilterBytes(bloomFilterMaxBytes);
 
-        for (Map.Entry<String, String> entry : columnBloomFilterEnabled.entrySet()) {
-          String colPath = entry.getKey();
-          String bloomEnabled = entry.getValue();
-          propsBuilder.withBloomFilterEnabled(colPath, Boolean.valueOf(bloomEnabled));
-        }
+        setBloomFilterConfig(
+            context,
+            colNameToParquetPathMap,
+            propsBuilder::withBloomFilterEnabled,
+            propsBuilder::withBloomFilterFPP);
 
-        for (Map.Entry<String, String> entry : columnBloomFilterFpp.entrySet()) {
-          String colPath = entry.getKey();
-          String fpp = entry.getValue();
-          propsBuilder.withBloomFilterFPP(colPath, Double.parseDouble(fpp));
-        }
+        setColumnStatsConfig(context, colNameToParquetPathMap, propsBuilder::withStatisticsEnabled);
 
         ParquetProperties parquetProperties = propsBuilder.build();
 
@@ -415,17 +467,14 @@ public class Parquet {
                 .withDictionaryPageSize(dictionaryPageSize)
                 .withEncryption(fileEncryptionProperties);
 
-        for (Map.Entry<String, String> entry : columnBloomFilterEnabled.entrySet()) {
-          String colPath = entry.getKey();
-          String bloomEnabled = entry.getValue();
-          parquetWriteBuilder.withBloomFilterEnabled(colPath, Boolean.valueOf(bloomEnabled));
-        }
+        setBloomFilterConfig(
+            context,
+            colNameToParquetPathMap,
+            parquetWriteBuilder::withBloomFilterEnabled,
+            parquetWriteBuilder::withBloomFilterFPP);
 
-        for (Map.Entry<String, String> entry : columnBloomFilterFpp.entrySet()) {
-          String colPath = entry.getKey();
-          String fpp = entry.getValue();
-          parquetWriteBuilder.withBloomFilterFPP(colPath, Double.parseDouble(fpp));
-        }
+        setColumnStatsConfig(
+            context, colNameToParquetPathMap, parquetWriteBuilder::withStatisticsEnabled);
 
         return new ParquetWriteAdapter<>(parquetWriteBuilder.build(), metricsConfig);
       }
@@ -443,6 +492,7 @@ public class Parquet {
       private final int bloomFilterMaxBytes;
       private final Map<String, String> columnBloomFilterFpp;
       private final Map<String, String> columnBloomFilterEnabled;
+      private final Map<String, String> columnStatsEnabled;
       private final boolean dictionaryEnabled;
 
       private Context(
@@ -457,6 +507,7 @@ public class Parquet {
           int bloomFilterMaxBytes,
           Map<String, String> columnBloomFilterFpp,
           Map<String, String> columnBloomFilterEnabled,
+          Map<String, String> columnStatsEnabled,
           boolean dictionaryEnabled) {
         this.rowGroupSize = rowGroupSize;
         this.pageSize = pageSize;
@@ -469,6 +520,7 @@ public class Parquet {
         this.bloomFilterMaxBytes = bloomFilterMaxBytes;
         this.columnBloomFilterFpp = columnBloomFilterFpp;
         this.columnBloomFilterEnabled = columnBloomFilterEnabled;
+        this.columnStatsEnabled = columnStatsEnabled;
         this.dictionaryEnabled = dictionaryEnabled;
       }
 
@@ -530,6 +582,9 @@ public class Parquet {
         Map<String, String> columnBloomFilterEnabled =
             PropertyUtil.propertiesWithPrefix(config, PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX);
 
+        Map<String, String> columnStatsEnabled =
+            PropertyUtil.propertiesWithPrefix(config, PARQUET_COLUMN_STATS_ENABLED_PREFIX);
+
         boolean dictionaryEnabled =
             PropertyUtil.propertyAsBoolean(config, ParquetOutputFormat.ENABLE_DICTIONARY, true);
 
@@ -545,6 +600,7 @@ public class Parquet {
             bloomFilterMaxBytes,
             columnBloomFilterFpp,
             columnBloomFilterEnabled,
+            columnStatsEnabled,
             dictionaryEnabled);
       }
 
@@ -613,6 +669,7 @@ public class Parquet {
             PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT,
             ImmutableMap.of(),
             ImmutableMap.of(),
+            ImmutableMap.of(),
             dictionaryEnabled);
       }
 
@@ -666,6 +723,10 @@ public class Parquet {
 
       Map<String, String> columnBloomFilterEnabled() {
         return columnBloomFilterEnabled;
+      }
+
+      Map<String, String> columnStatsEnabled() {
+        return columnStatsEnabled;
       }
 
       boolean dictionaryEnabled() {

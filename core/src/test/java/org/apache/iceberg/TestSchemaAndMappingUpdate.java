@@ -19,6 +19,7 @@
 package org.apache.iceberg;
 
 import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX;
+import static org.apache.iceberg.TableProperties.PARQUET_COLUMN_STATS_ENABLED_PREFIX;
 
 import java.util.Objects;
 import java.util.Set;
@@ -221,6 +222,20 @@ public class TestSchemaAndMappingUpdate extends TableTestBase {
     Assert.assertNull(
         "Parquet bloom config for dropped column name ID should not exists",
         table.properties().get(PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX + "ID"));
+  }
+
+  @Test
+  public void testModificationWithParquetColumnStats() {
+    table.updateProperties().set(PARQUET_COLUMN_STATS_ENABLED_PREFIX + "id", "true").commit();
+
+    table.updateSchema().renameColumn("id", "ID").commit();
+    Assertions.assertThat(table.properties())
+        .containsEntry(PARQUET_COLUMN_STATS_ENABLED_PREFIX + "ID", "true")
+        .doesNotContainKey(PARQUET_COLUMN_STATS_ENABLED_PREFIX + "id");
+
+    table.updateSchema().deleteColumn("ID").commit();
+    Assertions.assertThat(table.properties())
+        .doesNotContainKey(table.properties().get(PARQUET_COLUMN_STATS_ENABLED_PREFIX + "ID"));
   }
 
   @Test
