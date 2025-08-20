@@ -1882,6 +1882,68 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testPuffinStatisticsFileSourcePath() throws IOException {
+    String sourceTableLocation = newTableLocation();
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    String tableName = "v2tblwithstatspathing";
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 1);
+
+    // Compute table statistics to generate a .stats file
+    actions().computeTableStats(sourceTable).execute();
+
+    Assert.assertEquals(
+        "Should include 1 statistics file after compute stats",
+        1,
+        sourceTable.statisticsFiles().size());
+
+    String targetTableLocation = newTableLocation();
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .outputTargetFilePath()
+            .execute();
+
+    checkMetadataFileNum(3, 1, 1, 1, result);
+    checkDataFileNum(1, result);
+
+    // Read the metadata file list to verify statistics file paths
+    List<PathPair> metadataFilesToMove = readPathPairList(result.metadataFileListLocation());
+
+    // Find the statistics file entry in the metadata file list
+    PathPair statsFilePathPair = null;
+    for (PathPair pathPair : metadataFilesToMove) {
+      if (pathPair.getSource().endsWith(".stats")) {
+        statsFilePathPair = pathPair;
+        break;
+      }
+    }
+
+    Assert.assertNotNull("Should find statistics file in metadata file list", statsFilePathPair);
+
+    // Verify the source path points to the actual source location, not staging
+    Assert.assertTrue(
+        "Statistics file source should point to source table metadata directory",
+        statsFilePathPair.getSource().startsWith(sourceTableLocation));
+    Assert.assertTrue(
+        "Statistics file source should be in metadata directory",
+        statsFilePathPair.getSource().contains("/metadata/"));
+    Assert.assertFalse(
+        "Statistics file source should NOT point to staging directory",
+        statsFilePathPair.getSource().contains("copy-table-staging"));
+
+    // Verify the target path is correctly rewritten
+    Assert.assertTrue(
+        "Statistics file target should point to target table metadata directory",
+        statsFilePathPair.getTarget().startsWith(targetTableLocation));
+    Assert.assertTrue(
+        "Statistics file target should be in metadata directory",
+        statsFilePathPair.getTarget().contains("/metadata/"));
+  }
+
+  @Test
   public void testMetadataCompressionWithMetastoreTable() throws Exception {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();

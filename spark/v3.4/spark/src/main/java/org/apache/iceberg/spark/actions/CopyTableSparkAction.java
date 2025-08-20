@@ -602,7 +602,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       Preconditions.checkArgument(
           before.fileSizeInBytes() == after.fileSizeInBytes(),
           "Before and after path rewrite, statistics file size should be same");
-      metadataFilesToMove.add(new PathPair(stagingPath(before.path(), stagingDir), after.path()));
+      metadataFilesToMove.add(new PathPair(before.path(), after.path()));
     }
   }
 
