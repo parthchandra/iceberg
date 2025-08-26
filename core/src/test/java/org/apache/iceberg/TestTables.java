@@ -61,8 +61,13 @@ public class TestTables {
       int formatVersion) {
     TestTableOperations ops = new TestTableOperations(name, temp);
 
-    return createTable(
-        temp, name, schema, spec, formatVersion, ImmutableMap.of(), sortOrder, null, ops);
+    // create test tables with OSS default values to avoid changing tests
+    ImmutableMap<String, String> properties =
+        ImmutableMap.of(
+            TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
+            TableProperties.MANIFEST_MERGE_ENABLED, "true");
+
+    return createTable(temp, name, schema, spec, formatVersion, properties, sortOrder, null, ops);
   }
 
   public static TestTable create(
@@ -73,8 +78,13 @@ public class TestTables {
       SortOrder sortOrder,
       int formatVersion,
       TestTableOperations ops) {
-    return createTable(
-        temp, name, schema, spec, formatVersion, ImmutableMap.of(), sortOrder, null, ops);
+    // create test tables with OSS default values to avoid changing tests
+    ImmutableMap<String, String> properties =
+        ImmutableMap.of(
+            TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false",
+            TableProperties.MANIFEST_MERGE_ENABLED, "true");
+
+    return createTable(temp, name, schema, spec, formatVersion, properties, sortOrder, null, ops);
   }
 
   public static TestTable create(
