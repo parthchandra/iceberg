@@ -116,8 +116,14 @@ public class TestTables {
       Map<String, String> properties) {
     TestTableOperations ops = new TestTableOperations(name, temp);
 
+    // create test tables with OSS default values to avoid changing tests
+    Map<String, String> mergedProperties = Maps.newHashMap();
+    mergedProperties.put(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false");
+    mergedProperties.put(TableProperties.MANIFEST_MERGE_ENABLED, "true");
+    mergedProperties.putAll(properties); // custom properties override defaults
+
     return createTable(
-        temp, name, schema, spec, formatVersion, properties, SortOrder.unsorted(), null, ops);
+        temp, name, schema, spec, formatVersion, mergedProperties, SortOrder.unsorted(), null, ops);
   }
 
   private static TestTable createTable(
