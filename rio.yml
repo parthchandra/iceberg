@@ -24,22 +24,22 @@ jenkins: &jenkins_config
 pipelines:
 
   # prb builds
-  - name: apple-1.9.1.x-scala-2.13-prb
+  - name: apple-1.9.1.x-spark-prb
     branchName: apple-1.9.1.x
     build:
       template: freestyle:v4:prb
       steps:
-        - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-4.0_2.13:build :iceberg-spark:iceberg-spark-extensions-4.0_2.13:build :iceberg-spark:iceberg-spark-runtime-4.0_2.13:build
+        - apple/spark-build.sh
     machine:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
-  - name: apple-1.9.1.x-release-scala-2.13-prb
+  - name: apple-1.9.1.x-release-spark-prb
     branchName: apple-1.9.1.x-release
     build:
       template: freestyle:v4:prb
       steps:
-        - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-4.0_2.13:build :iceberg-spark:iceberg-spark-extensions-4.0_2.13:build :iceberg-spark:iceberg-spark-runtime-4.0_2.13:build
+        - apple/spark-build.sh
     machine:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
@@ -90,11 +90,7 @@ pipelines:
     build:
       template: freestyle:v4:publish
       steps:
-        - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-4.0_2.13:build :iceberg-spark:iceberg-spark-extensions-4.0_2.13:build :iceberg-spark:iceberg-spark-runtime-4.0_2.13:build
-        - home_dir=$(pwd)
-        - ./gradlew -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal
-        - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
-        - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+        - apple/spark-publish.sh
         - apple/flink-publish.sh
     package:
       freeform:
@@ -112,11 +108,7 @@ pipelines:
     build:
       template: freestyle:v4:publish
       steps:
-        - ./gradlew -DscalaVersion=2.13 :iceberg-spark:iceberg-spark-4.0_2.13:build :iceberg-spark:iceberg-spark-extensions-4.0_2.13:build :iceberg-spark:iceberg-spark-runtime-4.0_2.13:build
-        - home_dir=$(pwd)
-        - ./gradlew -Priorelease -DscalaVersion=2.13 -Dmaven.repo.local=${home_dir}/local-repo :iceberg-spark:iceberg-spark-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-extensions-4.0_2.13:publishToMavenLocal :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal
-        - ci stage-lib --many-many-artifacts "./local-repo/**/*.jar"
-        - ci stage-lib --many-many-artifacts "./local-repo/**/*.pom"
+        - apple/spark-release.sh
         - apple/flink-release.sh
     package:
       release: true
