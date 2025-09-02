@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.hive;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,7 @@ import org.apache.iceberg.Transaction;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchIcebergViewException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
@@ -52,6 +54,7 @@ import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.NoSuchViewException;
 import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.hadoop.HadoopFileIO;
+import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
 import org.apache.iceberg.relocated.com.google.common.base.MoreObjects;
@@ -88,7 +91,9 @@ public class HiveCatalog extends BaseMetastoreViewCatalog
   private String name;
   private Configuration conf;
   private FileIO fileIO;
+  private EncryptionManagerFactory encryptionManagerFactory;
   private ClientPool<IMetaStoreClient, TException> clients;
+  private CloseableGroup closeableGroup;
   private boolean listAllTables = false;
   private Map<String, String> catalogProperties;
 
@@ -123,6 +128,12 @@ public class HiveCatalog extends BaseMetastoreViewCatalog
             : CatalogUtil.loadFileIO(fileIOImpl, properties, conf);
 
     this.clients = new CachedClientPool(conf, properties);
+
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(properties);
+
+    this.closeableGroup = new CloseableGroup();
+    closeableGroup.addCloseable(fileIO);
+    closeableGroup.addCloseable(encryptionManagerFactory);
   }
 
   @Override
@@ -686,7 +697,8 @@ public class HiveCatalog extends BaseMetastoreViewCatalog
   public TableOperations newTableOps(TableIdentifier tableIdentifier) {
     String dbName = tableIdentifier.namespace().level(0);
     String tableName = tableIdentifier.name();
-    return new HiveTableOperations(conf, clients, fileIO, name, dbName, tableName);
+    return new HiveTableOperations(
+        conf, clients, fileIO, encryptionManagerFactory, name, dbName, tableName);
   }
 
   @Override
@@ -891,5 +903,11 @@ public class HiveCatalog extends BaseMetastoreViewCatalog
       }
       return super.create();
     }
+  }
+
+  @Override
+  public void close() throws IOException {
+    super.close();
+    closeableGroup.close();
   }
 }

@@ -77,9 +77,11 @@ import org.apache.iceberg.data.parquet.GenericParquetWriter;
 import org.apache.iceberg.deletes.EqualityDeleteWriter;
 import org.apache.iceberg.deletes.PositionDeleteWriter;
 import org.apache.iceberg.encryption.EncryptedOutputFile;
+import org.apache.iceberg.encryption.EncryptionAlgorithm;
 import org.apache.iceberg.encryption.EncryptionKeyMetadata;
-import org.apache.iceberg.encryption.NativeEncryptionInputFile;
 import org.apache.iceberg.encryption.NativeEncryptionOutputFile;
+import org.apache.iceberg.encryption.NativeFileCryptoParameters;
+import org.apache.iceberg.encryption.NativelyEncryptedFile;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.hadoop.HadoopInputFile;
@@ -100,7 +102,6 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.ArrayUtil;
-import org.apache.iceberg.util.ByteBuffers;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.parquet.HadoopReadOptions;
 import org.apache.parquet.ParquetReadOptions;
@@ -111,6 +112,8 @@ import org.apache.parquet.column.ParquetProperties.WriterVersion;
 import org.apache.parquet.conf.PlainParquetConfiguration;
 import org.apache.parquet.crypto.FileDecryptionProperties;
 import org.apache.parquet.crypto.FileEncryptionProperties;
+import org.apache.parquet.crypto.ParquetCipher;
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.ParquetOutputFormat;
@@ -144,14 +147,7 @@ public class Parquet {
   }
 
   public static WriteBuilder write(EncryptedOutputFile file) {
-    if (file instanceof NativeEncryptionOutputFile) {
-      NativeEncryptionOutputFile nativeFile = (NativeEncryptionOutputFile) file;
-      return write(nativeFile.plainOutputFile())
-          .withFileEncryptionKey(nativeFile.keyMetadata().encryptionKey())
-          .withAADPrefix(nativeFile.keyMetadata().aadPrefix());
-    } else {
-      return write(file.encryptingOutputFile());
-    }
+    return write(file.encryptingOutputFile());
   }
 
   public static class WriteBuilder implements InternalData.WriteBuilder {
@@ -168,8 +164,7 @@ public class Parquet {
     private ParquetFileWriter.Mode writeMode = ParquetFileWriter.Mode.CREATE;
     private WriterVersion writerVersion = WriterVersion.PARQUET_1_0;
     private Function<Map<String, String>, Context> createContextFunc = Context::dataContext;
-    private ByteBuffer fileEncryptionKey = null;
-    private ByteBuffer fileAADPrefix = null;
+    private FileEncryptionProperties fileEncryptionProperties = null;
 
     private WriteBuilder(OutputFile file) {
       this.file = file;
@@ -177,6 +172,14 @@ public class Parquet {
         this.conf = new Configuration(((HadoopOutputFile) file).getConf());
       } else {
         this.conf = new Configuration();
+      }
+
+      if (file instanceof NativelyEncryptedFile) {
+        NativeFileCryptoParameters nativeEncryptionParameters =
+            ((NativelyEncryptedFile) file).nativeCryptoParameters();
+        if (null != nativeEncryptionParameters) {
+          fileEncryptionProperties = createEncryptionProperties(nativeEncryptionParameters);
+        }
       }
     }
 
@@ -269,13 +272,11 @@ public class Parquet {
     }
 
     public WriteBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
-      this.fileEncryptionKey = encryptionKey;
-      return this;
+      throw new RuntimeException("This method should not be called in encryption v0");
     }
 
     public WriteBuilder withAADPrefix(ByteBuffer aadPrefix) {
-      this.fileAADPrefix = aadPrefix;
-      return this;
+      throw new RuntimeException("This method should not be called in encryption v0");
     }
 
     @SuppressWarnings("unchecked")
@@ -344,6 +345,42 @@ public class Parquet {
               });
     }
 
+    private FileEncryptionProperties createEncryptionProperties(
+        NativeFileCryptoParameters nativeParameters) {
+      Preconditions.checkArgument(nativeParameters != null, "Null native crypto parameters");
+
+      ParquetCipher parquetEncryptionAlgorithm;
+      if (nativeParameters.encryptionAlgorithm() == null) {
+        parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_V1; // default
+        LOG.info("No encryption algorithm specified. Using Parquet default - AES_GCM_V1");
+      } else {
+        EncryptionAlgorithm icebergEncryptionAlgorithm = nativeParameters.encryptionAlgorithm();
+        switch (icebergEncryptionAlgorithm) {
+          case AES_GCM:
+            parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_V1;
+            break;
+          case AES_GCM_CTR:
+            parquetEncryptionAlgorithm = ParquetCipher.AES_GCM_CTR_V1;
+            break;
+          default:
+            throw new ParquetCryptoRuntimeException(
+                "Can't create parquet encryption properties - "
+                    + "unsupported algorithm: "
+                    + nativeParameters.encryptionAlgorithm());
+        }
+      }
+
+      ByteBuffer footerDataKey = nativeParameters.fileKey();
+      if (null == footerDataKey) {
+        throw new ParquetCryptoRuntimeException(
+            "Can't create parquet encryption properties - " + "missing key for parquet footer");
+      }
+
+      return FileEncryptionProperties.builder(footerDataKey.array())
+          .withAlgorithm(parquetEncryptionAlgorithm)
+          .build();
+    }
+
     @Override
     public <D> FileAppender<D> build() throws IOException {
       Preconditions.checkNotNull(schema, "Schema is required");
@@ -386,20 +423,6 @@ public class Parquet {
 
       set("parquet.avro.write-old-list-structure", "false");
       MessageType type = ParquetSchemaUtil.convert(schema, name, variantShreddingFunc);
-
-      FileEncryptionProperties fileEncryptionProperties = null;
-      if (fileEncryptionKey != null) {
-        byte[] encryptionKeyArray = ByteBuffers.toByteArray(fileEncryptionKey);
-        byte[] aadPrefixArray = ByteBuffers.toByteArray(fileAADPrefix);
-
-        fileEncryptionProperties =
-            FileEncryptionProperties.builder(encryptionKeyArray)
-                .withAADPrefix(aadPrefixArray)
-                .withoutAADPrefixStorage()
-                .build();
-      } else {
-        Preconditions.checkState(fileAADPrefix == null, "AAD prefix set with null encryption key");
-      }
 
       if (createWriterFunc != null) {
         Preconditions.checkArgument(
@@ -1095,14 +1118,7 @@ public class Parquet {
   }
 
   public static ReadBuilder read(InputFile file) {
-    if (file instanceof NativeEncryptionInputFile) {
-      NativeEncryptionInputFile nativeFile = (NativeEncryptionInputFile) file;
-      return new ReadBuilder(nativeFile.encryptedInputFile())
-          .withFileEncryptionKey(nativeFile.keyMetadata().encryptionKey())
-          .withAADPrefix(nativeFile.keyMetadata().aadPrefix());
-    } else {
-      return new ReadBuilder(file);
-    }
+    return new ReadBuilder(file);
   }
 
   public static class ReadBuilder implements InternalData.ReadBuilder {
@@ -1122,11 +1138,18 @@ public class Parquet {
     private boolean reuseContainers = false;
     private int maxRecordsPerBatch = 10000;
     private NameMapping nameMapping = null;
-    private ByteBuffer fileEncryptionKey = null;
-    private ByteBuffer fileAADPrefix = null;
+    private FileDecryptionProperties fileDecryptionProperties = null;
 
     private ReadBuilder(InputFile file) {
       this.file = file;
+
+      if (file instanceof NativelyEncryptedFile) {
+        NativeFileCryptoParameters nativeDecryptionParameters =
+            ((NativelyEncryptedFile) file).nativeCryptoParameters();
+        if (null != nativeDecryptionParameters) {
+          fileDecryptionProperties = createDecryptionProperties(nativeDecryptionParameters);
+        }
+      }
     }
 
     /**
@@ -1253,31 +1276,29 @@ public class Parquet {
     }
 
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
-      this.fileEncryptionKey = encryptionKey;
-      return this;
+      throw new RuntimeException("This method should not be called in encryption v0");
     }
 
     public ReadBuilder withAADPrefix(ByteBuffer aadPrefix) {
-      this.fileAADPrefix = aadPrefix;
-      return this;
+      throw new RuntimeException("This method should not be called in encryption v0");
+    }
+
+    private FileDecryptionProperties createDecryptionProperties(
+        NativeFileCryptoParameters nativeParameters) {
+      Preconditions.checkArgument(nativeParameters != null, "Null native crypto parameters");
+
+      ByteBuffer footerDataKey = nativeParameters.fileKey();
+      if (null == footerDataKey) {
+        throw new ParquetCryptoRuntimeException(
+            "Can't create parquet decryption properties - " + "missing key for parquet footer");
+      }
+
+      return FileDecryptionProperties.builder().withFooterKey(footerDataKey.array()).build();
     }
 
     @Override
     @SuppressWarnings({"unchecked", "checkstyle:CyclomaticComplexity"})
     public <D> CloseableIterable<D> build() {
-      FileDecryptionProperties fileDecryptionProperties = null;
-      if (fileEncryptionKey != null) {
-        byte[] encryptionKeyArray = ByteBuffers.toByteArray(fileEncryptionKey);
-        byte[] aadPrefixArray = ByteBuffers.toByteArray(fileAADPrefix);
-        fileDecryptionProperties =
-            FileDecryptionProperties.builder()
-                .withFooterKey(encryptionKeyArray)
-                .withAADPrefix(aadPrefixArray)
-                .build();
-      } else {
-        Preconditions.checkState(fileAADPrefix == null, "AAD prefix set with null encryption key");
-      }
-
       if (readerFunc != null || readerFuncWithSchema != null || batchedReaderFunc != null) {
         ParquetReadOptions.Builder optionsBuilder;
         if (file instanceof HadoopInputFile) {

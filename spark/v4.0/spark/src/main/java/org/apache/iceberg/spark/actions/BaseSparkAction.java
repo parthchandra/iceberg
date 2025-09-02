@@ -45,6 +45,7 @@ import org.apache.iceberg.ReachableFileUtil;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.io.BulkDeletionFailureException;
@@ -134,13 +135,16 @@ abstract class BaseSparkAction<ThisT> {
     return new JobGroupInfo(groupId + "-" + JOB_COUNTER.incrementAndGet(), desc);
   }
 
-  protected Table newStaticTable(TableMetadata metadata, FileIO io) {
-    StaticTableOperations ops = new StaticTableOperations(metadata, io);
+  protected Table newStaticTable(
+      TableMetadata metadata, FileIO io, EncryptionManagerFactory encryptionManagerFactory) {
+    StaticTableOperations ops = new StaticTableOperations(metadata, io, encryptionManagerFactory);
     return new BaseTable(ops, metadata.metadataFileLocation());
   }
 
-  protected Table newStaticTable(String metadataFileLocation, FileIO io) {
-    StaticTableOperations ops = new StaticTableOperations(metadataFileLocation, io);
+  protected Table newStaticTable(
+      String metadataFileLocation, FileIO io, EncryptionManagerFactory encryptionManagerFactory) {
+    StaticTableOperations ops =
+        new StaticTableOperations(metadataFileLocation, io, encryptionManagerFactory);
     return new BaseTable(ops, metadataFileLocation);
   }
 

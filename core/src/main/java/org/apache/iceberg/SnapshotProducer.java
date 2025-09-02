@@ -48,8 +48,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.apache.iceberg.encryption.EncryptedFiles;
 import org.apache.iceberg.encryption.EncryptedOutputFile;
-import org.apache.iceberg.encryption.EncryptingFileIO;
 import org.apache.iceberg.events.CreateSnapshotEvent;
 import org.apache.iceberg.events.Listeners;
 import org.apache.iceberg.exceptions.CleanableFailure;
@@ -561,8 +561,9 @@ abstract class SnapshotProducer<ThisT> implements SnapshotUpdate<ThisT> {
     String manifestFileLocation =
         ops.metadataFileLocation(
             FileFormat.AVRO.addExtension(commitUUID + "-m" + manifestCount.getAndIncrement()));
-    return EncryptingFileIO.combine(ops.io(), ops.encryption())
-        .newEncryptingOutputFile(manifestFileLocation);
+
+    // Apple ITEv0: don't encrypt manifests
+    return EncryptedFiles.plainAsEncryptedOutput(ops.io().newOutputFile(manifestFileLocation));
   }
 
   protected ManifestWriter<DataFile> newManifestWriter(PartitionSpec spec) {

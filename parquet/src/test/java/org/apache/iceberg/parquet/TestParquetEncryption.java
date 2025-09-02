@@ -30,13 +30,19 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.util.List;
+import java.util.Random;
 import org.apache.avro.generic.GenericData;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.avro.AvroSchemaUtil;
+import org.apache.iceberg.encryption.NativeFileCryptoParameters;
+import org.apache.iceberg.encryption.NativelyEncryptedFile;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.FileAppender;
+import org.apache.iceberg.io.InputFile;
+import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.io.PositionOutputStream;
+import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types.IntegerType;
 import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
@@ -48,10 +54,87 @@ public class TestParquetEncryption {
 
   private static final String COLUMN_NAME = "intCol";
   private static final int RECORD_COUNT = 100;
-  private static final ByteBuffer FILE_DEK = ByteBuffer.allocate(16);
-  private static final ByteBuffer AAD_PREFIX = ByteBuffer.allocate(16);
+  private static final byte[] FILE_DEK = new byte[16];
   private static final Schema SCHEMA = new Schema(optional(1, COLUMN_NAME, IntegerType.get()));
   private static File file;
+
+  private static class EncryptedLocalOutputFile implements OutputFile, NativelyEncryptedFile {
+    private OutputFile localOutputFile;
+    private NativeFileCryptoParameters nativeEncryptionParameters;
+
+    private EncryptedLocalOutputFile(File file) {
+      localOutputFile = localOutput(file);
+    }
+
+    @Override
+    public PositionOutputStream create() {
+      return localOutputFile.create();
+    }
+
+    @Override
+    public PositionOutputStream createOrOverwrite() {
+      return localOutputFile.createOrOverwrite();
+    }
+
+    @Override
+    public String location() {
+      return localOutputFile.location();
+    }
+
+    @Override
+    public InputFile toInputFile() {
+      return localOutputFile.toInputFile();
+    }
+
+    @Override
+    public NativeFileCryptoParameters nativeCryptoParameters() {
+      return nativeEncryptionParameters;
+    }
+
+    @Override
+    public void setNativeCryptoParameters(NativeFileCryptoParameters nativeCryptoParameters) {
+      this.nativeEncryptionParameters = nativeCryptoParameters;
+    }
+  }
+
+  private static class EncryptedLocalInputFile implements InputFile, NativelyEncryptedFile {
+    private InputFile localInputFile;
+    private NativeFileCryptoParameters nativeDecryptionParameters;
+
+    private EncryptedLocalInputFile(File file) {
+      localInputFile = localInput(file);
+    }
+
+    @Override
+    public long getLength() {
+      return localInputFile.getLength();
+    }
+
+    @Override
+    public SeekableInputStream newStream() {
+      return localInputFile.newStream();
+    }
+
+    @Override
+    public String location() {
+      return localInputFile.location();
+    }
+
+    @Override
+    public boolean exists() {
+      return localInputFile.exists();
+    }
+
+    @Override
+    public NativeFileCryptoParameters nativeCryptoParameters() {
+      return nativeDecryptionParameters;
+    }
+
+    @Override
+    public void setNativeCryptoParameters(NativeFileCryptoParameters nativeCryptoParameters) {
+      this.nativeDecryptionParameters = nativeCryptoParameters;
+    }
+  }
 
   @TempDir private Path temp;
 
@@ -65,18 +148,18 @@ public class TestParquetEncryption {
       records.add(record);
     }
 
-    SecureRandom rand = new SecureRandom();
-    rand.nextBytes(FILE_DEK.array());
-    rand.nextBytes(AAD_PREFIX.array());
+    Random rand = new Random();
+    rand.nextBytes(FILE_DEK);
+
+    NativeFileCryptoParameters encryptionParams =
+        NativeFileCryptoParameters.create(ByteBuffer.wrap(FILE_DEK)).build();
 
     file = createTempFile(temp);
 
-    FileAppender<GenericData.Record> writer =
-        Parquet.write(localOutput(file))
-            .schema(SCHEMA)
-            .withFileEncryptionKey(FILE_DEK)
-            .withAADPrefix(AAD_PREFIX)
-            .build();
+    EncryptedLocalOutputFile outputFile = new EncryptedLocalOutputFile(file);
+    outputFile.setNativeCryptoParameters(encryptionParams);
+
+    FileAppender<GenericData.Record> writer = Parquet.write(outputFile).schema(SCHEMA).build();
 
     try (Closeable toClose = writer) {
       writer.addAll(Lists.newArrayList(records.toArray(new GenericData.Record[] {})));
@@ -85,6 +168,8 @@ public class TestParquetEncryption {
 
   @Test
   public void testReadEncryptedFileWithoutKeys() throws IOException {
+    writeEncryptedFile();
+
     assertThatThrownBy(
             () -> Parquet.read(localInput(file)).project(SCHEMA).callInit().build().iterator())
         .as("Decrypted without keys")
@@ -93,32 +178,17 @@ public class TestParquetEncryption {
   }
 
   @Test
-  public void testReadEncryptedFileWithoutAADPrefix() throws IOException {
-    assertThatThrownBy(
-            () ->
-                Parquet.read(localInput(file))
-                    .project(SCHEMA)
-                    .withFileEncryptionKey(FILE_DEK)
-                    .callInit()
-                    .build()
-                    .iterator())
-        .as("Decrypted without AAD prefix")
-        .isInstanceOf(ParquetCryptoRuntimeException.class)
-        .hasMessage(
-            "AAD prefix used for file encryption, "
-                + "but not stored in file and not supplied in decryption properties");
-  }
-
-  @Test
   public void testReadEncryptedFile() throws IOException {
+    writeEncryptedFile();
+
+    NativeFileCryptoParameters encryptionParams =
+        NativeFileCryptoParameters.create(ByteBuffer.wrap(FILE_DEK)).build();
+
+    EncryptedLocalInputFile inputFile = new EncryptedLocalInputFile(file);
+    inputFile.setNativeCryptoParameters(encryptionParams);
+
     try (CloseableIterator readRecords =
-        Parquet.read(localInput(file))
-            .withFileEncryptionKey(FILE_DEK)
-            .withAADPrefix(AAD_PREFIX)
-            .project(SCHEMA)
-            .callInit()
-            .build()
-            .iterator()) {
+        Parquet.read(inputFile).project(SCHEMA).callInit().build().iterator()) {
       for (int i = 1; i <= RECORD_COUNT; i++) {
         GenericData.Record readRecord = (GenericData.Record) readRecords.next();
         assertThat(readRecord.get(COLUMN_NAME)).isEqualTo(i);

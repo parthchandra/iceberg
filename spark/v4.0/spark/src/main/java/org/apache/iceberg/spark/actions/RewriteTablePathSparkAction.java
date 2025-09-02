@@ -265,12 +265,17 @@ public class RewriteTablePathSparkAction extends BaseSparkAction<RewriteTablePat
   private String rebuildMetadata() {
     TableMetadata startMetadata =
         startVersionName != null
-            ? ((HasTableOperations) newStaticTable(startVersionName, table.io()))
+            ? ((HasTableOperations)
+                    newStaticTable(
+                        startVersionName, table.io(), tableMetadata -> table.encryption()))
                 .operations()
                 .current()
             : null;
     TableMetadata endMetadata =
-        ((HasTableOperations) newStaticTable(endVersionName, table.io())).operations().current();
+        ((HasTableOperations)
+                newStaticTable(endVersionName, table.io(), tableMetadata -> table.encryption()))
+            .operations()
+            .current();
 
     Preconditions.checkArgument(
         endMetadata.partitionStatisticsFiles() == null
@@ -442,7 +447,8 @@ public class RewriteTablePathSparkAction extends BaseSparkAction<RewriteTablePat
   private Set<String> manifestsToRewrite(
       Set<Snapshot> deltaSnapshots, TableMetadata startMetadata) {
     try {
-      Table endStaticTable = newStaticTable(endVersionName, table.io());
+      Table endStaticTable =
+          newStaticTable(endVersionName, table.io(), tableMetadata -> table.encryption());
       Dataset<Row> lastVersionFiles = manifestDS(endStaticTable).select("path");
       if (startMetadata == null) {
         return Sets.newHashSet(lastVersionFiles.distinct().as(Encoders.STRING()).collectAsList());
