@@ -94,7 +94,19 @@ public abstract class IcebergSourceBenchmark {
   }
 
   protected void setupSpark(boolean enableDictionaryEncoding) {
-    SparkSession.Builder builder = SparkSession.builder().config("spark.ui.enabled", false);
+    SparkSession.Builder builder =
+        SparkSession.builder()
+            .config("spark.ui.enabled", false)
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config(
+                "spark.shuffle.manager",
+                "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.comet.schemaEvolution.enabled", "true");
     if (!enableDictionaryEncoding) {
       builder
           .config("parquet.dictionary.page.size", "1")

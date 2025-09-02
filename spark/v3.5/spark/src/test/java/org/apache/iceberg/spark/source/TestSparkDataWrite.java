@@ -96,7 +96,20 @@ public class TestSparkDataWrite {
 
   @BeforeAll
   public static void startSpark() {
-    TestSparkDataWrite.spark = SparkSession.builder().master("local[2]").getOrCreate();
+    TestSparkDataWrite.spark =
+        SparkSession.builder()
+            .master("local[2]")
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config(
+                "spark.shuffle.manager",
+                "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.comet.schemaEvolution.enabled", "true")
+            .getOrCreate();
   }
 
   @AfterEach
@@ -140,7 +153,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
     for (ManifestFile manifest :
@@ -210,7 +223,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
   }
@@ -256,7 +269,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
   }
@@ -309,7 +322,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
   }
@@ -352,7 +365,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
   }
@@ -392,7 +405,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
 
@@ -458,7 +471,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
   }
@@ -622,7 +635,7 @@ public class TestSparkDataWrite {
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
 
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSameSizeAs(expected);
     assertThat(actual).as("Result rows should match").isEqualTo(expected);
 
@@ -708,7 +721,7 @@ public class TestSparkDataWrite {
     // Since write and commit succeeded, the rows should be readable
     Dataset<Row> result = spark.read().format("iceberg").load(targetLocation);
     List<SimpleRecord> actual =
-        result.orderBy("id").as(Encoders.bean(SimpleRecord.class)).collectAsList();
+        result.orderBy("id", "data").as(Encoders.bean(SimpleRecord.class)).collectAsList();
     assertThat(actual).as("Number of rows should match").hasSize(records.size() + records2.size());
     assertThat(actual)
         .describedAs("Result rows should match")
