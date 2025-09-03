@@ -109,7 +109,7 @@ pipelines:
       template: freestyle:v4:publish
       steps:
         - apple/spark-release.sh
-        - apple/flink-release.sh
+        - RELEASE=true apple/flink-publish.sh
     package:
       release: true
       freeform:
