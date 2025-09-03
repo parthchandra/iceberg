@@ -254,6 +254,10 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
       exclude group: 'net.snowflake' , module: 'snowflake-jdbc'
     }
 
+    // Add for Aws Apple Connect Internal
+    implementation(project(':iceberg-apple'))
+    // End Internal Add
+
     integrationImplementation "org.scala-lang.modules:scala-collection-compat_${scalaVersion}:${libs.versions.scala.collection.compat.get()}"
     integrationImplementation "org.apache.spark:spark-hive_${scalaVersion}:${libs.versions.spark40.get()}"
     integrationImplementation libs.junit.vintage.engine
