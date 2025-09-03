@@ -40,6 +40,9 @@ subprojects {
   afterEvaluate {
 
     task sourceJar(type: Jar, dependsOn: classes) {
+      if (project.hasProperty('riorelease')) {
+        version = project.version.toString().replace("-SNAPSHOT", "")
+      }
       archiveClassifier.set('sources')
       from sourceSets.main.allSource
       group 'build'
@@ -52,11 +55,17 @@ subprojects {
     }
 
     task testJar(type: Jar) {
+      if (project.hasProperty('riorelease')) {
+        version = project.version.toString().replace("-SNAPSHOT", "")
+      }
       archiveClassifier.set('tests')
       from sourceSets.test.output
     }
 
     task testShadowJar(type: ShadowJar) {
+      if (project.hasProperty('riorelease')) {
+        version = project.version.toString().replace("-SNAPSHOT", "")
+      }
       zip64 = true
       archiveClassifier.set('shadow-tests')
       from sourceSets.main.output, sourceSets.test.output
