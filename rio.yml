@@ -103,13 +103,27 @@ pipelines:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
-  - name: apple-1.9.1.x-scala-2.13-release
+  - group: release
     branchName: apple-1.9.1.x-release
     build:
       template: freestyle:v4:publish
+      buildParameters:
+        - parameter: RELEASE_VERSION
+          description: Release version
+          defaultValue: "1.9.1.0-apple"
       steps:
+        # Update version for release
+        - echo ${RELEASE_VERSION} > version.txt
+        - git commit -am"[apple][release] Set release version to ${RELEASE_VERSION}"
+        - export TAG="release-${RELEASE_VERSION}"
+        # Create release tag
+        - git -d "${TAG}" || true
+        - git tag "${TAG}" -m "${TAG}"
+        # Release
         - apple/spark-release.sh
         - RELEASE=true apple/flink-publish.sh
+        # Push the release tag
+        - SSH_AUTH_SOCK=${SSH_AUTH_SOCK_DEPLOY_KEY} git push origin refs/tags/$TAG
     package:
       release: true
       freeform:
