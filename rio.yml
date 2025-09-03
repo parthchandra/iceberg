@@ -44,14 +44,45 @@ pipelines:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
-  - group: flink-prb
-    branchName: apple-1.9.1.x
+  - group: flink-prb-core
     machine:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     build:
       template: freestyle:v4:prb
       steps:
-        - apple/flink-build.sh
+        - TARGET=core apple/flink-build.sh
+
+  - group: flink-prb-1.18
+    machine:
+      baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - TARGET=flink FLINK_VERSION=1.18 apple/flink-build.sh
+
+  - group: flink-prb-1.19
+    machine:
+      baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - TARGET=flink FLINK_VERSION=1.19 apple/flink-build.sh
+
+  - group: flink-prb-1.20
+    machine:
+      baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - TARGET=flink FLINK_VERSION=1.20 apple/flink-build.sh
+
+  - group: flink-prb-2.1
+    machine:
+      baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - TARGET=flink FLINK_VERSION=2.1 apple/flink-build.sh
 
   # publish pipelines
   - name: apple-1.9.1.x-scala-2.13-snapshot
