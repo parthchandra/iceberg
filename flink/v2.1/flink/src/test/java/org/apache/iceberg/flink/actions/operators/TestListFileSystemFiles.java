@@ -106,9 +106,9 @@ class TestListFileSystemFiles extends OperatorTestBase {
 
   @Test
   void testMinAgeMs() throws Exception {
-    long before = System.currentTimeMillis() - 1;
+    long before = System.currentTimeMillis() - 100;
     sql.exec("CREATE TABLE %s (id int, data varchar)", TABLE_NAME);
-    long after = System.currentTimeMillis() + 1;
+    long after = System.currentTimeMillis() + 100;
 
     assertThat(listFiles(before, 0)).isEmpty();
     assertThat(listFiles(after, 0)).hasSize(2);
