@@ -392,6 +392,16 @@ public class IcebergSortCompactionBenchmark {
                 "spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
             .config("spark.sql.catalog.spark_catalog.type", "hadoop")
             .config("spark.sql.catalog.spark_catalog.warehouse", getCatalogWarehouse())
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config(
+                "spark.shuffle.manager",
+                "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.comet.schemaEvolution.enabled", "true")
             .master("local[*]");
     spark = builder.getOrCreate();
     Configuration sparkHadoopConf = spark.sessionState().newHadoopConf();
