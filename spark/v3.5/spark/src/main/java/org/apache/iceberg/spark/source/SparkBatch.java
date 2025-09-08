@@ -197,7 +197,7 @@ class SparkBatch implements Batch {
     } else if (task.isFileScanTask() && !task.isDataTask()) {
       FileScanTask fileScanTask = task.asFileScanTask();
       // Comet can't handle delete files for now
-      return fileScanTask.file().format() == FileFormat.PARQUET && fileScanTask.deletes().isEmpty();
+      return fileScanTask.file().format() == FileFormat.PARQUET;
 
     } else {
       return false;
