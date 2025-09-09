@@ -180,7 +180,7 @@ public class TestFlinkTableSinkExtended extends SqlBase {
         planner.translate(Collections.singletonList(operation)).get(0);
     assertThat(transformation).as("Should use SinkV2 API").isInstanceOf(SinkTransformation.class);
     SinkTransformation<?, ?> sinkTransformation = (SinkTransformation<?, ?>) transformation;
-    if (useV2Sink != null && useV2Sink) {
+    if (useV2Sink == null || useV2Sink) {
       assertThat(sinkTransformation.getSink())
           .as("Should use SinkV2 API based implementation")
           .isInstanceOf(IcebergSink.class);
@@ -211,7 +211,7 @@ public class TestFlinkTableSinkExtended extends SqlBase {
             TABLE, SOURCE_TABLE);
     ModifyOperation operation = (ModifyOperation) planner.getParser().parse(insertSQL).get(0);
     Transformation<?> sink = planner.translate(Collections.singletonList(operation)).get(0);
-    if (useV2Sink != null && useV2Sink) {
+    if (useV2Sink == null || useV2Sink) {
       assertThat(sink.getParallelism()).as("Should have the expected 1 parallelism.").isEqualTo(1);
       Transformation<?> writerInput = sink.getInputs().get(0);
       assertThat(writerInput.getParallelism())

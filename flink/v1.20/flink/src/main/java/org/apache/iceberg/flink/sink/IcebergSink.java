@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.api.common.SupportsConcurrentExecutionAttempts;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -128,7 +129,8 @@ public class IcebergSink
         SupportsPreWriteTopology<RowData>,
         SupportsCommitter<IcebergCommittable>,
         SupportsPreCommitTopology<WriteResult, IcebergCommittable>,
-        SupportsPostCommitTopology<IcebergCommittable> {
+        SupportsPostCommitTopology<IcebergCommittable>,
+        SupportsConcurrentExecutionAttempts {
   private static final Logger LOG = LoggerFactory.getLogger(IcebergSink.class);
   private final TableLoader tableLoader;
   private final Map<String, String> snapshotProperties;

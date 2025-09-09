@@ -381,7 +381,6 @@ on a custom chain of `StreamOperator`s  terminated by `DiscardingSink`.
 In the 1.15 version of Flink [SinkV2 interface](https://cwiki.apache.org/confluence/display/FLINK/FLIP-191%3A+Extend+unified+Sink+interface+to+support+small+file+compaction)
 was introduced. This interface is used in the new `IcebergSink` implementation which is available in the `iceberg-flink` module.
 The new implementation is a base for further work on features such as [table maintenance](maintenance.md).
-The SinkV2 based implementation is currently an experimental feature so use it with caution.
 
 ## Writing with SQL
 
@@ -389,6 +388,8 @@ To turn on SinkV2 based implementation in SQL, set this configuration option:
 ```sql
 SET table.exec.iceberg.use-v2-sink = true;
 ```
+
+Currently, this property is true by default.
 
 ## Writing with DataStream
 
