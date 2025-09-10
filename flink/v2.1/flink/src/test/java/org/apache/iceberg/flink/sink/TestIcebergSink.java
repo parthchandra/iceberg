@@ -217,7 +217,7 @@ public class TestIcebergSink extends TestFlinkIcebergSinkBase {
 
     List<Row> leftRows = createRows("left-");
     DataStream<Row> leftStream =
-        env.fromCollection(leftRows, ROW_TYPE_INFO)
+        env.addSource(createBoundedSource(leftRows), ROW_TYPE_INFO)
             .name("leftCustomSource")
             .uid("leftCustomSource");
     IcebergSink.forRow(leftStream, SimpleDataUtil.FLINK_SCHEMA)
@@ -230,7 +230,7 @@ public class TestIcebergSink extends TestFlinkIcebergSinkBase {
 
     List<Row> rightRows = createRows("right-");
     DataStream<Row> rightStream =
-        env.fromCollection(rightRows, ROW_TYPE_INFO)
+        env.addSource(createBoundedSource(rightRows), ROW_TYPE_INFO)
             .name("rightCustomSource")
             .uid("rightCustomSource");
     IcebergSink.forRow(rightStream, SimpleDataUtil.FLINK_SCHEMA)
