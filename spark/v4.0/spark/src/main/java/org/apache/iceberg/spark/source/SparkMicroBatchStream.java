@@ -85,6 +85,7 @@ public class SparkMicroBatchStream implements MicroBatchStream, SupportsAdmissio
   private final long fromTimestamp;
   private final int maxFilesPerMicroBatch;
   private final int maxRecordsPerMicroBatch;
+  private final boolean cacheDeleteFilesOnExecutors;
 
   SparkMicroBatchStream(
       JavaSparkContext sparkContext,
@@ -104,6 +105,7 @@ public class SparkMicroBatchStream implements MicroBatchStream, SupportsAdmissio
     this.fromTimestamp = readConf.streamFromTimestamp();
     this.maxFilesPerMicroBatch = readConf.maxFilesPerMicroBatch();
     this.maxRecordsPerMicroBatch = readConf.maxRecordsPerMicroBatch();
+    this.cacheDeleteFilesOnExecutors = readConf.cacheDeleteFilesOnExecutors();
 
     InitialOffsetStore initialOffsetStore =
         new InitialOffsetStore(table, checkpointLocation, fromTimestamp);
@@ -165,7 +167,8 @@ public class SparkMicroBatchStream implements MicroBatchStream, SupportsAdmissio
               branch,
               expectedSchema,
               caseSensitive,
-              locations != null ? locations[index] : SparkPlanningUtil.NO_LOCATION_PREFERENCE);
+              locations != null ? locations[index] : SparkPlanningUtil.NO_LOCATION_PREFERENCE,
+              cacheDeleteFilesOnExecutors);
     }
 
     return partitions;
