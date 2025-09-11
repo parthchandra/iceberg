@@ -75,6 +75,12 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
 
   @Override
   public void setRowGroupInfo(
+      PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData, long rowPosition) {
+    setRowGroupInfo(pageStore, metaData);
+  }
+
+  @Override
+  public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData) {
     for (int i = 0; i < readers.length; i++) {
       try {
@@ -154,9 +160,17 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
         Pair<int[], Integer> pair = buildRowIdMapping(vectors);
         if (pair != null) {
           int[] rowIdMapping = pair.first();
+          if (pair.second() != null) {
             numLiveRows = pair.second();
             for (int i = 0; i < vectors.length; i++) {
-            vectors[i] = new ColumnVectorWithFilter(vectors[i], rowIdMapping);
+              if (vectors[i] instanceof CometVector) {
+                vectors[i] =
+                    new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);
+              } else {
+                throw new CometRuntimeException(
+                    "Unsupported column vector type: " + vectors[i].getClass());
+              }
+            }
           }
         }
       }
