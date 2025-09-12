@@ -87,4 +87,8 @@ public class FlinkWriteOptions {
 
   public static final ConfigOption<Boolean> CHECK_FILES =
       ConfigOptions.key("check-files").booleanType().defaultValue(false);
+
+  //  specify the uidSuffix to be used for the underlying IcebergSink
+  public static final ConfigOption<String> UID_SUFFIX =
+      ConfigOptions.key("uid-suffix").stringType().noDefaultValue();
 }

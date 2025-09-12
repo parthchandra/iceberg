@@ -598,6 +598,10 @@ public class IcebergSink
         }
       }
 
+      if (flinkWriteConf.uidSuffix() != null) {
+        uidSuffix = flinkWriteConf.uidSuffix();
+      }
+
       return new IcebergSink(
           tableLoader,
           table,
