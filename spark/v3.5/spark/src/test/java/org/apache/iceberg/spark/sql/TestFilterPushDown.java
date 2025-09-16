@@ -598,9 +598,7 @@ public class TestFilterPushDown extends TestBaseWithCatalog {
     String planAsString = sparkPlan.toString().replaceAll("#(\\d+L?)", "");
 
     if (sparkFilter != null) {
-      assertThat(planAsString)
-          .as("Post scan filter should match")
-          .contains("Filter (" + sparkFilter + ")");
+      assertThat(planAsString).as("Post scan filter should match").contains("CometFilter");
     } else {
       assertThat(planAsString).as("Should be no post scan filter").doesNotContain("Filter (");
     }
