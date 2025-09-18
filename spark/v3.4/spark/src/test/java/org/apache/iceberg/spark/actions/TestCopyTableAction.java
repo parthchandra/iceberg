@@ -40,8 +40,12 @@ import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.HasTableOperations;
+import org.apache.iceberg.ManifestContent;
+import org.apache.iceberg.ManifestFiles;
+import org.apache.iceberg.ManifestReader;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
@@ -341,6 +345,97 @@ public class TestCopyTableAction extends SparkTestBase {
     // no data files need to move
     checkDataFileNum(0, postRewriteResult);
     checkMetadataFileNum(1, 1, addedManifestsCount, result);
+  }
+
+  @Test
+  public void testV2TableIncrementalCopyWithDeleteManifests() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    String targetTableLocation = newTableLocation();
+
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    properties.put("write.delete.mode", "merge-on-read");
+    String tableName = "v2tblinc";
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 0);
+
+    // Step 1: Create initial data and delete manifests in snapshot 1
+    List<ThreeColumnRecord> records1 =
+        Lists.newArrayList(
+            new ThreeColumnRecord(1, "AAAA", "AAAA"), new ThreeColumnRecord(2, "BBBB", "BBBB"));
+
+    Dataset<Row> df1 = spark.createDataFrame(records1, ThreeColumnRecord.class);
+    df1.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .saveAsTable("hive.default." + tableName);
+    sourceTable.refresh();
+
+    // Create delete manifests - these will be the problematic ones
+    spark.sql("DELETE FROM hive.default." + tableName + " WHERE c1 = 2");
+    sourceTable.refresh();
+    String snapshot1Version = fileName(currentMetadata(sourceTable).metadataFileLocation());
+
+    // Step 2: Perform FULL copy of snapshot 1 (includes delete manifests)
+    CopyTable.Result result1 =
+        actions()
+            .copyTable(sourceTable)
+            .outputTargetFilePath()
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .execute();
+
+    copyTableFiles(result1);
+
+    String targetTableName = "copiedV2TableIncFail";
+    TableIdentifier tableIdentifier = TableIdentifier.of("default", targetTableName);
+    Table targetTable =
+        catalog.registerTable(
+            tableIdentifier, targetTableLocation + "/metadata/" + snapshot1Version);
+
+    // Step 3: Add NEW data in snapshot 2 (NO deletes, so old delete manifests get carried forward)
+    List<ThreeColumnRecord> records2 =
+        Lists.newArrayList(
+            new ThreeColumnRecord(3, "CCCC", "CCCC"), new ThreeColumnRecord(4, "DDDD", "DDDD"));
+
+    Dataset<Row> df2 = spark.createDataFrame(records2, ThreeColumnRecord.class);
+    df2.select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .saveAsTable("hive.default." + tableName);
+    sourceTable.refresh();
+    String snapshot2Version = fileName(currentMetadata(sourceTable).metadataFileLocation());
+
+    // Step 4: INCREMENTAL copy from snapshot 1 to 2
+    // Key: This will create new manifest lists that reference old delete manifests
+    // The old delete manifests get path-rewritten but NOT size-rewritten
+    // because they weren't actually reprocessed (only new data manifests were)
+    CopyTable.Result result2 =
+        actions()
+            .copyTable(sourceTable)
+            .outputTargetFilePath()
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .lastCopiedVersion(snapshot1Version) // Start from snapshot 1
+            .endVersion(snapshot2Version) // Copy up to snapshot 2
+            .execute();
+
+    copyTableFiles(result2);
+
+    // Update target table metadata to final version
+    HiveMetaStoreClient msc = new HiveMetaStoreClient(hiveConf);
+    org.apache.hadoop.hive.metastore.api.Table hmsTable = msc.getTable("default", targetTableName);
+    Map<String, String> params = hmsTable.getParameters();
+    params.put(
+        BaseMetastoreTableOperations.METADATA_LOCATION_PROP,
+        targetTableLocation + "/metadata/" + snapshot2Version);
+    hmsTable.setParameters(params);
+    msc.alter_table("default", targetTableName, hmsTable);
+    targetTable.refresh();
+
+    // Step 5: Manifest sizes should be equal
+    // Old delete manifests from snapshot 1 are referenced in snapshot 2's manifest list
+    checkRealFileSizes(targetTable);
   }
 
   @Test
@@ -1210,6 +1305,8 @@ public class TestCopyTableAction extends SparkTestBase {
     // two rows
     Assert.assertEquals(2, originalData.size());
 
+    checkRealFileSizes(sourceTable);
+
     // copy table and check the results
     String targetTableLocation = newTableLocation();
     CopyTable.Result result =
@@ -1229,7 +1326,10 @@ public class TestCopyTableAction extends SparkTestBase {
     String versionFile = fileName(currentMetadata(sourceTable).metadataFileLocation());
     String targetTableName = "copiedV2Table";
     TableIdentifier tableIdentifier = TableIdentifier.of("default", targetTableName);
-    catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+    Table tbl =
+        catalog.registerTable(tableIdentifier, targetTableLocation + "/metadata/" + versionFile);
+
+    checkRealFileSizes(tbl);
 
     List<Object[]> copiedData =
         rowsToJava(
@@ -1241,6 +1341,41 @@ public class TestCopyTableAction extends SparkTestBase {
                 .collectAsList());
 
     assertEquals("Rows must match", originalData, copiedData);
+  }
+
+  private static void checkRealFileSizes(Table tbl) {
+    Snapshot snapshot = tbl.currentSnapshot();
+    snapshot.allManifests(tbl.io()).stream()
+        .filter(mf -> mf.snapshotId().equals(snapshot.snapshotId()))
+        .forEach(
+            manifestFile -> {
+              File realFile = new File(URI.create(manifestFile.path()));
+              Assert.assertEquals(
+                  "Real size in bytes must equal with declared in manifest " + manifestFile.path(),
+                  manifestFile.length(),
+                  realFile.length());
+
+              try (ManifestReader<?> reader =
+                  ManifestContent.DELETES.equals(manifestFile.content())
+                      ? ManifestFiles.readDeleteManifest(
+                          manifestFile,
+                          tbl.io(),
+                          ((HasTableOperations) tbl).operations().current().specsById())
+                      : ManifestFiles.read(manifestFile, tbl.io())) {
+                reader.forEach(
+                    dataFile -> {
+                      File realDataFileFile = new File(URI.create((String) dataFile.path()));
+
+                      Assert.assertEquals(
+                          "Real size in bytes must equal with declared in dataFile "
+                              + dataFile.path(),
+                          realDataFileFile.length(),
+                          dataFile.fileSizeInBytes());
+                    });
+              } catch (IOException e) {
+                throw new RuntimeException(e);
+              }
+            });
   }
 
   @Test
@@ -1421,6 +1556,8 @@ public class TestCopyTableAction extends SparkTestBase {
     Assert.assertEquals(1, currentMetadata(targetTable).snapshots().size());
     Assert.assertEquals(snapshotId1, currentMetadata(targetTable).currentSnapshot().snapshotId());
 
+    checkRealFileSizes(targetTable);
+
     // verify data rows
     assertEquals(
         "Rows should match",
@@ -1485,6 +1622,8 @@ public class TestCopyTableAction extends SparkTestBase {
     hmsTable.setParameters(params);
     msc.alter_table(backupNs, tableIdentifier.name(), hmsTable);
     targetTable.refresh();
+
+    checkRealFileSizes(targetTable);
 
     Assert.assertEquals(1, currentMetadata(targetTable).previousFiles().size());
     Assert.assertEquals(2, currentMetadata(targetTable).snapshots().size());
@@ -1740,6 +1879,68 @@ public class TestCopyTableAction extends SparkTestBase {
 
     checkMetadataFileNum(iterations * 2 + 1, iterations, iterations, iterations, result);
     checkDataFileNum(iterations, result);
+  }
+
+  @Test
+  public void testPuffinStatisticsFileSourcePath() throws IOException {
+    String sourceTableLocation = newTableLocation();
+    Map<String, String> properties = Maps.newHashMap();
+    properties.put("format-version", "2");
+    String tableName = "v2tblwithstatspathing";
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, properties, "default", tableName, 1);
+
+    // Compute table statistics to generate a .stats file
+    actions().computeTableStats(sourceTable).execute();
+
+    Assert.assertEquals(
+        "Should include 1 statistics file after compute stats",
+        1,
+        sourceTable.statisticsFiles().size());
+
+    String targetTableLocation = newTableLocation();
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(sourceTableLocation, targetTableLocation)
+            .outputTargetFilePath()
+            .execute();
+
+    checkMetadataFileNum(3, 1, 1, 1, result);
+    checkDataFileNum(1, result);
+
+    // Read the metadata file list to verify statistics file paths
+    List<PathPair> metadataFilesToMove = readPathPairList(result.metadataFileListLocation());
+
+    // Find the statistics file entry in the metadata file list
+    PathPair statsFilePathPair = null;
+    for (PathPair pathPair : metadataFilesToMove) {
+      if (pathPair.getSource().endsWith(".stats")) {
+        statsFilePathPair = pathPair;
+        break;
+      }
+    }
+
+    Assert.assertNotNull("Should find statistics file in metadata file list", statsFilePathPair);
+
+    // Verify the source path points to the actual source location, not staging
+    Assert.assertTrue(
+        "Statistics file source should point to source table metadata directory",
+        statsFilePathPair.getSource().startsWith(sourceTableLocation));
+    Assert.assertTrue(
+        "Statistics file source should be in metadata directory",
+        statsFilePathPair.getSource().contains("/metadata/"));
+    Assert.assertFalse(
+        "Statistics file source should NOT point to staging directory",
+        statsFilePathPair.getSource().contains("copy-table-staging"));
+
+    // Verify the target path is correctly rewritten
+    Assert.assertTrue(
+        "Statistics file target should point to target table metadata directory",
+        statsFilePathPair.getTarget().startsWith(targetTableLocation));
+    Assert.assertTrue(
+        "Statistics file target should be in metadata directory",
+        statsFilePathPair.getTarget().contains("/metadata/"));
   }
 
   @Test

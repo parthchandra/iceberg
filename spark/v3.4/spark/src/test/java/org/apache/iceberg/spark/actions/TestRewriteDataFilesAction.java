@@ -1656,6 +1656,45 @@ public class TestRewriteDataFilesAction extends SparkTestBase {
                     .equals(table.specs().get(outputSpecId).partitionType()));
   }
 
+  @Test
+  public void testRewriteDataFilesWithSecondaryRewrite() {
+    Table table = createTable();
+
+    // add partition
+    table.updateSpec().addField("c1").commit();
+    table.refresh();
+    int outputSpecId = table.spec().specId();
+
+    // add another partition
+    table.updateSpec().addField("c2").commit();
+    table.refresh();
+
+    // write data
+    writeRecords(4, SCALE);
+    table.refresh();
+
+    long count = currentData().size();
+
+    SortOrder sortOrder = SortOrder.builderFor(table.schema()).asc("c1").asc("c2").build();
+
+    // first rewrite, files have current table spec
+    basicRewrite(table)
+        .option(RewriteDataFiles.OUTPUT_SPEC_ID, String.valueOf(outputSpecId))
+        .option(SizeBasedFileRewriter.REWRITE_ALL, "true")
+        .sort(sortOrder)
+        .execute();
+
+    // second rewrite, files now already have the output spec
+    basicRewrite(table)
+        .option(RewriteDataFiles.OUTPUT_SPEC_ID, String.valueOf(outputSpecId))
+        .option(SizeBasedFileRewriter.REWRITE_ALL, "true")
+        .sort(sortOrder)
+        .execute();
+
+    assertThat(currentData().size()).isEqualTo(count);
+    shouldRewriteDataFilesWithPartitionSpec(table, outputSpecId);
+  }
+
   protected List<DataFile> currentDataFiles(Table table) {
     return Streams.stream(table.newScan().planFiles())
         .map(FileScanTask::file)

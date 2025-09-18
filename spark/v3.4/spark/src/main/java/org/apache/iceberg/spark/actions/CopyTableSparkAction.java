@@ -81,8 +81,10 @@ import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.spark.JobGroupInfo;
+import org.apache.iceberg.util.Pair;
 import org.apache.iceberg.util.Tasks;
 import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.broadcast.Broadcast;
@@ -107,6 +109,8 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private ExecutorService executorService = null;
   private final Set<PathPair> metadataFilesToMove = Collections.synchronizedSet(Sets.newHashSet());
   private final Set<String> manifestFilePaths = Collections.synchronizedSet(Sets.newHashSet());
+  private final Map<Long, List<ManifestFile>> manifestFilesInAllSnapshots =
+      Collections.synchronizedMap(Maps.newHashMap());
   private final Set<ManifestFile> manifestFilesToRewrite =
       Collections.synchronizedSet(Sets.newHashSet());
   private String dataFileListPath = null;
@@ -404,7 +408,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   /**
-   * Here are steps: 1. rebuild version files 2. rebuild manifest list files 3. rebuild manifest
+   * Here are steps: 1. rebuild version files 2. rebuild manifest files 3. rebuild manifest list
    * files 4. get all data files need to move
    */
   private void rebuildMetadata() {
@@ -420,20 +424,43 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     List<String> manifestFilePathToMove = manifestFilesToMove(diffSnapshotIds);
     manifestFilePaths.addAll(manifestFilePathToMove);
 
-    // rebuild manifest-list files
     Set<Snapshot> validSnapshots =
         isCopySnapshotMode()
             ? Sets.newHashSet(tableMetadata.currentSnapshot())
             : Sets.difference(snapshotSet(endVersion), snapshotSet(startVersion));
 
+    // prepare manifest files
     Tasks.foreach(validSnapshots)
         .noRetry()
         .throwFailureWhenFinished()
         .executeWith(executorService)
-        .run(snapshot -> rewriteManifestList(snapshot, tableMetadata.formatVersion()));
+        .run(
+            snapshot -> {
+              List<ManifestFile> manifestFiles = manifestFilesInSnapshot(snapshot);
+              manifestFilesInAllSnapshots.put(snapshot.snapshotId(), manifestFiles);
+              for (ManifestFile manifestFile : manifestFiles) {
+                if (manifestFilePaths.contains(manifestFile.path())) {
+                  manifestFilesToRewrite.add(manifestFile);
+                }
+              }
+            });
 
     // rebuild manifest files
-    Set<PathPair> dataFilesToMove = rewriteManifests(diffSnapshotIds, tableMetadata);
+    Pair<Set<PathPair>, Map<String, Long>> dataFilesToMovePair =
+        rewriteManifests(diffSnapshotIds, tableMetadata);
+
+    Set<PathPair> dataFilesToMove = dataFilesToMovePair.first();
+    Map<String, Long> rewrittenManifestSizesMap = dataFilesToMovePair.second();
+
+    // rebuild manifest-list files
+    Tasks.foreach(validSnapshots)
+        .noRetry()
+        .throwFailureWhenFinished()
+        .executeWith(executorService)
+        .run(
+            snapshot ->
+                rewriteManifestList(
+                    snapshot, tableMetadata.formatVersion(), rewrittenManifestSizesMap));
 
     metadataFileListPath = saveFileList(metadataFilesToMove, METADATA_FILE_LIST_DIR);
     dataFileListPath = saveFileList(dataFilesToMove, DATA_FILE_LIST_DIR);
@@ -575,35 +602,48 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       Preconditions.checkArgument(
           before.fileSizeInBytes() == after.fileSizeInBytes(),
           "Before and after path rewrite, statistics file size should be same");
-      metadataFilesToMove.add(new PathPair(stagingPath(before.path(), stagingDir), after.path()));
+      metadataFilesToMove.add(new PathPair(before.path(), after.path()));
     }
   }
 
-  private void rewriteManifestList(Snapshot snapshot, int formatVersion) {
-    List<ManifestFile> manifestFiles = manifestFilesInSnapshot(snapshot);
+  private void rewriteManifestList(
+      Snapshot snapshot, int formatVersion, Map<String, Long> rewrittenManifestSizesMap) {
     String path = snapshot.manifestListLocation();
     String stagingPath = stagingPath(path, stagingDir);
-    OutputFile outputFile = table.io().newOutputFile(stagingPath);
-    try (FileAppender<ManifestFile> writer =
-        ManifestLists.write(
-            formatVersion,
-            outputFile,
-            snapshot.snapshotId(),
-            snapshot.parentId(),
-            snapshot.sequenceNumber())) {
+    try (FileIO fileIO = table.io();
+        FileAppender<ManifestFile> writer =
+            ManifestLists.write(
+                formatVersion,
+                fileIO.newOutputFile(stagingPath),
+                snapshot.snapshotId(),
+                snapshot.parentId(),
+                snapshot.sequenceNumber())) {
 
-      for (ManifestFile file : manifestFiles) {
+      for (ManifestFile file : manifestFilesInAllSnapshots.get(snapshot.snapshotId())) {
         ManifestFile newFile = file.copy();
         if (newFile.path().startsWith(sourceMetaPrefix)) {
           ((StructLike) newFile)
               .set(
                   0, TableMetadataUtil.newPath(newFile.path(), sourceMetaPrefix, targetMetaPrefix));
+
+          String manifestFilePath = file.path();
+          String manifestFileName = getFileName(manifestFilePath);
+
+          if (rewrittenManifestSizesMap.containsKey(manifestFileName)) {
+            ((StructLike) newFile).set(1, rewrittenManifestSizesMap.get(manifestFileName));
+          } else {
+            // This manifest was NOT rewritten but path changed - calculate new size
+            InputFile inputFile = fileIO.newInputFile(newFile.path());
+            if (inputFile.exists()) {
+              long actualSize = inputFile.getLength();
+              ((StructLike) newFile).set(1, actualSize);
+            }
+          }
         }
         writer.add(newFile);
 
         // need to get the ManifestFile object for manifest file rewriting
         if (manifestFilePaths.contains(file.path())) {
-          manifestFilesToRewrite.add(file);
           metadataFilesToMove.add(
               new PathPair(stagingPath(file.path(), stagingDir), newFile.path()));
         }
@@ -615,6 +655,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to rewrite the manifest list file " + path, e);
     }
+  }
+
+  private static String getFileName(String manifestFilePath) {
+    return manifestFilePath.substring(manifestFilePath.lastIndexOf('/') + 1);
   }
 
   private List<ManifestFile> manifestFilesInSnapshot(Snapshot snapshot) {
@@ -655,9 +699,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   /** Rewrite manifest files in a distributed manner and return rewritten data files path pairs. */
-  private Set<PathPair> rewriteManifests(Set<Long> deltaSnapshotIds, TableMetadata tableMetadata) {
+  private Pair<Set<PathPair>, Map<String, Long>> rewriteManifests(
+      Set<Long> deltaSnapshotIds, TableMetadata tableMetadata) {
     if (manifestFilesToRewrite.isEmpty()) {
-      return Sets.newHashSet();
+      return Pair.of(Sets.newHashSet(), Maps.newHashMap());
     }
 
     Encoder<ManifestFile> manifestFileEncoder = Encoders.javaSerialization(ManifestFile.class);
@@ -670,7 +715,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     Broadcast<Set<Long>> serializableDeltaSnapshotIds =
         sparkContext().broadcast(Sets.newHashSet(deltaSnapshotIds));
 
-    List<PathPair> dataFiles =
+    List<PathPairWithManifestSize> dataFiles =
         manifestDS
             .repartition(manifestFilesToRewrite.size())
             .mapPartitions(
@@ -682,15 +727,36 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                     specsById,
                     sourcePrefix,
                     targetPrefix),
-                Encoders.bean(PathPair.class))
+                Encoders.bean(PathPairWithManifestSize.class))
             .collectAsList();
+
+    final Map<String, Long> rewrittenManifestSizesMap =
+        dataFiles.stream()
+            .collect(
+                Collectors.toMap(
+                    PathPairWithManifestSize::getFileName,
+                    PathPairWithManifestSize::getFileSize,
+                    (existing, replacement) -> {
+                      // During incremental copy, same manifest can appear multiple times
+                      // Verify sizes are consistent and use the existing value
+                      if (!existing.equals(replacement)) {
+                        LOG.warn(
+                            "Manifest file {} has inconsistent sizes: {} vs {}",
+                            "unknown",
+                            existing,
+                            replacement);
+                      }
+                      return existing;
+                    }));
+
+    LOG.info("Prepared rewrittenManifestSizesMap: {}", rewrittenManifestSizesMap);
 
     // duplicates are expected here as the same data file can have different statuses
     // (e.g. added and deleted)
-    return Sets.newHashSet(dataFiles);
+    return Pair.of(Sets.newHashSet(dataFiles), rewrittenManifestSizesMap);
   }
 
-  private static MapPartitionsFunction<ManifestFile, PathPair> toManifests(
+  private static MapPartitionsFunction<ManifestFile, PathPairWithManifestSize> toManifests(
       Broadcast<Table> tableBroadcast,
       Broadcast<Set<Long>> deltaSnapshotIds,
       String stagingLocation,
@@ -699,7 +765,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       String sourcePrefix,
       String targetPrefix) {
     return rows -> {
-      List<PathPair> files = Lists.newArrayList();
+      List<PathPairWithManifestSize> files = Lists.newArrayList();
       while (rows.hasNext()) {
         ManifestFile manifestFile = rows.next();
         switch (manifestFile.content()) {
@@ -735,7 +801,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     };
   }
 
-  private static List<PathPair> writeDataManifest(
+  private static List<PathPairWithManifestSize> writeDataManifest(
       ManifestFile manifestFile,
       Broadcast<Table> tableBroadcast,
       Broadcast<Set<Long>> snapshotIds,
@@ -752,17 +818,40 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     PartitionSpec spec = specsById.get(manifestFile.partitionSpecId());
     Set<Long> deltaSnapshotIds = snapshotIds.value();
 
+    List<PathPair> pathPairList;
+    Pair<String, Long> rewrittenManifestFileSize;
+
     try (ManifestWriter<DataFile> writer =
             ManifestFiles.write(format, spec, outputFile, manifestFile.snapshotId());
         ManifestReader<DataFile> reader =
             ManifestFiles.read(manifestFile, io, specsById).select(Arrays.asList("*"))) {
-      return StreamSupport.stream(reader.entries().spliterator(), false)
-          .map(
-              entry ->
-                  newDataFile(entry, deltaSnapshotIds, spec, sourcePrefix, targetPrefix, writer))
-          .filter(PathPair::valid)
-          .collect(Collectors.toList());
+      pathPairList =
+          StreamSupport.stream(reader.entries().spliterator(), false)
+              .map(
+                  entry ->
+                      newDataFile(
+                          entry, deltaSnapshotIds, spec, sourcePrefix, targetPrefix, writer))
+              .filter(PathPair::valid)
+              .collect(Collectors.toList());
+    } finally {
+      rewrittenManifestFileSize = getRewrittenManifestFileSize(outputFile);
     }
+
+    return pathPairList.stream()
+        .map(
+            pathPair ->
+                new PathPairWithManifestSize(
+                    pathPair,
+                    rewrittenManifestFileSize.first(),
+                    rewrittenManifestFileSize.second()))
+        .collect(Collectors.toList());
+  }
+
+  private static Pair<String, Long> getRewrittenManifestFileSize(OutputFile outputFile) {
+    InputFile inputFile = outputFile.toInputFile();
+    String inputFileLocation = inputFile.location();
+    String manifestFileName = getFileName(inputFileLocation);
+    return Pair.of(manifestFileName, inputFile.getLength());
   }
 
   private static PathPair newDataFile(
@@ -790,7 +879,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     }
   }
 
-  private static List<PathPair> writeDeleteManifest(
+  private static List<PathPairWithManifestSize> writeDeleteManifest(
       ManifestFile manifestFile,
       Broadcast<Table> tableBroadcast,
       String stagingLocation,
@@ -805,24 +894,39 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     Map<Integer, PartitionSpec> specsById = specsByIdBroadcast.getValue();
     PartitionSpec spec = specsById.get(manifestFile.partitionSpecId());
 
+    List<PathPair> pathPairList;
+    Pair<String, Long> rewrittenManifestFileSize;
+
     try (ManifestWriter<DeleteFile> writer =
             ManifestFiles.writeDeleteManifest(format, spec, outputFile, manifestFile.snapshotId());
         ManifestReader<DeleteFile> reader =
             ManifestFiles.readDeleteManifest(manifestFile, io, specsById)
                 .select(Arrays.asList("*"))) {
-      return StreamSupport.stream(reader.entries().spliterator(), false)
-          .map(
-              entry -> {
-                try {
-                  return newDeleteFile(
-                      entry, io, spec, sourcePrefix, targetPrefix, stagingLocation, writer);
-                } catch (IOException e) {
-                  throw new RuntimeException(e);
-                }
-              })
-          .filter(PathPair::valid)
-          .collect(Collectors.toList());
+      pathPairList =
+          StreamSupport.stream(reader.entries().spliterator(), false)
+              .map(
+                  entry -> {
+                    try {
+                      return newDeleteFile(
+                          entry, io, spec, sourcePrefix, targetPrefix, stagingLocation, writer);
+                    } catch (IOException e) {
+                      throw new RuntimeException(e);
+                    }
+                  })
+              .filter(PathPair::valid)
+              .collect(Collectors.toList());
+    } finally {
+      rewrittenManifestFileSize = getRewrittenManifestFileSize(outputFile);
     }
+
+    return pathPairList.stream()
+        .map(
+            pathPair ->
+                new PathPairWithManifestSize(
+                    pathPair,
+                    rewrittenManifestFileSize.first(),
+                    rewrittenManifestFileSize.second()))
+        .collect(Collectors.toList());
   }
 
   private static PathPair newDeleteFile(
@@ -1099,6 +1203,56 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     Preconditions.checkArgument(
         !metadataDir.isEmpty(), "Failed to get the metadata file root directory");
     return metadataDir;
+  }
+
+  public static class PathPairWithManifestSize extends PathPair {
+
+    private String fileName;
+    private Long fileSize;
+
+    public PathPairWithManifestSize() {}
+
+    public PathPairWithManifestSize(PathPair pathPair, String fileName, Long fileSize) {
+      this.fileName = fileName;
+      this.fileSize = fileSize;
+      setSource(pathPair.getSource());
+      setTarget(pathPair.getTarget());
+    }
+
+    public Long getFileSize() {
+      return fileSize;
+    }
+
+    public void setFileSize(Long fileSize) {
+      this.fileSize = fileSize;
+    }
+
+    public String getFileName() {
+      return fileName;
+    }
+
+    public void setFileName(String fileName) {
+      this.fileName = fileName;
+    }
+
+    public boolean equals(Object object) {
+      if (this == object) {
+        return true;
+      }
+      if (object == null || getClass() != object.getClass()) {
+        return false;
+      }
+      PathPairWithManifestSize obj = (PathPairWithManifestSize) object;
+      return Objects.equals(getSource(), obj.getSource())
+          && Objects.equals(getTarget(), obj.getTarget())
+          && Objects.equals(fileName, obj.getFileName())
+          && Objects.equals(fileSize, obj.getFileSize());
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(getSource(), getTarget(), fileName, fileSize);
+    }
   }
 
   public static class PathPair implements Serializable {
