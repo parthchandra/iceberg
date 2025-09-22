@@ -52,6 +52,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
+import org.apache.hadoop.hive.metastore.api.LockComponent;
 import org.apache.hadoop.hive.metastore.api.LockRequest;
 import org.apache.hadoop.hive.metastore.api.LockResponse;
 import org.apache.hadoop.hive.metastore.api.LockState;
@@ -645,5 +646,38 @@ public class TestHiveCommitLocks {
         .isEqualTo(context.get("expected_parameter_key"));
     assertThat(metadataV2.metadataFileLocation())
         .isEqualTo(context.get("expected_parameter_value"));
+  }
+
+  @Test
+  public void testLockIncludeCatalogName() throws Exception {
+    Configuration confWithLock = new Configuration(overriddenHiveConf);
+    confWithLock.setBoolean("iceberg.hive.lock-include-catalog-name", true);
+    confWithLock.set(HiveCatalog.HIVE_CONF_CATALOG, "my_catalog");
+
+    ArgumentCaptor<LockRequest> lockRequestCaptor = ArgumentCaptor.forClass(LockRequest.class);
+    doReturn(acquiredLockResponse).when(spyClient).lock(lockRequestCaptor.capture());
+    doNothing().when(spyClient).heartbeat(eq(0L), eq(dummyLockId));
+
+    HiveTableOperations mySpyOps =
+        spy(
+            new HiveTableOperations(
+                confWithLock,
+                spyCachedClientPool,
+                ops.io(),
+                ops.encryptionManagerFactory(),
+                catalog.name(),
+                TABLE_IDENTIFIER.namespace().level(0),
+                TABLE_IDENTIFIER.name()));
+    mySpyOps.doCommit(metadataV2, metadataV1);
+
+    // Make sure that the lock includes catalog in the name.
+    LockRequest request = lockRequestCaptor.getValue();
+    assertThat(request.getComponentSize()).isEqualTo(1);
+
+    LockComponent component = request.getComponent().get(0);
+    assertThat(component.getDbname()).isEqualTo("my_catalog." + DB_NAME);
+    assertThat(component.getTablename()).isEqualTo(TABLE_NAME);
+
+    verify(spyClient, times(1)).unlock(eq(dummyLockId));
   }
 }
