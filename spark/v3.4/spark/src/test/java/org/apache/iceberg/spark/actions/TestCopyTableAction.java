@@ -49,6 +49,7 @@ import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StaticTableOperations;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.TableMetadataUtil;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.actions.ActionsProvider;
@@ -1266,6 +1267,41 @@ public class TestCopyTableAction extends SparkTestBase {
   }
 
   @Test
+  public void testMultipleLocationPrefixRewrite() throws Exception {
+    String sourceTableLocation = newTableLocation();
+    Table sourceTable =
+        createMetastoreTable(sourceTableLocation, Maps.newHashMap(), "default", "tbl_multi", 1);
+
+    // Insert some data
+    spark.sql("insert into hive.default.tbl_multi values (1, 'AAAAAAAAAA', 'AAAA')");
+    spark.sql("insert into hive.default.tbl_multi values (2, 'BBBBBBBBBB', 'BBBB')");
+    sourceTable.refresh();
+
+    // Define multiple source and target prefixes
+    String s1 = sourceTableLocation + "data/";
+    String t1 = newTableLocation() + "new-data/";
+    String s2 = sourceTableLocation + "metadata/";
+    String t2 = newTableLocation() + "new-metadata/";
+
+    // Test multiple rewriteLocationPrefix calls
+    CopyTable.Result result =
+        actions()
+            .copyTable(sourceTable)
+            .rewriteLocationPrefix(s1, t1)
+            .rewriteLocationPrefix(s2, t2)
+            .execute();
+
+    // Verify the result contains expected file mappings
+    Assertions.assertThat(result).isNotNull();
+    Assertions.assertThat(result.dataFileListLocation()).isNotNull();
+    Assertions.assertThat(result.metadataFileListLocation()).isNotNull();
+
+    // Check that files were processed
+    checkDataFileNum(3, result);
+    checkMetadataFileNum(10, result);
+  }
+
+  @Test
   public void testV2Table() throws Exception {
     String sourceTableLocation = newTableLocation();
     Map<String, String> properties = Maps.newHashMap();
@@ -2076,6 +2112,422 @@ public class TestCopyTableAction extends SparkTestBase {
                         .startsWith(targetTableLocation));
               }
             });
+  }
+
+  @Test
+  public void testMultiplePrefixMappingsLongestMatch() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(
+            new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"),
+            new ThreeColumnRecord(2, "BBBBBBBBBB", "BBBB"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Setup multiple prefix mappings with overlapping prefixes
+    // The longest matching prefix should be used
+    CopyTable action =
+        SparkActions.get()
+            .copyTable(testTable)
+            .stagingLocation(stagingWithScheme())
+            .rewriteLocationPrefix("/path", "/new/path") // shorter prefix
+            .rewriteLocationPrefix("/path/to", "/different/path/to") // longer prefix (should win)
+            .rewriteLocationPrefix(
+                "/path/to/data", "/specific/data") // longest prefix (should win for specific paths)
+            .rewriteMetaLocationPrefix("/meta", "/new/meta")
+            .rewriteMetaLocationPrefix("/meta/data", "/specific/meta"); // longer meta prefix
+
+    CopyTable.Result result = action.execute();
+
+    // Verify that the action completed successfully
+    Assert.assertNotNull("Result should not be null", result);
+    Assert.assertNotNull("Data file list path should not be null", result.dataFileListLocation());
+    Assert.assertNotNull(
+        "Metadata file list path should not be null", result.metadataFileListLocation());
+
+    // Test the lookupPrefixMappings method directly to verify longest match logic
+    Map<String, String> testMappings = Maps.newHashMap();
+    testMappings.put("/path", "/new/path");
+    testMappings.put("/path/to", "/different/path/to");
+    testMappings.put("/path/to/data", "/specific/data");
+
+    // Test that longest prefix wins
+    Map.Entry<String, String> result1 =
+        TableMetadataUtil.lookupPrefixMappings("/path/to/data/file.parquet", testMappings);
+    Assert.assertNotNull("Should find mapping for specific path", result1);
+    Assert.assertEquals("Should use longest matching prefix", "/path/to/data", result1.getKey());
+    Assert.assertEquals(
+        "Should use correct target for longest prefix", "/specific/data", result1.getValue());
+
+    Map.Entry<String, String> result2 =
+        TableMetadataUtil.lookupPrefixMappings("/path/to/other/file.parquet", testMappings);
+    Assert.assertNotNull("Should find mapping for intermediate path", result2);
+    Assert.assertEquals("Should use intermediate matching prefix", "/path/to", result2.getKey());
+    Assert.assertEquals(
+        "Should use correct target for intermediate prefix",
+        "/different/path/to",
+        result2.getValue());
+
+    Map.Entry<String, String> result3 =
+        TableMetadataUtil.lookupPrefixMappings("/path/other/file.parquet", testMappings);
+    Assert.assertNotNull("Should find mapping for general path", result3);
+    Assert.assertEquals("Should use shortest matching prefix", "/path", result3.getKey());
+    Assert.assertEquals(
+        "Should use correct target for shortest prefix", "/new/path", result3.getValue());
+  }
+
+  @Test
+  public void testEdgeCasesNullAndEmptyPrefixes() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Test null prefixes - should throw IllegalArgumentException
+    AssertHelpers.assertThrows(
+        "Should reject null source prefix",
+        IllegalArgumentException.class,
+        "Source prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteLocationPrefix(null, "/target"));
+
+    AssertHelpers.assertThrows(
+        "Should reject null target prefix",
+        IllegalArgumentException.class,
+        "Target prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteLocationPrefix("/source", null));
+
+    AssertHelpers.assertThrows(
+        "Should reject null meta source prefix",
+        IllegalArgumentException.class,
+        "Source meta prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteMetaLocationPrefix(null, "/target"));
+
+    AssertHelpers.assertThrows(
+        "Should reject null meta target prefix",
+        IllegalArgumentException.class,
+        "Target meta prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteMetaLocationPrefix("/source", null));
+
+    // Test empty prefixes - should throw IllegalArgumentException
+    AssertHelpers.assertThrows(
+        "Should reject empty source prefix",
+        IllegalArgumentException.class,
+        "Source prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteLocationPrefix("", "/target"));
+
+    AssertHelpers.assertThrows(
+        "Should reject empty target prefix",
+        IllegalArgumentException.class,
+        "Target prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteLocationPrefix("/source", ""));
+
+    AssertHelpers.assertThrows(
+        "Should reject empty meta source prefix",
+        IllegalArgumentException.class,
+        "Source meta prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteMetaLocationPrefix("", "/target"));
+
+    AssertHelpers.assertThrows(
+        "Should reject empty meta target prefix",
+        IllegalArgumentException.class,
+        "Target meta prefix",
+        () -> SparkActions.get().copyTable(testTable).rewriteMetaLocationPrefix("/source", ""));
+
+    // Test lookupPrefixMappings with null and empty inputs
+    Map<String, String> testMappings = Maps.newHashMap();
+    testMappings.put("/valid/path", "/new/path");
+
+    Assert.assertNull(
+        "Should return null for null path",
+        TableMetadataUtil.lookupPrefixMappings(null, testMappings));
+
+    Assert.assertNull(
+        "Should return null for null mappings",
+        TableMetadataUtil.lookupPrefixMappings("/some/path", null));
+
+    Assert.assertNull(
+        "Should return null for empty mappings",
+        TableMetadataUtil.lookupPrefixMappings("/some/path", Maps.newHashMap()));
+  }
+
+  @Test
+  public void testDuplicateSourceAndTargetPrefixes() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Test duplicate source and target prefixes (identity mapping)
+    CopyTable action =
+        SparkActions.get()
+            .copyTable(testTable)
+            .stagingLocation(stagingWithScheme())
+            .rewriteLocationPrefix("/path/data", "/path/data") // Same source and target
+            .rewriteMetaLocationPrefix("/meta/data", "/meta/data"); // Same meta source and target
+
+    CopyTable.Result result = action.execute();
+
+    // Should execute successfully even with identity mappings
+    Assert.assertNotNull("Result should not be null", result);
+    Assert.assertNotNull("Data file list path should not be null", result.dataFileListLocation());
+    Assert.assertNotNull(
+        "Metadata file list path should not be null", result.metadataFileListLocation());
+
+    // Test lookupPrefixMappings with identity mapping
+    Map<String, String> identityMappings = Maps.newHashMap();
+    identityMappings.put("/same/path", "/same/path");
+    identityMappings.put("/different/path", "/new/location");
+
+    Map.Entry<String, String> result1 =
+        TableMetadataUtil.lookupPrefixMappings("/same/path/file.parquet", identityMappings);
+    Assert.assertNotNull("Should find identity mapping", result1);
+    Assert.assertEquals("Source should match", "/same/path", result1.getKey());
+    Assert.assertEquals("Target should be identical to source", "/same/path", result1.getValue());
+
+    Map.Entry<String, String> result2 =
+        TableMetadataUtil.lookupPrefixMappings("/different/path/file.parquet", identityMappings);
+    Assert.assertNotNull("Should find different mapping", result2);
+    Assert.assertEquals("Source should match", "/different/path", result2.getKey());
+    Assert.assertEquals("Target should be different", "/new/location", result2.getValue());
+  }
+
+  @Test
+  public void testSameSourceWithDifferentTargets() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Test same source prefix with different target prefixes (later wins)
+    CopyTable action =
+        SparkActions.get()
+            .copyTable(testTable)
+            .stagingLocation(stagingWithScheme())
+            .rewriteLocationPrefix("/path/data", "/first/target")
+            .rewriteLocationPrefix("/path/data", "/second/target") // Should override the first
+            .rewriteMetaLocationPrefix("/meta", "/first/meta")
+            .rewriteMetaLocationPrefix("/meta", "/second/meta"); // Should override the first
+
+    CopyTable.Result result = action.execute();
+
+    // Should execute successfully with last mapping winning
+    Assert.assertNotNull("Result should not be null", result);
+    Assert.assertNotNull("Data file list path should not be null", result.dataFileListLocation());
+    Assert.assertNotNull(
+        "Metadata file list path should not be null", result.metadataFileListLocation());
+
+    // Test that Map behavior means last put() wins for duplicate keys
+    Map<String, String> duplicateKeyMappings = Maps.newHashMap();
+    duplicateKeyMappings.put("/duplicate/key", "/first/value");
+    duplicateKeyMappings.put("/duplicate/key", "/second/value"); // Overwrites first
+    duplicateKeyMappings.put("/unique/key", "/unique/value");
+
+    Map.Entry<String, String> result1 =
+        TableMetadataUtil.lookupPrefixMappings("/duplicate/key/file.parquet", duplicateKeyMappings);
+    Assert.assertNotNull("Should find mapping for duplicate key", result1);
+    Assert.assertEquals("Source should match", "/duplicate/key", result1.getKey());
+    Assert.assertEquals(
+        "Should use last value for duplicate key", "/second/value", result1.getValue());
+
+    Map.Entry<String, String> result2 =
+        TableMetadataUtil.lookupPrefixMappings("/unique/key/file.parquet", duplicateKeyMappings);
+    Assert.assertNotNull("Should find mapping for unique key", result2);
+    Assert.assertEquals("Source should match", "/unique/key", result2.getKey());
+    Assert.assertEquals(
+        "Should use correct value for unique key", "/unique/value", result2.getValue());
+  }
+
+  @Test
+  public void testOverlappingPrefixesEdgeCases() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Test overlapping prefixes with edge cases
+    CopyTable action =
+        SparkActions.get()
+            .copyTable(testTable)
+            .stagingLocation(stagingWithScheme())
+            .rewriteLocationPrefix("/", "/root/") // Root path
+            .rewriteLocationPrefix("/data", "/new/data") // More specific
+            .rewriteLocationPrefix("/data/year=2023", "/archived/2023") // Even more specific
+            .rewriteLocationPrefix("/data/year=2023/month=12", "/recent"); // Most specific
+
+    CopyTable.Result result = action.execute();
+
+    Assert.assertNotNull("Result should not be null", result);
+
+    // Test edge cases with overlapping prefixes
+    Map<String, String> overlappingMappings = Maps.newHashMap();
+    overlappingMappings.put("/", "/root/");
+    overlappingMappings.put("/data", "/new/data");
+    overlappingMappings.put("/data/year=2023", "/archived/2023");
+    overlappingMappings.put("/data/year=2023/month=12", "/recent");
+
+    // Test most specific match
+    Map.Entry<String, String> result1 =
+        TableMetadataUtil.lookupPrefixMappings(
+            "/data/year=2023/month=12/file.parquet", overlappingMappings);
+    Assert.assertNotNull("Should find most specific mapping", result1);
+    Assert.assertEquals(
+        "Should use most specific prefix", "/data/year=2023/month=12", result1.getKey());
+    Assert.assertEquals("Should use most specific target", "/recent", result1.getValue());
+
+    // Test intermediate specific match
+    Map.Entry<String, String> result2 =
+        TableMetadataUtil.lookupPrefixMappings(
+            "/data/year=2023/month=01/file.parquet", overlappingMappings);
+    Assert.assertNotNull("Should find intermediate specific mapping", result2);
+    Assert.assertEquals(
+        "Should use intermediate specific prefix", "/data/year=2023", result2.getKey());
+    Assert.assertEquals(
+        "Should use intermediate specific target", "/archived/2023", result2.getValue());
+
+    // Test general data match
+    Map.Entry<String, String> result3 =
+        TableMetadataUtil.lookupPrefixMappings("/data/year=2022/file.parquet", overlappingMappings);
+    Assert.assertNotNull("Should find general data mapping", result3);
+    Assert.assertEquals("Should use general data prefix", "/data", result3.getKey());
+    Assert.assertEquals("Should use general data target", "/new/data", result3.getValue());
+
+    // Test root match
+    Map.Entry<String, String> result4 =
+        TableMetadataUtil.lookupPrefixMappings("/other/path/file.parquet", overlappingMappings);
+    Assert.assertNotNull("Should find root mapping", result4);
+    Assert.assertEquals("Should use root prefix", "/", result4.getKey());
+    Assert.assertEquals("Should use root target", "/root/", result4.getValue());
+
+    // Test no match case
+    Map<String, String> noMatchMappings = Maps.newHashMap();
+    noMatchMappings.put("/specific/path", "/target");
+
+    Map.Entry<String, String> result5 =
+        TableMetadataUtil.lookupPrefixMappings("/different/path/file.parquet", noMatchMappings);
+    Assert.assertNull("Should return null when no prefix matches", result5);
+  }
+
+  @Test
+  public void testSpecialCharactersInPrefixes() throws Exception {
+    String uniqueTableLocation = newTableLocation();
+    Table testTable =
+        TABLES.create(
+            SCHEMA, PartitionSpec.unpartitioned(), Maps.newHashMap(), uniqueTableLocation);
+
+    List<ThreeColumnRecord> records =
+        Lists.newArrayList(new ThreeColumnRecord(1, "AAAAAAAAAA", "AAAA"));
+
+    Dataset<Row> inputDf = spark.createDataFrame(records, ThreeColumnRecord.class).coalesce(1);
+    inputDf
+        .select("c1", "c2", "c3")
+        .write()
+        .format("iceberg")
+        .mode("append")
+        .save(uniqueTableLocation);
+
+    // Test prefixes with special characters
+    CopyTable action =
+        SparkActions.get()
+            .copyTable(testTable)
+            .stagingLocation(stagingWithScheme())
+            .rewriteLocationPrefix("/path with spaces", "/new path with spaces")
+            .rewriteLocationPrefix("/path-with-dashes", "/new-path-with-dashes")
+            .rewriteLocationPrefix("/path_with_underscores", "/new_path_with_underscores")
+            .rewriteLocationPrefix("/path.with.dots", "/new.path.with.dots");
+
+    CopyTable.Result result = action.execute();
+
+    Assert.assertNotNull("Result should not be null", result);
+
+    // Test lookupPrefixMappings with special characters
+    Map<String, String> specialCharMappings = Maps.newHashMap();
+    specialCharMappings.put("/path with spaces", "/new path with spaces");
+    specialCharMappings.put("/path-with-dashes", "/new-path-with-dashes");
+    specialCharMappings.put("/path_with_underscores", "/new_path_with_underscores");
+    specialCharMappings.put("/path.with.dots", "/new.path.with.dots");
+
+    Map.Entry<String, String> result1 =
+        TableMetadataUtil.lookupPrefixMappings(
+            "/path with spaces/file.parquet", specialCharMappings);
+    Assert.assertNotNull("Should handle spaces in prefix", result1);
+    Assert.assertEquals("Should match space prefix", "/path with spaces", result1.getKey());
+    Assert.assertEquals("Should use space target", "/new path with spaces", result1.getValue());
+
+    Map.Entry<String, String> result2 =
+        TableMetadataUtil.lookupPrefixMappings(
+            "/path-with-dashes/file.parquet", specialCharMappings);
+    Assert.assertNotNull("Should handle dashes in prefix", result2);
+    Assert.assertEquals("Should match dash prefix", "/path-with-dashes", result2.getKey());
+    Assert.assertEquals("Should use dash target", "/new-path-with-dashes", result2.getValue());
+
+    Map.Entry<String, String> result3 =
+        TableMetadataUtil.lookupPrefixMappings(
+            "/path_with_underscores/file.parquet", specialCharMappings);
+    Assert.assertNotNull("Should handle underscores in prefix", result3);
+    Assert.assertEquals(
+        "Should match underscore prefix", "/path_with_underscores", result3.getKey());
+    Assert.assertEquals(
+        "Should use underscore target", "/new_path_with_underscores", result3.getValue());
+
+    Map.Entry<String, String> result4 =
+        TableMetadataUtil.lookupPrefixMappings("/path.with.dots/file.parquet", specialCharMappings);
+    Assert.assertNotNull("Should handle dots in prefix", result4);
+    Assert.assertEquals("Should match dot prefix", "/path.with.dots", result4.getKey());
+    Assert.assertEquals("Should use dot target", "/new.path.with.dots", result4.getValue());
   }
 
   private Table createMetastoreTable(

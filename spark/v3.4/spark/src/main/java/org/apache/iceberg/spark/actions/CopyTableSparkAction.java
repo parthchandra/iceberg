@@ -116,11 +116,8 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private String dataFileListPath = null;
   private String metadataFileListPath = null;
 
-  private String sourcePrefix = "";
-  private String targetPrefix = "";
-
-  private String sourceMetaPrefix = "";
-  private String targetMetaPrefix = "";
+  private final Map<String, String> prefixMappings = Maps.newConcurrentMap();
+  private final Map<String, String> prefixMetaMappings = Maps.newConcurrentMap();
   private long snapshotId = 0L;
   private String startVersion = "";
   private String endVersion = "";
@@ -145,18 +142,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   public CopyTableSparkAction rewriteLocationPrefix(String sPrefix, String tPrefix) {
     Preconditions.checkArgument(
         sPrefix != null && !sPrefix.isEmpty(), "Source prefix('%s') cannot be empty.", sPrefix);
-    this.sourcePrefix = sPrefix;
-    // set default sourceMetaPrefix and targetMetaPrefix to sourcePrefix and targetPrefix.
-    if (this.sourceMetaPrefix.isEmpty()) {
-      this.sourceMetaPrefix = this.sourcePrefix;
-    }
-
-    if (tPrefix != null) {
-      this.targetPrefix = tPrefix;
-      if (this.targetMetaPrefix.isEmpty()) {
-        this.targetMetaPrefix = this.targetPrefix;
-      }
-    }
+    Preconditions.checkArgument(
+        tPrefix != null && !tPrefix.isEmpty(), "Target prefix('%s') cannot be empty.", tPrefix);
+    this.prefixMappings.put(sPrefix, tPrefix);
+    this.prefixMetaMappings.put(sPrefix, tPrefix);
     return this;
   }
 
@@ -166,10 +155,11 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
         (sPrefix != null) && !sPrefix.isEmpty(),
         "Source meta prefix('%s') cannot be empty.",
         sPrefix);
-    this.sourceMetaPrefix = sPrefix;
-    if (tPrefix != null) {
-      this.targetMetaPrefix = tPrefix;
-    }
+    Preconditions.checkArgument(
+        (tPrefix != null) && !tPrefix.isEmpty(),
+        "Target meta prefix('%s') cannot be empty.",
+        sPrefix);
+    this.prefixMetaMappings.put(sPrefix, tPrefix);
     return this;
   }
 
@@ -249,11 +239,6 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       }
       validateAndSetSnapshotVersion();
     } else {
-      Preconditions.checkArgument(
-          sourcePrefix != null && !sourcePrefix.isEmpty(),
-          "Source prefix('%s') cannot be empty.",
-          sourcePrefix);
-
       validateAndSetEndVersion();
     }
 
@@ -396,14 +381,13 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private String jobDesc() {
     if (startVersion.isEmpty()) {
       return String.format(
-          "Replacing path prefixes '%s' with '%s' in the metadata files of table %s,"
-              + "up to version '%s'.",
-          sourcePrefix, targetPrefix, table.name(), endVersion);
+          "Replacing path prefixes '%s' in the metadata files of table %s," + "up to version '%s'.",
+          this.prefixMappings, table.name(), endVersion);
     } else {
       return String.format(
-          "Replacing path prefixes '%s' with '%s' in the metadata files of table %s,"
+          "Replacing path prefixes '%s' in the metadata files of table %s,"
               + "from version '%s' to '%s'.",
-          sourcePrefix, targetPrefix, table.name(), startVersion, endVersion);
+          this.prefixMappings, table.name(), startVersion, endVersion);
     }
   }
 
@@ -573,13 +557,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   private void rewriteVersionFile(TableMetadata metadata, String versionFilePath) {
     String stagingPath = stagingPath(versionFilePath, stagingDir);
     TableMetadata newTableMetadata =
-        TableMetadataUtil.replacePaths(
-            metadata, sourceMetaPrefix, targetMetaPrefix, sourcePrefix, targetPrefix, table.io());
+        TableMetadataUtil.replacePaths(metadata, prefixMetaMappings, prefixMappings, table.io());
     TableMetadataParser.overwrite(newTableMetadata, table.io().newOutputFile(stagingPath));
     metadataFilesToMove.add(
-        new PathPair(
-            stagingPath,
-            TableMetadataUtil.newPath(versionFilePath, sourceMetaPrefix, targetMetaPrefix)));
+        new PathPair(stagingPath, TableMetadataUtil.newPath(versionFilePath, prefixMetaMappings)));
 
     validateAndStageStatisticsFiles(
         metadata.formatVersion(), metadata.statisticsFiles(), newTableMetadata.statisticsFiles());
@@ -608,8 +589,8 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
   private void rewriteManifestList(
       Snapshot snapshot, int formatVersion, Map<String, Long> rewrittenManifestSizesMap) {
-    String path = snapshot.manifestListLocation();
-    String stagingPath = stagingPath(path, stagingDir);
+    String manifestListPath = snapshot.manifestListLocation();
+    String stagingPath = stagingPath(manifestListPath, stagingDir);
     try (FileIO fileIO = table.io();
         FileAppender<ManifestFile> writer =
             ManifestLists.write(
@@ -621,7 +602,11 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
       for (ManifestFile file : manifestFilesInAllSnapshots.get(snapshot.snapshotId())) {
         ManifestFile newFile = file.copy();
-        if (newFile.path().startsWith(sourceMetaPrefix)) {
+        Map.Entry<String, String> prefixMap =
+            TableMetadataUtil.lookupPrefixMappings(newFile.path(), prefixMetaMappings);
+        if (prefixMap != null) {
+          String sourceMetaPrefix = prefixMap.getKey();
+          String targetMetaPrefix = prefixMap.getValue();
           ((StructLike) newFile)
               .set(
                   0, TableMetadataUtil.newPath(newFile.path(), sourceMetaPrefix, targetMetaPrefix));
@@ -651,9 +636,10 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
       metadataFilesToMove.add(
           new PathPair(
-              stagingPath, TableMetadataUtil.newPath(path, sourceMetaPrefix, targetMetaPrefix)));
+              stagingPath, TableMetadataUtil.newPath(manifestListPath, prefixMetaMappings)));
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed to rewrite the manifest list file " + path, e);
+      throw new UncheckedIOException(
+          "Failed to rewrite the manifest list file " + manifestListPath, e);
     }
   }
 
@@ -725,8 +711,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                     stagingDir,
                     tableMetadata.formatVersion(),
                     specsById,
-                    sourcePrefix,
-                    targetPrefix),
+                    prefixMappings),
                 Encoders.bean(PathPairWithManifestSize.class))
             .collectAsList();
 
@@ -762,8 +747,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       String stagingLocation,
       int format,
       Broadcast<Map<Integer, PartitionSpec>> specsById,
-      String sourcePrefix,
-      String targetPrefix) {
+      Map<String, String> prefixMappings) {
     return rows -> {
       List<PathPairWithManifestSize> files = Lists.newArrayList();
       while (rows.hasNext()) {
@@ -778,8 +762,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                     stagingLocation,
                     format,
                     specsById,
-                    sourcePrefix,
-                    targetPrefix));
+                    prefixMappings));
             break;
           case DELETES:
             files.addAll(
@@ -789,8 +772,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                     stagingLocation,
                     format,
                     specsById,
-                    sourcePrefix,
-                    targetPrefix));
+                    prefixMappings));
             break;
           default:
             throw new UnsupportedOperationException(
@@ -808,8 +790,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       String stagingLocation,
       int format,
       Broadcast<Map<Integer, PartitionSpec>> specsByIdBroadcast,
-      String sourcePrefix,
-      String targetPrefix)
+      Map<String, String> prefixMappings)
       throws IOException {
     String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
     FileIO io = tableBroadcast.getValue().io();
@@ -827,10 +808,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
             ManifestFiles.read(manifestFile, io, specsById).select(Arrays.asList("*"))) {
       pathPairList =
           StreamSupport.stream(reader.entries().spliterator(), false)
-              .map(
-                  entry ->
-                      newDataFile(
-                          entry, deltaSnapshotIds, spec, sourcePrefix, targetPrefix, writer))
+              .map(entry -> newDataFile(entry, deltaSnapshotIds, spec, prefixMappings, writer))
               .filter(PathPair::valid)
               .collect(Collectors.toList());
     } finally {
@@ -858,12 +836,15 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       ManifestEntry<DataFile> entry,
       Set<Long> snapshotIds,
       PartitionSpec spec,
-      String sourcePrefix,
-      String targetPrefix,
+      Map<String, String> prefixMappings,
       ManifestWriter<DataFile> writer) {
     DataFile dataFile = entry.file();
     String sourceDataFilePath = dataFile.path().toString();
-    if (sourceDataFilePath.startsWith(sourcePrefix)) {
+    Map.Entry<String, String> prefixMap =
+        TableMetadataUtil.lookupPrefixMappings(sourceDataFilePath, prefixMappings);
+    if (prefixMap != null) {
+      String sourcePrefix = prefixMap.getKey();
+      String targetPrefix = prefixMap.getValue();
       String targetDataFilePath =
           TableMetadataUtil.newPath(sourceDataFilePath, sourcePrefix, targetPrefix);
       dataFile = DataFiles.builder(spec).copy(entry.file()).withPath(targetDataFilePath).build();
@@ -885,8 +866,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       String stagingLocation,
       int format,
       Broadcast<Map<Integer, PartitionSpec>> specsByIdBroadcast,
-      String sourcePrefix,
-      String targetPrefix)
+      Map<String, String> prefixMappings)
       throws IOException {
     String stagingPath = stagingPath(manifestFile.path(), stagingLocation);
     FileIO io = tableBroadcast.getValue().io();
@@ -908,7 +888,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
                   entry -> {
                     try {
                       return newDeleteFile(
-                          entry, io, spec, sourcePrefix, targetPrefix, stagingLocation, writer);
+                          entry, io, spec, prefixMappings, stagingLocation, writer);
                     } catch (IOException e) {
                       throw new RuntimeException(e);
                     }
@@ -933,8 +913,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       ManifestEntry<DeleteFile> entry,
       FileIO io,
       PartitionSpec spec,
-      String sourcePrefix,
-      String targetPrefix,
+      Map<String, String> prefixMappings,
       String stagingLocation,
       ManifestWriter<DeleteFile> writer)
       throws IOException {
@@ -944,8 +923,8 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
     switch (file.content()) {
       case POSITION_DELETES:
         DeleteFile posDeleteFile =
-            rewritePositionDeleteFile(io, file, spec, sourcePrefix, stagingLocation, targetPrefix);
-        String targetDeleteFilePath = newPath(file.path().toString(), sourcePrefix, targetPrefix);
+            rewritePositionDeleteFile(io, file, spec, stagingLocation, prefixMappings);
+        String targetDeleteFilePath = newPath(file.path().toString(), prefixMappings);
         DeleteFile movedFile =
             FileMetadata.deleteFileBuilder(spec)
                 .copy(posDeleteFile)
@@ -959,7 +938,7 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
           return new PathPair();
         }
       case EQUALITY_DELETES:
-        DeleteFile eqDeleteFile = newEqualityDeleteFile(file, spec, sourcePrefix, targetPrefix);
+        DeleteFile eqDeleteFile = newEqualityDeleteFile(file, spec, prefixMappings);
         appendEntryWithFile(entry, writer, eqDeleteFile);
         // Keep non-live entry but exclude deleted equality delete files as part of copyPlan
         if (entry.isLive()) {
@@ -974,18 +953,19 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   private static DeleteFile newEqualityDeleteFile(
-      DeleteFile file, PartitionSpec spec, String sourcePrefix, String targetPrefix) {
+      DeleteFile file, PartitionSpec spec, Map<String, String> prefixMappings) {
     String path = file.path().toString();
-
-    if (!path.startsWith(sourcePrefix)) {
+    Map.Entry<String, String> prefixMap =
+        TableMetadataUtil.lookupPrefixMappings(path, prefixMappings);
+    if (prefixMap == null) {
       throw new UnsupportedOperationException(
-          "Expected delete file to be under the source prefix: "
-              + sourcePrefix
+          "Expected delete file to be under the source prefix map: "
+              + prefixMappings
               + " but was "
               + path);
     }
     int[] equalityFieldIds = file.equalityFieldIds().stream().mapToInt(Integer::intValue).toArray();
-    String newPath = newPath(path, sourcePrefix, targetPrefix);
+    String newPath = newPath(path, prefixMappings);
     return FileMetadata.deleteFileBuilder(spec)
         .ofEqualityDeletes(equalityFieldIds)
         .copy(file)
@@ -995,11 +975,15 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   private static PositionDelete newPositionDeleteRecord(
-      Record record, String sourcePrefix, String targetPrefix) {
+      Record record, Map<String, String> prefixMappings) {
     PositionDelete delete = PositionDelete.create();
     String oldPath = (String) record.get(0);
     String newPath = oldPath;
-    if (oldPath.startsWith(sourcePrefix)) {
+    Map.Entry<String, String> mapPrefix =
+        TableMetadataUtil.lookupPrefixMappings(oldPath, prefixMappings);
+    if (mapPrefix != null) {
+      String sourcePrefix = mapPrefix.getKey();
+      String targetPrefix = mapPrefix.getValue();
       newPath = newPath(oldPath, sourcePrefix, targetPrefix);
     }
     delete.set(newPath, (Long) record.get(1), record.get(2));
@@ -1010,15 +994,16 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
       FileIO io,
       DeleteFile current,
       PartitionSpec spec,
-      String sourcePrefix,
       String stagingLocation,
-      String targetPrefix)
+      Map<String, String> prefixMappings)
       throws IOException {
     String path = current.path().toString();
-    if (!path.startsWith(sourcePrefix)) {
+    Map.Entry<String, String> mapPrefix =
+        TableMetadataUtil.lookupPrefixMappings(path, prefixMappings);
+    if (mapPrefix == null) {
       throw new UnsupportedOperationException(
-          "Expected delete file to be under the source prefix: "
-              + sourcePrefix
+          "Expected delete file to be under the source prefix mappings: "
+              + prefixMappings
               + " but was "
               + path);
     }
@@ -1043,12 +1028,12 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
 
       try {
         if (record != null) {
-          writer.write(newPositionDeleteRecord(record, sourcePrefix, targetPrefix));
+          writer.write(newPositionDeleteRecord(record, prefixMappings));
         }
 
         while (recordIt.hasNext()) {
           record = recordIt.next();
-          writer.write(newPositionDeleteRecord(record, sourcePrefix, targetPrefix));
+          writer.write(newPositionDeleteRecord(record, prefixMappings));
         }
       } finally {
         writer.close();
@@ -1162,6 +1147,17 @@ public class CopyTableSparkAction extends BaseSparkAction<CopyTableSparkAction>
   }
 
   private static String newPath(String path, String sourcePrefix, String targetPrefix) {
+    return combinePaths(targetPrefix, relativize(path, sourcePrefix));
+  }
+
+  private static String newPath(String path, Map<String, String> prefixMappings) {
+    Map.Entry<String, String> mapPrefix =
+        TableMetadataUtil.lookupPrefixMappings(path, prefixMappings);
+    if (mapPrefix == null) {
+      throw new IllegalArgumentException("unable to find prefix mapping for path: " + path);
+    }
+    String sourcePrefix = mapPrefix.getKey();
+    String targetPrefix = mapPrefix.getValue();
     return combinePaths(targetPrefix, relativize(path, sourcePrefix));
   }
 

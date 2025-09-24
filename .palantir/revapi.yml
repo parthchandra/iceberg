@@ -1060,9 +1060,9 @@ acceptedBreaks:
       old: "method org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
         \ java.lang.String, java.lang.String, org.apache.iceberg.io.FileIO)"
       new: "method org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
-        \ java.lang.String, java.lang.String, java.lang.String, java.lang.String,\
+        \ java.lang.String, java.lang.String, java.util.Map<java.lang.String, java.lang.String>,\
         \ org.apache.iceberg.io.FileIO)"
-      justification: "{Support metapath prefix replacement in replacePaths}"
+      justification: "Multiple source to destination pairs support"
     - code: "java.method.numberOfParametersChanged"
       old: "method org.apache.iceberg.rest.auth.OAuth2Util.AuthSession org.apache.iceberg.rest.auth.OAuth2Util.AuthSession::fromCredential(org.apache.iceberg.rest.RESTClient,\
         \ java.util.concurrent.ScheduledExecutorService, java.lang.String, org.apache.iceberg.rest.auth.OAuth2Util.AuthSession)"
@@ -1078,6 +1078,20 @@ acceptedBreaks:
         \ java.util.concurrent.ScheduledExecutorService, org.apache.iceberg.rest.responses.OAuthTokenResponse,\
         \ long, org.apache.iceberg.rest.auth.OAuth2Util.AuthSession, org.apache.iceberg.rest.RESTSessionCatalog.TokenRefreshMode)"
       justification: "new method with alternative token refresh"
+    - code: "java.method.parameterTypeChanged"
+      old: "parameter org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ ===java.lang.String===, java.lang.String, org.apache.iceberg.io.FileIO)"
+      new: "parameter org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ ===java.util.Map<java.lang.String, java.lang.String>===, java.util.Map<java.lang.String,\
+        \ java.lang.String>, org.apache.iceberg.io.FileIO)"
+      justification: "Multiple prefix support for both data and metadata"
+    - code: "java.method.parameterTypeChanged"
+      old: "parameter org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ java.lang.String, ===java.lang.String===, org.apache.iceberg.io.FileIO)"
+      new: "parameter org.apache.iceberg.TableMetadata org.apache.iceberg.TableMetadataUtil::replacePaths(org.apache.iceberg.TableMetadata,\
+        \ java.util.Map<java.lang.String, java.lang.String>, ===java.util.Map<java.lang.String,\
+        \ java.lang.String>===, org.apache.iceberg.io.FileIO)"
+      justification: "Multiple prefix support for both data and metadata"
   apache-iceberg-0.14.0:
     org.apache.iceberg:iceberg-api:
     - code: "java.class.defaultSerializationChanged"
