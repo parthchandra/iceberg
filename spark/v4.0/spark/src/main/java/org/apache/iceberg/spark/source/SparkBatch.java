@@ -57,6 +57,7 @@ class SparkBatch implements Batch {
   private final boolean executorCacheLocalityEnabled;
   private final int scanHashCode;
   private final boolean cacheDeleteFilesOnExecutors;
+  private final boolean cometEnabled;
 
   SparkBatch(
       JavaSparkContext sparkContext,
@@ -65,7 +66,8 @@ class SparkBatch implements Batch {
       Types.StructType groupingKeyType,
       List<? extends ScanTaskGroup<?>> taskGroups,
       Schema expectedSchema,
-      int scanHashCode) {
+      int scanHashCode,
+      boolean cometEnabled) {
     this.sparkContext = sparkContext;
     this.table = table;
     this.branch = readConf.branch();
@@ -78,6 +80,7 @@ class SparkBatch implements Batch {
     this.executorCacheLocalityEnabled = readConf.executorCacheLocalityEnabled();
     this.scanHashCode = scanHashCode;
     this.cacheDeleteFilesOnExecutors = readConf.cacheDeleteFilesOnExecutors();
+    this.cometEnabled = cometEnabled;
   }
 
   @Override
@@ -177,7 +180,7 @@ class SparkBatch implements Batch {
 
   private boolean useCometBatchReads() {
     return readConf.parquetVectorizationEnabled()
-        && readConf.parquetReaderType() == ParquetReaderType.COMET
+        && cometEnabled
         && expectedSchema.columns().stream().allMatch(this::supportsCometBatchReads)
         && taskGroups.stream().allMatch(this::supportsParquetBatchReads);
   }

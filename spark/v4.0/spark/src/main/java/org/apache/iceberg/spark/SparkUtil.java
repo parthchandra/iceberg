@@ -29,6 +29,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.util.Utf8;
+import org.apache.comet.CometConf;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
@@ -265,6 +266,16 @@ public class SparkUtil {
         .map(SparkUtil::toExecutorLocation)
         .sorted()
         .collect(Collectors.toList());
+  }
+
+  public static boolean cometEnabled(SparkSession spark, SparkReadConf readConf) {
+    return Boolean.parseBoolean(
+            spark
+                .conf()
+                .get(
+                    CometConf.COMET_ENABLED().key(),
+                    CometConf.COMET_ENABLED().defaultValueString()))
+        && readConf.parquetReaderType() == ParquetReaderType.COMET;
   }
 
   private static List<BlockManagerId> fetchPeers(BlockManager blockManager) {

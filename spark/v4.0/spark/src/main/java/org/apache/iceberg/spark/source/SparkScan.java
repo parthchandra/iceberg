@@ -40,6 +40,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.spark.source.metrics.EqualityDeleteFiles;
 import org.apache.iceberg.spark.source.metrics.IndexedDeleteFiles;
 import org.apache.iceberg.spark.source.metrics.NumDeletes;
@@ -162,7 +163,14 @@ abstract class SparkScan implements Scan, SupportsReportStatistics {
   @Override
   public Batch toBatch() {
     return new SparkBatch(
-        sparkContext, table, readConf, groupingKeyType(), taskGroups(), expectedSchema, hashCode());
+        sparkContext,
+        table,
+        readConf,
+        groupingKeyType(),
+        taskGroups(),
+        expectedSchema,
+        hashCode(),
+        SparkUtil.cometEnabled(spark, readConf));
   }
 
   @Override
