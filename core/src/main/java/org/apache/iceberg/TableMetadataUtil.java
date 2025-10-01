@@ -31,20 +31,18 @@ public class TableMetadataUtil {
 
   public static TableMetadata replacePaths(
       TableMetadata metadata,
-      String srcMetaPrefix,
-      String tgtMetaPrefix,
-      String srcPrefix,
-      String tgtPrefix,
+      Map<String, String> prefixMetaMappings,
+      Map<String, String> prefixMappings,
       FileIO io) {
-    String newLocation = newPath(metadata.location(), srcMetaPrefix, tgtMetaPrefix);
+    String newLocation = newPath(metadata.location(), prefixMetaMappings);
 
-    List<Snapshot> newSnapshots = updatePathInSnapshots(metadata, srcMetaPrefix, tgtMetaPrefix, io);
+    List<Snapshot> newSnapshots = updatePathInSnapshots(metadata, prefixMetaMappings, io);
     List<MetadataLogEntry> metadataLogEntries =
-        updatePathInMetadataLogs(metadata, srcMetaPrefix, tgtMetaPrefix);
+        updatePathInMetadataLogs(metadata, prefixMetaMappings);
     long snapshotId =
         metadata.currentSnapshot() == null ? -1 : metadata.currentSnapshot().snapshotId();
     Map<String, String> properties =
-        updateProperties(metadata.properties(), srcMetaPrefix, tgtMetaPrefix, srcPrefix, tgtPrefix);
+        updateProperties(metadata.properties(), prefixMetaMappings, prefixMappings);
 
     return new TableMetadata(
         null,
@@ -68,7 +66,7 @@ public class TableMetadataUtil {
         metadata.snapshotLog(),
         metadataLogEntries,
         metadata.refs(),
-        updatePathInStatisticsFiles(metadata.statisticsFiles(), srcMetaPrefix, tgtMetaPrefix),
+        updatePathInStatisticsFiles(metadata.statisticsFiles(), prefixMetaMappings),
         metadata.partitionStatisticsFiles(),
         metadata.changes());
   }
@@ -120,29 +118,25 @@ public class TableMetadataUtil {
 
   private static Map<String, String> updateProperties(
       Map<String, String> tableProperties,
-      String srcMetaPrefix,
-      String tgtMetaPrefix,
-      String srcPrefix,
-      String tgtPrefix) {
+      Map<String, String> prefixMetaMappings,
+      Map<String, String> prefixMappings) {
     Map properties = Maps.newHashMap(tableProperties);
-    updatePathInProperty(properties, srcPrefix, tgtPrefix, TableProperties.OBJECT_STORE_PATH);
-    updatePathInProperty(
-        properties, srcPrefix, tgtPrefix, TableProperties.WRITE_FOLDER_STORAGE_LOCATION);
-    updatePathInProperty(properties, srcPrefix, tgtPrefix, TableProperties.WRITE_DATA_LOCATION);
-    updatePathInProperty(
-        properties, srcMetaPrefix, tgtMetaPrefix, TableProperties.WRITE_METADATA_LOCATION);
+    updatePathInProperty(properties, prefixMappings, TableProperties.OBJECT_STORE_PATH);
+    updatePathInProperty(properties, prefixMappings, TableProperties.WRITE_FOLDER_STORAGE_LOCATION);
+    updatePathInProperty(properties, prefixMappings, TableProperties.WRITE_DATA_LOCATION);
+    updatePathInProperty(properties, prefixMetaMappings, TableProperties.WRITE_METADATA_LOCATION);
 
     return properties;
   }
 
   private static List<StatisticsFile> updatePathInStatisticsFiles(
-      List<StatisticsFile> statisticsFiles, String srcMetaPrefix, String tgtMetaPrefix) {
+      List<StatisticsFile> statisticsFiles, Map<String, String> prefixMetaMappings) {
     return statisticsFiles.stream()
         .map(
             existing ->
                 new GenericStatisticsFile(
                     existing.snapshotId(),
-                    newPath(existing.path(), srcMetaPrefix, tgtMetaPrefix),
+                    newPath(existing.path(), prefixMetaMappings),
                     existing.fileSizeInBytes(),
                     existing.fileFooterSizeInBytes(),
                     existing.blobMetadata()))
@@ -150,36 +144,30 @@ public class TableMetadataUtil {
   }
 
   private static void updatePathInProperty(
-      Map<String, String> properties,
-      String sourcePrefix,
-      String targetPrefix,
-      String propertyName) {
+      Map<String, String> properties, Map<String, String> prefixMappings, String propertyName) {
     if (properties.containsKey(propertyName)) {
-      properties.put(
-          propertyName, newPath(properties.get(propertyName), sourcePrefix, targetPrefix));
+      properties.put(propertyName, newPath(properties.get(propertyName), prefixMappings));
     }
   }
 
   private static List<MetadataLogEntry> updatePathInMetadataLogs(
-      TableMetadata metadata, String sourcePrefix, String targetPrefix) {
+      TableMetadata metadata, Map<String, String> prefixMetaMappings) {
     List<MetadataLogEntry> metadataLogEntries =
         Lists.newArrayListWithCapacity(metadata.previousFiles().size());
     for (MetadataLogEntry metadataLog : metadata.previousFiles()) {
       MetadataLogEntry newMetadataLog =
           new MetadataLogEntry(
-              metadataLog.timestampMillis(),
-              newPath(metadataLog.file(), sourcePrefix, targetPrefix));
+              metadataLog.timestampMillis(), newPath(metadataLog.file(), prefixMetaMappings));
       metadataLogEntries.add(newMetadataLog);
     }
     return metadataLogEntries;
   }
 
   private static List<Snapshot> updatePathInSnapshots(
-      TableMetadata metadata, String sourcePrefix, String targetPrefix, FileIO io) {
+      TableMetadata metadata, Map<String, String> prefixMappings, FileIO io) {
     List<Snapshot> newSnapshots = Lists.newArrayListWithCapacity(metadata.snapshots().size());
     for (Snapshot snapshot : metadata.snapshots()) {
-      String newManifestListLocation =
-          newPath(snapshot.manifestListLocation(), sourcePrefix, targetPrefix);
+      String newManifestListLocation = newPath(snapshot.manifestListLocation(), prefixMappings);
       Snapshot newSnapshot =
           new BaseSnapshot(
               snapshot.sequenceNumber(),
@@ -195,7 +183,44 @@ public class TableMetadataUtil {
     return newSnapshots;
   }
 
+  /**
+   * Lookup the longest matching prefix mapping for a given path.
+   *
+   * @param path the path to find a prefix mapping for
+   * @param prefixMappings map of source prefix to target prefix mappings
+   * @return the Map.Entry with the longest matching source prefix, or null if no match found
+   */
+  public static Map.Entry<String, String> lookupPrefixMappings(
+      String path, Map<String, String> prefixMappings) {
+    if (prefixMappings == null || prefixMappings.isEmpty() || path == null) {
+      return null;
+    }
+
+    // Sort entries by key length in descending order to find the longest matching prefix
+    return prefixMappings.entrySet().stream()
+        .filter(entry -> path.startsWith(entry.getKey()))
+        .max(java.util.Comparator.comparing(entry -> entry.getKey().length()))
+        .orElse(null);
+  }
+
   public static String newPath(String path, String sourcePrefix, String targetPrefix) {
     return path.replaceFirst(sourcePrefix, targetPrefix);
+  }
+
+  public static String newPath(String path, Map<String, String> prefixMappings) {
+    if (prefixMappings == null || prefixMappings.isEmpty()) {
+      return path;
+    }
+
+    // Use the centralized lookup method to find the longest matching prefix
+    Map.Entry<String, String> entry = lookupPrefixMappings(path, prefixMappings);
+    if (entry != null) {
+      String sourcePrefix = entry.getKey();
+      String targetPrefix = entry.getValue();
+      return path.replaceFirst(sourcePrefix, targetPrefix != null ? targetPrefix : "");
+    }
+
+    // No matching prefix found, return original path
+    return path;
   }
 }
