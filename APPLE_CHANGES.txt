@@ -2,7 +2,7 @@ This contains the changes after `apache-iceberg-1.9.1`
 
 Base Branch: Upstream release of 1.9.1 release tag https://github.pie.apple.com/IPR/apache-incubator-iceberg/tree/apache-iceberg-1.9.1
 
-# After `1.9.1`
+# After `1.9.1` (Upstream backports)
 Spark 4.0: Migrate Iceberg Stored Procedures to Spark built-in implementations (#13106)
 Spark: Port prefix listing option in remove orphan files to Spark 3.4 and Spark 4.0 (#13264)
 Spark: initial support for Spark 4.0
@@ -17,48 +17,77 @@ Spark: Use newArrayListWithExpectedSize in NDVSketchUtil (#12907)
 Spark 3.4: Migrate SparkTestBaseWithCatalog related tests to JUnit5 (#13015)
 Spark 3.4: Migrate source and spark tests to JUnit5 (#12998)
 Spark 3.4: Migrate SparkTestBase related tests to JUnit5 (#13031)
-Core: Support incremental compute for partition stats (#12629)
-Parquet: Fix to ensure that last updated sequence numbers for V2 and earlier tables are null (#13001)
 Spark 3.4: Migrate tests in spark.data including refactoring Spark 3.5 tests (#13038)
 Spark 3.4: Migrate other JUnit 4 dependant tests to JUnit 5 (#13044)
 Spark 3.4: Migrate tests in spark.source including refactoring Spark 3.5 tests (#13040)
-Core: Refactor and use InternalData for partition stats (#12946)
 Spark: Update Spark Parquet vectorized read tests to uses Iceberg Record instead of Avro GenericRecord (#12925)
 Spark 3.5: Update MERGE and UPDATE for row lineage (#12736)
 Spark: Update RewriteDataFilesSparkAction and RewritePositionDeleteFilesSparkAction to use the new APIs (#12692)
+Spark 4.0: Add configuration to disable executor cache for delete files (#12893)
+Spark-3.5, 4.0: Add unit tests for ColumnarBatchUtil (#12275)
+Spark 4.0: Fix source location in stats file copy plan in RewriteTablePathSparkAction (#13881)
+spark 4.0 : SPJ : add hour to day reducer (#13166)
+spark 4.0: SPJ: add bucket reducer using gcd (#13167)
+Core: Support incremental compute for partition stats (#12629)
+Core: Refactor and use InternalData for partition stats (#12946)
+Parquet: Fix to ensure that last updated sequence numbers for V2 and earlier tables are null (#13001)
 Build: Bump Comet from 0.5.0 to 0.8.1 (#12974)
-
-## Flink
+Flink: Ensure DynamicCommitter idempotence in the presence of failures (#1702)
+Flink: Fix flaky tests for Iceberg sink
 Flink: DynamicSink: Convert existing required fields to optional when missing in the data schema (#13659)
 Flink: Clean up UpdateSchema instantiator method in TestEvolveSchemaVisitor (#13640)
 Flink: Dynamic Sink: Ensure parent for newly added struct is resolved from current schema (#13639)
-Flink: Add support for Flink 2.0
+Flink: Add support for Flink 2.1
+Flink: Adapt build script to use Flink 2.1
 Core: Keep track of data files to be removed for orphaned DV detection (#13222)
 Backport: Flink Dynamic Iceberg Sink
 Flink: Backport IcerbegSink RANGE distribution to Flink 1.19 (#13228)
 Flink: port range distribution to v2 iceberg sink (#12071)
 Flink: Backport add StreamingStartingStrategy.INCREMENTAL_FROM_LATEST_SNAPSHOT_EXCLUSIVE to Flink 1.19, 1.18, 1.20
+Flink: Maintenance - TableManager + ExpireSnapshots (#11144)
 
 
-# Internal patches
-Internal: Change Default Optimize Threshold (#1625)
+# Apple patches (from apple-1.5.0.x)
+Internal: Spark 4.0: Require explicit Comet configuration in Spark (#1699)
 Internal: Migrate to Apple Spark (#1603)
-Internal: Don't drop files by default (#1602)
 Internal: Disable locality by default (#1601)
 Internal: Change default table property values (#1600)
+Internal: Change default table property values - followup (#1660)
 Internal: Fix table location in Iceberg Hive tables (#1599)
 Internal: Rio build with Spark 4.0 (#1598)
 Internal: Change default Spark version to 3.5 for rio builds (#1483)
-Internal: Rio changes for Apple internal release (#1482)
-
-## Flink
-Internal: Add Flink build files
-Internal: rdar://148456709 (Fail to refresh IAS token to connect with ARC) (#1545)
+Internal: Don't drop files by default (#1602)
+Internal: Change Default Optimize Threshold (#1122) (#1625)
+Internal: Remove Check for non-null Sequence Number for Manifest Entries (#1158)
+Internal: Rewrite version in shadow and test jars
+Internal: Allow API breaks for initial release
+rdar://124678730: Iceberg S3FileIO Support for Unified Auth (#1237)
+Internal: Apple AWS client factory for Mascot (#1661)
+Internal: rdar://154518890 ([Iceberg][Internal] Use CatalogUtil classloader while loading Catalog) (#1594)
+rdar://134867479 (Client Side Encryption is missing from Iceberg Rest Catalog) (#1704)
+AIML: Make a shorthand for the rest_notary catalog type (#1428) (#1695)
+Apply encryption to ADT 1.9.1 (#1659)
+Internal, Hive: Support connecting to multiple Hive catalogs (#999) (#1707)
 Internal: Migrate to Apple Hive
+Hive: Disable unsupported Apple hive feature
+Internal: Add catalog name to HiveLock (#1224) (#1690)
+Internal: Rio changes for Apple internal release (#1482)
+Build, Internal: Build iceberg-core along with iceberg-spark
+Internal: Ignore tests requiring Docker (#1644)
+Internal: Ignore tests requiring Docker
+Internal: Fix TestWriteManifests test case
+Internal: Relax assumptions in TestListFileSystemFiles
+Fix TestRowLineageAssignment.testAssignmentWithManifestCompaction()
+Internal: fixup! Spotless apply
+Internal: Add Flink build files
+Internal: Split Flink PRB pipelines by version and component
+Internal: Flink: Fix release pipeline
+Flink: Internal: Makes IcebergSink the default sink implementation for SQL (#1671)
+Flink: Internal: Add uid-suffix write option to prevent operator UID hash collisions
+Internal: rdar://148456709 (Fail to refresh IAS token to connect with ARC) (#1545)
 Internal: Flink: CommitDecorator
 Internal: [Stream-1184] Add CheckFiles feature to V2 Sink (#1448)
 [INTERNAL] Deprecate FlinkSink in favor of IcebergSink
-Flink: Maintenance - TableManager + ExpireSnapshots (#11144)
 Internal: Flink: FlinkFileIO implementation - fix position calculation after close
 Internal: STREAM-382 - Make FlinkFileIO default for 1.7 and document usage
 Internal: Flink: Flink Maintenance Flows
@@ -67,3 +96,4 @@ Internal: Flink: Added flink watermark to snapshot summary for completion signal
 Internal: Flink: Add configuration to FlinkSink check the files after write (#1137)
 Internal: Flink: FlinkFileIO implementation (#1199)
 Internal: Flink: Add logging for split serialization failure (#1151)
+Internal: Improve release process (update version, create tag)
