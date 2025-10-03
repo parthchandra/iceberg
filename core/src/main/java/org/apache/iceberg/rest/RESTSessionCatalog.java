@@ -47,6 +47,7 @@ import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableCommit;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.encryption.EncryptionManagerFactory;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
@@ -154,6 +155,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
   private SnapshotMode snapshotMode = null;
   private Object conf = null;
   private FileIO io = null;
+  private EncryptionManagerFactory encryptionManagerFactory = null;
   private MetricsReporter reporter = null;
   private boolean reportingViaRestEnabled;
   private Integer pageSize = null;
@@ -238,12 +240,14 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
     }
 
     this.io = newFileIO(SessionContext.createEmpty(), mergedProps);
+    this.encryptionManagerFactory = CatalogUtil.loadEncryptionManagerFactory(mergedProps);
 
     this.fileIOTracker = new FileIOTracker();
     this.closeables = new CloseableGroup();
     this.closeables.addCloseable(this.catalogAuth);
     this.closeables.addCloseable(this.authManager);
     this.closeables.addCloseable(this.io);
+    this.closeables.addCloseable(this.encryptionManagerFactory);
     this.closeables.addCloseable(this.client);
     this.closeables.addCloseable(fileIOTracker);
     this.closeables.setSuppressCloseFailure(true);
@@ -453,6 +457,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
             paths.table(finalIdentifier),
             Map::of,
             tableFileIO(context, tableConf, response.credentials()),
+            encryptionManagerFactory,
             tableMetadata,
             endpoints);
 
@@ -532,6 +537,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
             paths.table(ident),
             Map::of,
             tableFileIO(context, tableConf, response.credentials()),
+            encryptionManagerFactory,
             response.tableMetadata(),
             endpoints);
 
@@ -791,6 +797,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
               paths.table(ident),
               Map::of,
               tableFileIO(context, tableConf, response.credentials()),
+              encryptionManagerFactory,
               response.tableMetadata(),
               endpoints);
 
@@ -818,6 +825,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
               paths.table(ident),
               Map::of,
               tableFileIO(context, tableConf, response.credentials()),
+              encryptionManagerFactory,
               RESTTableOperations.UpdateType.CREATE,
               createChanges(meta),
               meta,
@@ -881,6 +889,7 @@ public class RESTSessionCatalog extends BaseViewSessionCatalog
               paths.table(ident),
               Map::of,
               tableFileIO(context, tableConf, response.credentials()),
+              encryptionManagerFactory,
               RESTTableOperations.UpdateType.REPLACE,
               changes.build(),
               base,
