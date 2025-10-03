@@ -24,8 +24,8 @@ jenkins: &jenkins_config
 pipelines:
 
   # prb builds
-  - name: apple-1.9.1.x-spark-prb
-    branchName: apple-1.9.1.x
+  - name: apple-1.9.1.x-preview-spark-prb
+    branchName: apple-1.9.1.x-preview
     build:
       template: freestyle:v4:prb
       steps:
@@ -34,8 +34,8 @@ pipelines:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
-  - name: apple-1.9.1.x-release-spark-prb
-    branchName: apple-1.9.1.x-release
+  - name: apple-1.9.1.x-preview-release-spark-prb
+    branchName: apple-1.9.1.x-preview-release
     build:
       template: freestyle:v4:prb
       steps:
@@ -85,8 +85,8 @@ pipelines:
         - TARGET=flink FLINK_VERSION=2.1 apple/flink-build.sh
 
   # publish pipelines
-  - name: apple-1.9.1.x-scala-2.13-snapshot
-    branchName: apple-1.9.1.x
+  - name: apple-1.9.1.x-preview-snapshot
+    branchName: apple-1.9.1.x-preview
     build:
       template: freestyle:v4:publish
       steps:
@@ -103,21 +103,21 @@ pipelines:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
 
-  - group: release
-    branchName: apple-1.9.1.x-release
+  - group: preview-release
+    branchName: apple-1.9.1.x-preview-release
     build:
       template: freestyle:v4:publish
       buildParameters:
         - parameter: RELEASE_VERSION
           description: Release version
-          defaultValue: "1.9.1.0-apple"
+          defaultValue: "1.9.1.0-apple-preview"
       steps:
         # Update version for release
         - echo ${RELEASE_VERSION} > version.txt
         - git commit -am"[apple][release] Set release version to ${RELEASE_VERSION}"
         - export TAG="release-${RELEASE_VERSION}"
         # Create release tag
-        - git -d "${TAG}" || true
+        - git tag -d "${TAG}" || true
         - git tag "${TAG}" -m "${TAG}"
         # Release
         - apple/spark-release.sh
