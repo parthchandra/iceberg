@@ -25,7 +25,6 @@ import java.util.Map;
 import org.apache.comet.CometRuntimeException;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometBatchReader;
-import org.apache.comet.parquet.RowGroupReader;
 import org.apache.comet.vector.CometSelectionVector;
 import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.Schema;
@@ -73,7 +72,6 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
     this.delegate = new IcebergCometBatchReader(readers.size(), SparkSchemaUtil.convert(schema));
   }
 
-  @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData, long rowPosition) {
     setRowGroupInfo(pageStore, metaData);
