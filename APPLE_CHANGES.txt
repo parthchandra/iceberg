@@ -48,6 +48,7 @@ Flink: Maintenance - TableManager + ExpireSnapshots (#11144)
 
 
 # Apple patches (from apple-1.5.0.x)
+Internal: Spark 4.0: Remove Avro relocation
 Internal: Spark 4.0: Require explicit Comet configuration in Spark (#1699)
 Internal: Migrate to Apple Spark (#1603)
 Internal: Disable locality by default (#1601)
