@@ -100,6 +100,42 @@ public class VectorizedSparkParquetReaders {
                 deleteFilter));
   }
 
+  /**
+   * Builds a {@link CometNativeColumnarBatchReader} for reading Parquet data using Comet's native
+   * batch reader.
+   *
+   * <p>This method creates a vectorized reader that uses {@link
+   * org.apache.comet.parquet.NativeBatchReader} to read Parquet data directly into Arrow vectors
+   * via native code for improved performance.
+   *
+   * @param expectedSchema the expected Iceberg schema
+   * @param fileSchema the Parquet file schema
+   * @param idToConstant map of field IDs to constant values
+   * @param deleteFilter delete filter for handling deleted rows
+   * @param nativeBatchReader the native batch reader instance
+   * @param nativeReaderFactory factory for creating native column readers
+   * @return a new {@link CometNativeColumnarBatchReader}
+   */
+  public static CometNativeColumnarBatchReader buildCometNativeReader(
+      Schema expectedSchema,
+      MessageType fileSchema,
+      Map<Integer, ?> idToConstant,
+      DeleteFilter<InternalRow> deleteFilter,
+      org.apache.comet.parquet.NativeBatchReader nativeBatchReader,
+      CometNativeVectorizedReaderBuilder.NativeColumnReaderFactory nativeReaderFactory) {
+    return (CometNativeColumnarBatchReader)
+        TypeWithSchemaVisitor.visit(
+            expectedSchema.asStruct(),
+            fileSchema,
+            new CometNativeVectorizedReaderBuilder(
+                expectedSchema,
+                fileSchema,
+                idToConstant,
+                readers -> new CometNativeColumnarBatchReader(readers, expectedSchema, nativeBatchReader),
+                deleteFilter,
+                nativeReaderFactory));
+  }
+
   // enables unsafe memory access to avoid costly checks to see if index is within bounds
   // as long as it is not configured explicitly (see BoundsChecking in Arrow)
   private static void enableUnsafeMemoryAccess() {

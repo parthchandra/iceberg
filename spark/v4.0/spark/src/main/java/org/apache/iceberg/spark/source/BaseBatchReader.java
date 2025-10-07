@@ -95,9 +95,17 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         .split(start, length)
         .createBatchedReaderFunc(
             fileSchema -> {
-              if (parquetConf.readerType() == ParquetReaderType.COMET) {
+              ParquetReaderType readerType = parquetConf.readerType();
+              if (readerType == ParquetReaderType.COMET) {
                 return VectorizedSparkParquetReaders.buildCometReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
+              } else if (readerType == ParquetReaderType.COMET_NATIVE) {
+                // TODO: Implement COMET_NATIVE reader creation
+                // This requires creating a NativeBatchReader instance and NativeColumnReaderFactory
+                // which needs additional context not available in this lambda
+                throw new UnsupportedOperationException(
+                    "COMET_NATIVE reader type is not yet fully implemented. "
+                    + "Use buildCometNativeReader directly with a NativeBatchReader instance.");
               } else {
                 return VectorizedSparkParquetReaders.buildReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
