@@ -34,7 +34,16 @@ public enum ParquetReaderType {
    * <p>TODO: Implement {@link org.apache.comet.parquet.SupportsComet} in SparkScan to convert Spark
    * physical plan to native physical plan for native execution.
    */
-  COMET;
+  COMET,
+
+  /**
+   * COMET_NATIVE type uses Comet's {@link org.apache.comet.parquet.NativeBatchReader} which reads
+   * Parquet data directly into Arrow vectors via native code for improved performance.
+   *
+   * <p>Unlike COMET which uses individual column readers with page-level decoding, COMET_NATIVE
+   * reads entire batches natively, providing better performance for certain workloads.
+   */
+  COMET_NATIVE;
 
   public static ParquetReaderType fromString(String typeAsString) {
     Preconditions.checkArgument(typeAsString != null, "Parquet reader type is null");
