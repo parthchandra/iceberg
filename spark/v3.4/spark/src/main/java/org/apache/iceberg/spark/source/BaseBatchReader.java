@@ -90,22 +90,49 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     // get required schema if there are deletes
     Schema requiredSchema = deleteFilter != null ? deleteFilter.requiredSchema() : expectedSchema();
 
+    ParquetReaderType readerType = parquetConf.readerType();
+
+    // COMET_NATIVE requires special handling - it can't use the lambda approach
+    if (readerType == ParquetReaderType.COMET_NATIVE) {
+      org.apache.parquet.hadoop.ParquetReadOptions.Builder optionsBuilder;
+      if (inputFile instanceof org.apache.iceberg.hadoop.HadoopInputFile) {
+        optionsBuilder =
+            org.apache.parquet.hadoop.util.HadoopReadOptions.builder(
+                ((org.apache.iceberg.hadoop.HadoopInputFile) inputFile).getConf());
+      } else {
+        optionsBuilder =
+            org.apache.parquet.ParquetReadOptions.builder(
+                new org.apache.parquet.conf.PlainParquetConfiguration());
+      }
+      optionsBuilder.withRange(start, start + length);
+      optionsBuilder.withUseHadoopVectoredIo(true);
+      org.apache.parquet.ParquetReadOptions options = optionsBuilder.build();
+
+      return new org.apache.iceberg.parquet.CometNativeVectorizedParquetReader<>(
+          inputFile,
+          requiredSchema,
+          options,
+          deleteFilter,
+          idToConstant,
+          nameMapping(),
+          residual,
+          true, // reuseContainers
+          caseSensitive(),
+          parquetConf.batchSize(),
+          start,
+          length,
+          null, // fileEncryptionKey
+          null); // fileAADPrefix
+    }
+
     return Parquet.read(inputFile)
         .project(requiredSchema)
         .split(start, length)
         .createBatchedReaderFunc(
             fileSchema -> {
-              ParquetReaderType readerType = parquetConf.readerType();
               if (readerType == ParquetReaderType.COMET) {
                 return VectorizedSparkParquetReaders.buildCometReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
-              } else if (readerType == ParquetReaderType.COMET_NATIVE) {
-                // TODO: Implement COMET_NATIVE reader creation
-                // This requires creating a NativeBatchReader instance and NativeColumnReaderFactory
-                // which needs additional context not available in this lambda
-                throw new UnsupportedOperationException(
-                    "COMET_NATIVE reader type is not yet fully implemented. "
-                    + "Use buildCometNativeReader directly with a NativeBatchReader instance.");
               } else {
                 return VectorizedSparkParquetReaders.buildReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
@@ -119,7 +146,7 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         // read performance as every batch read doesn't have to pay the cost of allocating memory.
         .reuseContainers()
         .withNameMapping(nameMapping())
-        .enableComet(parquetConf.readerType() == ParquetReaderType.COMET)
+        .enableComet(readerType == ParquetReaderType.COMET)
         .build();
   }
 

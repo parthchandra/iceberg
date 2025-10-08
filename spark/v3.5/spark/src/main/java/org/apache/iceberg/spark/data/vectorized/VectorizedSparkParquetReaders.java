@@ -105,15 +105,14 @@ public class VectorizedSparkParquetReaders {
    * batch reader.
    *
    * <p>This method creates a vectorized reader that uses {@link
-   * org.apache.comet.parquet.NativeBatchReader} to read Parquet data directly into Arrow vectors
-   * via native code for improved performance.
+   * org.apache.comet.parquet.IcebergCometNativeBatchReader} to read Parquet data directly into
+   * Arrow vectors via native code for improved performance.
    *
    * @param expectedSchema the expected Iceberg schema
    * @param fileSchema the Parquet file schema
    * @param idToConstant map of field IDs to constant values
    * @param deleteFilter delete filter for handling deleted rows
-   * @param nativeBatchReader the native batch reader instance
-   * @param nativeReaderFactory factory for creating native column readers
+   * @param nativeBatchReader the Iceberg native batch reader instance
    * @return a new {@link CometNativeColumnarBatchReader}
    */
   public static CometNativeColumnarBatchReader buildCometNativeReader(
@@ -121,19 +120,18 @@ public class VectorizedSparkParquetReaders {
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
       DeleteFilter<InternalRow> deleteFilter,
-      org.apache.comet.parquet.NativeBatchReader nativeBatchReader,
-      CometNativeVectorizedReaderBuilder.NativeColumnReaderFactory nativeReaderFactory) {
+      org.apache.comet.parquet.IcebergCometNativeBatchReader nativeBatchReader) {
     return (CometNativeColumnarBatchReader)
         TypeWithSchemaVisitor.visit(
             expectedSchema.asStruct(),
             fileSchema,
-            new CometNativeVectorizedReaderBuilder(
+            new CometVectorizedReaderBuilder(
                 expectedSchema,
                 fileSchema,
                 idToConstant,
-                readers -> new CometNativeColumnarBatchReader(readers, expectedSchema, nativeBatchReader),
-                deleteFilter,
-                nativeReaderFactory));
+                readers ->
+                    new CometNativeColumnarBatchReader(readers, expectedSchema, nativeBatchReader),
+                deleteFilter));
   }
 
   // enables unsafe memory access to avoid costly checks to see if index is within bounds

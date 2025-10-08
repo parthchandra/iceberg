@@ -1166,6 +1166,7 @@ public class Parquet {
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
     private boolean isComet;
+    private boolean isCometNative;
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
@@ -1361,6 +1362,11 @@ public class Parquet {
 
     public ReadBuilder enableComet(boolean enableComet) {
       this.isComet = enableComet;
+      return this;
+    }
+
+    public ReadBuilder enableCometNative(boolean enableCometNative) {
+      this.isCometNative = enableCometNative;
       return this;
     }
 

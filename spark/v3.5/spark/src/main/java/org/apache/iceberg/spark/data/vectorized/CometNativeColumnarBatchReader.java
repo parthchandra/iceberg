@@ -22,7 +22,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
-import org.apache.comet.parquet.NativeBatchReader;
+import org.apache.comet.CometRuntimeException;
+import org.apache.comet.parquet.IcebergCometNativeBatchReader;
+import org.apache.comet.vector.CometSelectionVector;
+import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
@@ -40,41 +43,39 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
  * {@link VectorizedReader} that returns Spark's {@link ColumnarBatch} using Comet's native batch
  * reader.
  *
- * <p>Similar to {@link CometColumnarBatchReader} but uses {@link NativeBatchReader} instead of
- * {@link org.apache.comet.parquet.BatchReader}. The native batch reader reads Parquet data directly
- * into Arrow vectors via native code for improved performance.
+ * <p>Similar to {@link CometColumnarBatchReader} but uses {@link IcebergCometNativeBatchReader}
+ * instead of {@link org.apache.comet.parquet.IcebergCometBatchReader}. The native batch reader
+ * reads Parquet data directly into Arrow vectors via native code for improved performance.
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
 public class CometNativeColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
 
-  private final CometNativeColumnReader[] readers;
+  private final CometColumnReader[] readers;
   private final boolean hasIsDeletedColumn;
 
-  // The delegated NativeBatchReader on the Comet side does the real work of loading batches.
-  // Unlike BatchReader which uses individual ColumnReaders, NativeBatchReader reads data
-  // directly from Parquet into Arrow vectors using native code.
-  private final NativeBatchReader delegate;
+  // The delegated IcebergCometNativeBatchReader on the Comet side does the real work of loading
+  // batches. Unlike IcebergCometBatchReader which uses individual ColumnReaders,
+  // IcebergCometNativeBatchReader reads data directly from Parquet into Arrow vectors using native
+  // code.
+  private final IcebergCometNativeBatchReader delegate;
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
 
   CometNativeColumnarBatchReader(
-      List<VectorizedReader<?>> readers, Schema schema, NativeBatchReader nativeBatchReader) {
+      List<VectorizedReader<?>> readers, Schema schema, IcebergCometNativeBatchReader nativeBatchReader) {
     this.readers =
-        readers.stream()
-            .map(CometNativeColumnReader.class::cast)
-            .toArray(CometNativeColumnReader[]::new);
+        readers.stream().map(CometColumnReader.class::cast).toArray(CometColumnReader[]::new);
     this.hasIsDeletedColumn =
         readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
 
     this.delegate = nativeBatchReader;
-    delegate.setSparkSchema(SparkSchemaUtil.convert(schema));
   }
 
   @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData) {
-    // NativeBatchReader doesn't use setRowGroupInfo in the same way as BatchReader
-    // The native reader gets row group information through the native handle
+    // NativeBatchReader handles row group initialization internally via native code
+    // We only need to track the row position for delete filtering
     this.rowStartPosInBatch =
         pageStore
             .getRowIndexOffset()
@@ -97,7 +98,7 @@ public class CometNativeColumnarBatchReader implements VectorizedReader<Columnar
 
   @Override
   public void setBatchSize(int batchSize) {
-    for (CometNativeColumnReader reader : readers) {
+    for (CometColumnReader reader : readers) {
       if (reader != null) {
         reader.setBatchSize(batchSize);
       }
@@ -110,10 +111,10 @@ public class CometNativeColumnarBatchReader implements VectorizedReader<Columnar
       try {
         delegate.close();
       } catch (IOException e) {
-        throw new UncheckedIOException("Failed to close NativeBatchReader", e);
+        throw new UncheckedIOException("Failed to close IcebergCometNativeBatchReader", e);
       }
     }
-    for (CometNativeColumnReader reader : readers) {
+    for (CometColumnReader reader : readers) {
       if (reader != null) {
         reader.close();
       }
@@ -140,9 +141,17 @@ public class CometNativeColumnarBatchReader implements VectorizedReader<Columnar
         Pair<int[], Integer> pair = buildRowIdMapping(vectors);
         if (pair != null) {
           int[] rowIdMapping = pair.first();
-          numLiveRows = pair.second();
-          for (int i = 0; i < vectors.length; i++) {
-            vectors[i] = new ColumnVectorWithFilter(vectors[i], rowIdMapping);
+          if (pair.second() != null) {
+            numLiveRows = pair.second();
+            for (int i = 0; i < vectors.length; i++) {
+              if (vectors[i] instanceof CometVector) {
+                vectors[i] =
+                    new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);
+              } else {
+                throw new CometRuntimeException(
+                    "Unsupported column vector type: " + vectors[i].getClass());
+              }
+            }
           }
         }
       }
@@ -168,10 +177,11 @@ public class CometNativeColumnarBatchReader implements VectorizedReader<Columnar
       ColumnVector[] columnVectors = new ColumnVector[readers.length];
 
       try {
-        // NativeBatchReader reads the next batch of data
+        // NativeBatchReader reads the next batch of data via native code
         boolean hasNext = delegate.nextBatch();
         if (!hasNext) {
-          throw new IllegalStateException("No more batches available from NativeBatchReader");
+          throw new IllegalStateException(
+              "No more batches available from IcebergCometNativeBatchReader");
         }
 
         // Get the current batch from the native reader
@@ -182,7 +192,7 @@ public class CometNativeColumnarBatchReader implements VectorizedReader<Columnar
           columnVectors[i] = nativeBatch.column(i);
         }
       } catch (IOException e) {
-        throw new UncheckedIOException("Failed to read batch from NativeBatchReader", e);
+        throw new UncheckedIOException("Failed to read batch from IcebergCometNativeBatchReader", e);
       }
 
       return columnVectors;
