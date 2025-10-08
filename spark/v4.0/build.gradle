@@ -288,6 +288,10 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
   }
 
   shadowJar {
+    if (project.hasProperty('riorelease')) {
+      version = project.version.toString().replace("-SNAPSHOT", "")
+    }
+
     configurations = [project.configurations.runtimeClasspath]
 
     zip64 true

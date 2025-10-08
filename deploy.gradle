@@ -41,7 +41,11 @@ subprojects {
 
     task sourceJar(type: Jar, dependsOn: classes) {
       if (project.hasProperty('riorelease')) {
-        version = project.version.toString().replace("-SNAPSHOT", "")
+        String versionStr = project.version.toString()
+        if (versionStr.isEmpty() || versionStr == 'unspecified') {
+          throw new GradleException("Cannot publish with riorelease: project.version is '${versionStr}' for ${project.name}")
+        }
+        version = versionStr.replace("-SNAPSHOT", "")
       }
       archiveClassifier.set('sources')
       from sourceSets.main.allSource
@@ -56,7 +60,11 @@ subprojects {
 
     task testJar(type: Jar) {
       if (project.hasProperty('riorelease')) {
-        version = project.version.toString().replace("-SNAPSHOT", "")
+        String versionStr = project.version.toString()
+        if (versionStr.isEmpty() || versionStr == 'unspecified') {
+          throw new GradleException("Cannot publish with riorelease: project.version is '${versionStr}' for ${project.name}")
+        }
+        version = versionStr.replace("-SNAPSHOT", "")
       }
       archiveClassifier.set('tests')
       from sourceSets.test.output
@@ -64,7 +72,11 @@ subprojects {
 
     task testShadowJar(type: ShadowJar) {
       if (project.hasProperty('riorelease')) {
-        version = project.version.toString().replace("-SNAPSHOT", "")
+        String versionStr = project.version.toString()
+        if (versionStr.isEmpty() || versionStr == 'unspecified') {
+          throw new GradleException("Cannot publish with riorelease: project.version is '${versionStr}' for ${project.name}")
+        }
+        version = versionStr.replace("-SNAPSHOT", "")
       }
       zip64 = true
       archiveClassifier.set('shadow-tests')
@@ -130,7 +142,11 @@ subprojects {
       publications {
         apache(MavenPublication) {
           if (project.hasProperty('riorelease')) {
-            version = project.version.toString().replace("-SNAPSHOT", "")
+            String versionStr = project.version.toString()
+            if (versionStr.isEmpty() || versionStr == 'unspecified') {
+              throw new GradleException("Cannot publish with riorelease: project.version is '${versionStr}' for ${project.name}")
+            }
+            version = versionStr.replace("-SNAPSHOT", "")
           }
 
           if (tasks.matching({task -> task.name == 'shadowJar'}).isEmpty()) {

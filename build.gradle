@@ -1062,7 +1062,11 @@ boolean versionFileExists() {
 
 @Memoized
 String getVersionFromFile() {
-  return file('version.txt').text.trim()
+  String versionFromFile = file('version.txt').text.trim()
+  if (versionFromFile.isEmpty()) {
+    throw new Exception("version.txt exists but is empty or contains only whitespace")
+  }
+  return versionFromFile
 }
 
 String getProjectVersion() {

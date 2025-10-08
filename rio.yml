@@ -29,7 +29,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - apple/spark-build.sh
+        - dev/apple/spark-build.sh
     machine:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
@@ -39,7 +39,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - apple/spark-build.sh
+        - dev/apple/spark-build.sh
     machine:
       baseImage: docker.apple.com/pie/comet-builder-ubi8:latest
     jenkins: *jenkins_config
@@ -50,7 +50,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - TARGET=core apple/flink-build.sh
+        - TARGET=core dev/apple/flink-build.sh
 
   - group: flink-prb-1.18
     machine:
@@ -58,7 +58,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - TARGET=flink FLINK_VERSION=1.18 apple/flink-build.sh
+        - TARGET=flink FLINK_VERSION=1.18 dev/apple/flink-build.sh
 
   - group: flink-prb-1.19
     machine:
@@ -66,7 +66,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - TARGET=flink FLINK_VERSION=1.19 apple/flink-build.sh
+        - TARGET=flink FLINK_VERSION=1.19 dev/apple/flink-build.sh
 
   - group: flink-prb-1.20
     machine:
@@ -74,7 +74,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - TARGET=flink FLINK_VERSION=1.20 apple/flink-build.sh
+        - TARGET=flink FLINK_VERSION=1.20 dev/apple/flink-build.sh
 
   - group: flink-prb-2.1
     machine:
@@ -82,7 +82,7 @@ pipelines:
     build:
       template: freestyle:v4:prb
       steps:
-        - TARGET=flink FLINK_VERSION=2.1 apple/flink-build.sh
+        - TARGET=flink FLINK_VERSION=2.1 dev/apple/flink-build.sh
 
   # publish pipelines
   - name: apple-1.9.1.x-preview-snapshot
@@ -90,8 +90,8 @@ pipelines:
     build:
       template: freestyle:v4:publish
       steps:
-        - apple/spark-publish.sh
-        - apple/flink-publish.sh
+        - dev/apple/spark-publish.sh
+        - dev/apple/flink-publish.sh
     package:
       freeform:
         - publish:
@@ -107,22 +107,15 @@ pipelines:
     branchName: apple-1.9.1.x-preview-release
     build:
       template: freestyle:v4:publish
-      buildParameters:
-        - parameter: RELEASE_VERSION
-          description: Release version
-          defaultValue: "1.9.1.0-apple-preview"
       steps:
-        # Update version for release
-        - echo ${RELEASE_VERSION} > version.txt
-        - git add version.txt
-        - git commit -m"[apple][release] Set release version to ${RELEASE_VERSION}"
+        # Read version from version.txt (updated via manual PR)
+        - export RELEASE_VERSION=$(cat version.txt)
         - export TAG="release-${RELEASE_VERSION}"
         # Create release tag
         - git tag -d "${TAG}" || true
         - git tag "${TAG}" -m "${TAG}"
-        # Release
-        - apple/spark-release.sh
-        - RELEASE=true apple/flink-publish.sh
+        - dev/apple/spark-release.sh
+        - RELEASE=true dev/apple/flink-publish.sh
         # Push the release tag
         - SSH_AUTH_SOCK=${SSH_AUTH_SOCK_DEPLOY_KEY} git push origin refs/tags/$TAG
     package:
