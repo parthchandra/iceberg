@@ -114,7 +114,8 @@ pipelines:
       steps:
         # Update version for release
         - echo ${RELEASE_VERSION} > version.txt
-        - git commit -am"[apple][release] Set release version to ${RELEASE_VERSION}"
+        - git add version.txt
+        - git commit -m"[apple][release] Set release version to ${RELEASE_VERSION}"
         - export TAG="release-${RELEASE_VERSION}"
         # Create release tag
         - git tag -d "${TAG}" || true
