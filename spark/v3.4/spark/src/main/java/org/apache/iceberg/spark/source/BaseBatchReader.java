@@ -95,8 +95,16 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         .split(start, length)
         .createBatchedReaderFunc(
             fileSchema -> {
-              if (parquetConf.readerType() == ParquetReaderType.COMET) {
+              ParquetReaderType readerType = parquetConf.readerType();
+              if (readerType == ParquetReaderType.COMET) {
                 return VectorizedSparkParquetReaders.buildCometReader(
+                    requiredSchema, fileSchema, idToConstant, deleteFilter);
+              } else if (readerType == ParquetReaderType.COMET_NATIVE) {
+                // Note: COMET_NATIVE requires additional setup that cannot be done here
+                // The native batch reader needs to be created with file metadata
+                // For now, fall back to COMET reader
+                // TODO: Implement proper COMET_NATIVE support in Parquet builder
+                return VectorizedSparkParquetReaders.buildCometNativeReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
               } else {
                 return VectorizedSparkParquetReaders.buildReader(
@@ -111,7 +119,8 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         // read performance as every batch read doesn't have to pay the cost of allocating memory.
         .reuseContainers()
         .withNameMapping(nameMapping())
-        .enableComet(parquetConf.readerType() == ParquetReaderType.COMET)
+        .enableComet(parquetConf.readerType() == ParquetReaderType.COMET
+            || parquetConf.readerType() == ParquetReaderType.COMET_NATIVE)
         .build();
   }
 
