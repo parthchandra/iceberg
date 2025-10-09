@@ -1166,6 +1166,9 @@ public class Parquet {
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
     private boolean isComet;
+    private boolean isCometNative;
+    private org.apache.iceberg.data.DeleteFilter<?> deleteFilter = null;
+    private Map<Integer, ?> idToConstant = null;
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
@@ -1361,6 +1364,23 @@ public class Parquet {
 
     public ReadBuilder enableComet(boolean enableComet) {
       this.isComet = enableComet;
+      this.isCometNative = false; // Reset native flag when setting regular comet
+      return this;
+    }
+
+    public ReadBuilder enableCometNative(boolean enableCometNative) {
+      this.isCometNative = enableCometNative;
+      this.isComet = enableCometNative; // Also set isComet for compatibility
+      return this;
+    }
+
+    public ReadBuilder withDeleteFilter(org.apache.iceberg.data.DeleteFilter<?> filter) {
+      this.deleteFilter = filter;
+      return this;
+    }
+
+    public ReadBuilder withIdToConstant(Map<Integer, ?> constants) {
+      this.idToConstant = constants;
       return this;
     }
 
@@ -1428,7 +1448,24 @@ public class Parquet {
         }
 
         if (batchedReaderFunc != null) {
-          if (isComet) {
+          if (isCometNative) {
+            LOG.info("Comet native vectorized reader enabled");
+            return new CometNativeVectorizedParquetReader<>(
+                file,
+                schema,
+                options,
+                (org.apache.iceberg.data.DeleteFilter) deleteFilter,
+                idToConstant,
+                mapping,
+                filter,
+                reuseContainers,
+                caseSensitive,
+                maxRecordsPerBatch,
+                start,
+                length,
+                fileEncryptionKey,
+                fileAADPrefix);
+          } else if (isComet) {
             LOG.info("Comet vectorized reader enabled");
             return new CometVectorizedParquetReader<>(
                 file,

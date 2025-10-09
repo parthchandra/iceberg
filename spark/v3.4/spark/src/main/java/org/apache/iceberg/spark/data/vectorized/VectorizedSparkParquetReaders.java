@@ -103,19 +103,30 @@ public class VectorizedSparkParquetReaders {
   /**
    * Builds a {@link CometNativeColumnarBatchReader} using Comet's native batch reader.
    *
+   * <p>The native batch reader is created with just the schema in the callback. It must be
+   * initialized later by calling {@link
+   * CometNativeColumnarBatchReader#initNativeBatchReader(org.apache.hadoop.conf.Configuration,
+   * org.apache.spark.sql.execution.datasources.PartitionedFile, String, byte[], int,
+   * org.apache.spark.sql.types.StructType, boolean, boolean, boolean, boolean,
+   * org.apache.spark.sql.types.StructType, org.apache.spark.sql.catalyst.InternalRow,
+   * java.util.Map)}.
+   *
    * @param expectedSchema the Iceberg schema to read
    * @param fileSchema the Parquet schema from the file
    * @param idToConstant a map of field IDs to constant values
    * @param deleteFilter the delete filter to apply
-   * @param nativeBatchReader the Comet native batch reader that provides NativeColumnReaders
    * @return a CometNativeColumnarBatchReader instance
    */
   public static CometNativeColumnarBatchReader buildCometNativeReader(
       Schema expectedSchema,
       MessageType fileSchema,
       Map<Integer, ?> idToConstant,
-      DeleteFilter<InternalRow> deleteFilter,
-      org.apache.comet.parquet.IcebergCometNativeBatchReader nativeBatchReader) {
+      DeleteFilter<InternalRow> deleteFilter) {
+    // Create native batch reader with just the schema - will be initialized later
+    org.apache.comet.parquet.IcebergCometNativeBatchReader nativeBatchReader =
+        new org.apache.comet.parquet.IcebergCometNativeBatchReader(
+            org.apache.iceberg.spark.SparkSchemaUtil.convert(expectedSchema));
+
     return (CometNativeColumnarBatchReader)
         TypeWithSchemaVisitor.visit(
             expectedSchema.asStruct(),

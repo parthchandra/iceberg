@@ -90,38 +90,46 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
     // get required schema if there are deletes
     Schema requiredSchema = deleteFilter != null ? deleteFilter.requiredSchema() : expectedSchema();
 
-    return Parquet.read(inputFile)
-        .project(requiredSchema)
-        .split(start, length)
-        .createBatchedReaderFunc(
-            fileSchema -> {
-              ParquetReaderType readerType = parquetConf.readerType();
-              if (readerType == ParquetReaderType.COMET) {
-                return VectorizedSparkParquetReaders.buildCometReader(
-                    requiredSchema, fileSchema, idToConstant, deleteFilter);
-              } else if (readerType == ParquetReaderType.COMET_NATIVE) {
-                // Note: COMET_NATIVE requires additional setup that cannot be done here
-                // The native batch reader needs to be created with file metadata
-                // For now, fall back to COMET reader
-                // TODO: Implement proper COMET_NATIVE support in Parquet builder
-                return VectorizedSparkParquetReaders.buildCometNativeReader(
-                    requiredSchema, fileSchema, idToConstant, deleteFilter);
-              } else {
-                return VectorizedSparkParquetReaders.buildReader(
-                    requiredSchema, fileSchema, idToConstant, deleteFilter);
-              }
-            })
-        .recordsPerBatch(parquetConf.batchSize())
-        .filter(residual)
-        .caseSensitive(caseSensitive())
-        // Spark eagerly consumes the batches. So the underlying memory allocated could be reused
-        // without worrying about subsequent reads clobbering over each other. This improves
-        // read performance as every batch read doesn't have to pay the cost of allocating memory.
-        .reuseContainers()
-        .withNameMapping(nameMapping())
-        .enableComet(parquetConf.readerType() == ParquetReaderType.COMET
-            || parquetConf.readerType() == ParquetReaderType.COMET_NATIVE)
-        .build();
+    Parquet.ReadBuilder builder =
+        Parquet.read(inputFile)
+            .project(requiredSchema)
+            .split(start, length)
+            .createBatchedReaderFunc(
+                fileSchema -> {
+                  ParquetReaderType readerType = parquetConf.readerType();
+                  if (readerType == ParquetReaderType.COMET) {
+                    return VectorizedSparkParquetReaders.buildCometReader(
+                        requiredSchema, fileSchema, idToConstant, deleteFilter);
+                  } else if (readerType == ParquetReaderType.COMET_NATIVE) {
+                    return VectorizedSparkParquetReaders.buildCometNativeReader(
+                        requiredSchema, fileSchema, idToConstant, deleteFilter);
+                  } else {
+                    return VectorizedSparkParquetReaders.buildReader(
+                        requiredSchema, fileSchema, idToConstant, deleteFilter);
+                  }
+                })
+            .recordsPerBatch(parquetConf.batchSize())
+            .filter(residual)
+            .caseSensitive(caseSensitive())
+            // Spark eagerly consumes the batches. So the underlying memory allocated could be
+            // reused
+            // without worrying about subsequent reads clobbering over each other. This improves
+            // read performance as every batch read doesn't have to pay the cost of allocating
+            // memory.
+            .reuseContainers()
+            .withNameMapping(nameMapping());
+
+    if (parquetConf.readerType() == ParquetReaderType.COMET_NATIVE) {
+      return builder
+          .enableCometNative(true)
+          .withDeleteFilter(deleteFilter)
+          .withIdToConstant(idToConstant)
+          .build();
+    } else if (parquetConf.readerType() == ParquetReaderType.COMET) {
+      return builder.enableComet(true).build();
+    } else {
+      return builder.build();
+    }
   }
 
   private CloseableIterable<ColumnarBatch> newOrcIterable(

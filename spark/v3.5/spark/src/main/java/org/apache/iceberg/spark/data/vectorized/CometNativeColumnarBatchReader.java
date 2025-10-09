@@ -72,6 +72,55 @@ class CometNativeColumnarBatchReader implements VectorizedReader<ColumnarBatch> 
     this.delegate = nativeBatchReader;
   }
 
+  /**
+   * Initialize the native batch reader with all required parameters. This must be called before
+   * reading any data.
+   *
+   * @param conf Hadoop configuration
+   * @param inputSplit the partitioned file to read
+   * @param parquetMetadataJson ParquetMetadata as JSON string
+   * @param nativeFilter optional native filter as byte array
+   * @param capacity batch capacity
+   * @param dataSchema Spark data schema
+   * @param isCaseSensitive whether column resolution is case-sensitive
+   * @param useFieldId whether to use field IDs for column resolution
+   * @param ignoreMissingIds whether to ignore missing field IDs
+   * @param useLegacyDateTimestamp whether to use legacy date/timestamp handling
+   * @param partitionSchema Spark partition schema
+   * @param partitionValues partition values
+   * @param metrics SQL metrics map
+   */
+  public void initNativeBatchReader(
+      org.apache.hadoop.conf.Configuration conf,
+      org.apache.spark.sql.execution.datasources.PartitionedFile inputSplit,
+      String parquetMetadataJson,
+      byte[] nativeFilter,
+      int capacity,
+      org.apache.spark.sql.types.StructType dataSchema,
+      boolean isCaseSensitive,
+      boolean useFieldId,
+      boolean ignoreMissingIds,
+      boolean useLegacyDateTimestamp,
+      org.apache.spark.sql.types.StructType partitionSchema,
+      InternalRow partitionValues,
+      java.util.Map<String, org.apache.spark.sql.execution.metric.SQLMetric> metrics)
+      throws Throwable {
+    delegate.init(
+        conf,
+        inputSplit,
+        parquetMetadataJson,
+        nativeFilter,
+        capacity,
+        dataSchema,
+        isCaseSensitive,
+        useFieldId,
+        ignoreMissingIds,
+        useLegacyDateTimestamp,
+        partitionSchema,
+        partitionValues,
+        metrics);
+  }
+
   @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData) {
