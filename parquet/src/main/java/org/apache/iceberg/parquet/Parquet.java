@@ -1167,7 +1167,6 @@ public class Parquet {
     private ByteBuffer fileAADPrefix = null;
     private boolean isComet;
     private boolean isCometNative;
-    private org.apache.iceberg.data.DeleteFilter<?> deleteFilter = null;
     private Map<Integer, ?> idToConstant = null;
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
@@ -1371,16 +1370,6 @@ public class Parquet {
     public ReadBuilder enableCometNative(boolean enableCometNative) {
       this.isCometNative = enableCometNative;
       this.isComet = enableCometNative; // Also set isComet for compatibility
-      return this;
-    }
-
-    public ReadBuilder withDeleteFilter(org.apache.iceberg.data.DeleteFilter<?> filter) {
-      this.deleteFilter = filter;
-      return this;
-    }
-
-    public ReadBuilder withIdToConstant(Map<Integer, ?> constants) {
-      this.idToConstant = constants;
       return this;
     }
 
