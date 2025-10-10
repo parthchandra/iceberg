@@ -113,7 +113,7 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
   }
 
   @Override
-  public CloseableIterator<T> iterator() {
+public CloseableIterator<T> iterator() {
     FileIterator<T> iter =
         new FileIterator<>(init(), properties, start, length, fileEncryptionKey, fileAADPrefix);
     addCloseable(iter);
