@@ -1186,6 +1186,7 @@ public class Parquet {
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
     private boolean isComet;
+    private boolean isCometNative;
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
@@ -1384,6 +1385,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder enableCometNative(boolean enableCometNative) {
+      this.isCometNative = enableCometNative;
+      return this;
+    }
+
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1448,7 +1454,24 @@ public class Parquet {
         }
 
         if (batchedReaderFunc != null) {
-          if (isComet) {
+          if (isCometNative) {
+            LOG.info("COMET_NATIVE: Comet native vectorized reader enabled");
+            return new CometNativeVectorizedParquetReader<>(
+                file,
+                schema,
+                options,
+                batchedReaderFunc,
+                mapping,
+                filter,
+                reuseContainers,
+                caseSensitive,
+                maxRecordsPerBatch,
+                properties,
+                start,
+                length,
+                fileEncryptionKey,
+                fileAADPrefix);
+          } else if (isComet) {
             LOG.info("Comet vectorized reader enabled");
             return new CometVectorizedParquetReader<>(
                 file,
