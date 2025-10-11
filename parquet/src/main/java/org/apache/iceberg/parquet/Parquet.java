@@ -1186,6 +1186,11 @@ public class Parquet {
     private NameMapping nameMapping = null;
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
+<<<<<<< HEAD
+=======
+    private boolean isComet;
+    private boolean isCometNative;
+>>>>>>> 1954607808 (feat: (wip) new comet native reader)
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
@@ -1395,6 +1400,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder enableCometNative(boolean enableCometNative) {
+      this.isCometNative = enableCometNative;
+      return this;
+    }
+
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1459,6 +1469,7 @@ public class Parquet {
         }
 
         if (batchedReaderFunc != null) {
+<<<<<<< HEAD
           // Try to load custom vectorized reader factory from properties
           String factoryName = properties.get(VECTORIZED_READER_FACTORY);
 
@@ -1478,20 +1489,56 @@ public class Parquet {
                       .split(start, length)
                       .encryption(fileEncryptionKey, fileAADPrefix)
                       .build());
+=======
+          if (isCometNative) {
+            LOG.info("COMET_NATIVE: Comet native vectorized reader enabled");
+            return new CometNativeVectorizedParquetReader<>(
+                file,
+                schema,
+                options,
+                batchedReaderFunc,
+                mapping,
+                filter,
+                reuseContainers,
+                caseSensitive,
+                maxRecordsPerBatch,
+                properties,
+                start,
+                length,
+                fileEncryptionKey,
+                fileAADPrefix);
+          } else if (isComet) {
+            LOG.info("Comet vectorized reader enabled");
+            return new CometVectorizedParquetReader<>(
+                file,
+                schema,
+                options,
+                batchedReaderFunc,
+                mapping,
+                filter,
+                reuseContainers,
+                caseSensitive,
+                maxRecordsPerBatch,
+                properties,
+                start,
+                length,
+                fileEncryptionKey,
+                fileAADPrefix);
+>>>>>>> 1954607808 (feat: (wip) new comet native reader)
             }
           }
 
           // Fall back to default VectorizedParquetReader
-          return new VectorizedParquetReader<>(
-              file,
-              schema,
-              options,
-              batchedReaderFunc,
-              mapping,
-              filter,
-              reuseContainers,
-              caseSensitive,
-              maxRecordsPerBatch);
+            return new VectorizedParquetReader<>(
+                file,
+                schema,
+                options,
+                batchedReaderFunc,
+                mapping,
+                filter,
+                reuseContainers,
+                caseSensitive,
+                maxRecordsPerBatch);
         } else {
           Function<MessageType, ParquetValueReader<?>> readBuilder =
               readerFunction

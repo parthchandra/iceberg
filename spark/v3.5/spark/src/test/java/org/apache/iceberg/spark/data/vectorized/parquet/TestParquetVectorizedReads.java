@@ -125,7 +125,7 @@ public class TestParquetVectorizedReads extends AvroDataTestBase {
 
   @Override
   protected boolean supportsNestedTypes() {
-    return false;
+    return true;
   }
 
   @Override
