@@ -185,7 +185,15 @@ public class ReadConf<T> {
     return reuseContainers;
   }
 
-  public Integer batchSize() {
+  List<BlockMetaData> getRowGroups() {
+    return rowGroups;
+  }
+
+  ParquetFileReader getReader() {
+    return reader;
+  }
+
+  Integer batchSize() {
     return batchSize;
   }
 

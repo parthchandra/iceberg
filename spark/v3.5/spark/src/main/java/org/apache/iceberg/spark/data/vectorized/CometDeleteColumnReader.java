@@ -45,7 +45,7 @@ class CometDeleteColumnReader<T> extends CometColumnReader {
     setInitialized(true);
   }
 
-  private static class DeleteColumnReader extends MetadataColumnReader {
+  public static class DeleteColumnReader extends MetadataColumnReader {
     private boolean[] isDeleted;
 
     DeleteColumnReader() {

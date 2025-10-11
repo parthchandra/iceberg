@@ -121,13 +121,12 @@ class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     if (useCometBatchReads()) {
       return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.COMET));
-
+    } else if (useCometNativeBatchReads()) {
+      return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.COMET_NATIVE));
     } else if (useParquetBatchReads()) {
       return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.ICEBERG));
-
     } else if (useOrcBatchReads()) {
       return new SparkColumnarReaderFactory(orcBatchReadConf());
-
     } else {
       return new SparkRowReaderFactory();
     }
@@ -141,7 +140,7 @@ class SparkBatch implements Batch {
   }
 
   private OrcBatchReadConf orcBatchReadConf() {
-    return ImmutableOrcBatchReadConf.builder().batchSize(readConf.parquetBatchSize()).build();
+    return ImmutableOrcBatchReadConf.builder().batchSize(readConf.orcBatchSize()).build();
   }
 
   // conditions for using Parquet batch reads:
@@ -174,9 +173,9 @@ class SparkBatch implements Batch {
 
   protected boolean useCometBatchReads() {
     return readConf.parquetVectorizationEnabled()
+        && taskGroups.stream().allMatch(this::supportsParquetBatchReads)
         && readConf.parquetReaderType() == ParquetReaderType.COMET
-        && expectedSchema.columns().stream().allMatch(this::supportsCometBatchReads)
-        && taskGroups.stream().allMatch(this::supportsCometBatchReads);
+        && expectedSchema.columns().stream().allMatch(this::supportsCometBatchReads);
   }
 
   private boolean supportsCometBatchReads(Types.NestedField field) {
@@ -186,19 +185,17 @@ class SparkBatch implements Batch {
         && field.fieldId() != MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.fieldId();
   }
 
-  private boolean supportsCometBatchReads(ScanTask task) {
-    if (task instanceof ScanTaskGroup) {
-      ScanTaskGroup<?> taskGroup = (ScanTaskGroup<?>) task;
-      return taskGroup.tasks().stream().allMatch(this::supportsCometBatchReads);
+  protected boolean useCometNativeBatchReads() {
+    return readConf.parquetVectorizationEnabled()
+        && taskGroups.stream().allMatch(this::supportsParquetBatchReads)
+        && readConf.parquetReaderType() == ParquetReaderType.COMET_NATIVE
+        && expectedSchema.columns().stream().allMatch(this::supportsCometNativeBatchReads);
+  }
 
-    } else if (task.isFileScanTask() && !task.isDataTask()) {
-      FileScanTask fileScanTask = task.asFileScanTask();
-      // Comet can't handle delete files for now
-      return fileScanTask.file().format() == FileFormat.PARQUET;
-
-    } else {
-      return false;
-    }
+  private boolean supportsCometNativeBatchReads(Types.NestedField field) {
+    return !field.type().typeId().equals(Type.TypeID.UUID)
+        && field.fieldId() != MetadataColumns.ROW_ID.fieldId()
+        && field.fieldId() != MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.fieldId();
   }
 
   // conditions for using ORC batch reads:
