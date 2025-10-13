@@ -145,7 +145,7 @@ class CometNativeVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectorize
       Types.MapType expectedMap,
       GroupType map,
       VectorizedReader<?> unusedKeys,
-      VectorizedReader<?> unusedValues ) {
+      VectorizedReader<?> unusedValues) {
     if (expectedMap != null && map.getId() != null) {
       // NativeColumnReader can handle map types for top-level fields
       Types.NestedField field = icebergSchema.findField(map.getId().intValue());
