@@ -29,7 +29,6 @@ import org.apache.comet.parquet.TypeUtil;
 import org.apache.comet.parquet.Utils;
 import org.apache.comet.shaded.arrow.memory.RootAllocator;
 import org.apache.iceberg.parquet.CometTypeUtils;
-import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
@@ -38,9 +37,8 @@ import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
-import org.apache.spark.sql.vectorized.ColumnVector;
 
-class CometColumnReader implements VectorizedReader<ColumnVector> {
+class CometColumnReader extends BaseCometColumnReader<AbstractColumnReader> {
   // use the Comet default batch size
   public static final int DEFAULT_BATCH_SIZE = 8192;
 
@@ -49,7 +47,6 @@ class CometColumnReader implements VectorizedReader<ColumnVector> {
   private final int fieldId;
 
   // The delegated ColumnReader from Comet side
-  private AbstractColumnReader delegate;
   private boolean initialized = false;
   private int batchSize = DEFAULT_BATCH_SIZE;
   private CometSchemaImporter importer;
@@ -70,20 +67,12 @@ class CometColumnReader implements VectorizedReader<ColumnVector> {
     this.fieldId = field.fieldId();
   }
 
-  public AbstractColumnReader delegate() {
-    return delegate;
-  }
-
-  void setDelegate(AbstractColumnReader delegate) {
-    this.delegate = delegate;
+  public int batchSize() {
+    return batchSize;
   }
 
   void setInitialized(boolean initialized) {
     this.initialized = initialized;
-  }
-
-  public int batchSize() {
-    return batchSize;
   }
 
   /**
@@ -159,10 +148,5 @@ class CometColumnReader implements VectorizedReader<ColumnVector> {
   @Override
   public void setBatchSize(int size) {
     this.batchSize = size;
-  }
-
-  @Override
-  public ColumnVector read(ColumnVector reuse, int numRowsToRead) {
-    throw new UnsupportedOperationException("Not supported");
   }
 }

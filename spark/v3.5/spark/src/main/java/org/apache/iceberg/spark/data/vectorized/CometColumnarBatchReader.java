@@ -33,6 +33,7 @@ import org.apache.iceberg.parquet.CometPageReadStore;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.data.vectorized.CometDeleteColumnReader.DeleteColumnReader;
 import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -198,10 +199,11 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
     void readDeletedColumn(ColumnVector[] columnVectors, boolean[] isDeleted) {
       for (int i = 0; i < readers.length; i++) {
         if (readers[i] instanceof CometDeleteColumnReader) {
-          CometDeleteColumnReader deleteColumnReader = new CometDeleteColumnReader<>(isDeleted);
+          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader = new CometDeleteColumnReader<>(isDeleted);
           deleteColumnReader.setBatchSize(batchSize);
-          deleteColumnReader.delegate().readBatch(batchSize);
-          columnVectors[i] = deleteColumnReader.delegate().currentBatch();
+          DeleteColumnReader deleted = (DeleteColumnReader) deleteColumnReader.delegate();
+          deleted.readBatch(batchSize);
+          columnVectors[i] = deleted.currentBatch();
         }
       }
     }
