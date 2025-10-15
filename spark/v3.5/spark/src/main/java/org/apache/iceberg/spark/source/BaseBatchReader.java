@@ -98,6 +98,9 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
               if (parquetConf.readerType() == ParquetReaderType.COMET) {
                 return VectorizedSparkParquetReaders.buildCometReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
+              } else  if (parquetConf.readerType() == ParquetReaderType.COMET_NATIVE) {
+                  return VectorizedSparkParquetReaders.buildCometNativeReader(
+                      requiredSchema, fileSchema, idToConstant, deleteFilter);
               } else {
                 return VectorizedSparkParquetReaders.buildReader(
                     requiredSchema, fileSchema, idToConstant, deleteFilter);
