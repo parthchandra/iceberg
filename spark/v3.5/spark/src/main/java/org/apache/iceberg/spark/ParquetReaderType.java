@@ -34,7 +34,13 @@ public enum ParquetReaderType {
    * <p>TODO: Implement {@link org.apache.comet.parquet.SupportsComet} in SparkScan to convert Spark
    * physical plan to native physical plan for native execution.
    */
-  COMET;
+  COMET,
+
+  /**
+   * COMET_NATIVE type uses the Apache DataFusion Comet native Parquet reader. This reader performs
+   * I/O, decompression, and decoding entirely in native code for maximum performance.
+   */
+  COMET_NATIVE;
 
   public static ParquetReaderType fromString(String typeAsString) {
     Preconditions.checkArgument(typeAsString != null, "Parquet reader type is null");
