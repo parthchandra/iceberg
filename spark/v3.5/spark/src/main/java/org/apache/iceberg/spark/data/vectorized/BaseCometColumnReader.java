@@ -18,21 +18,29 @@
  */
 package org.apache.iceberg.spark.data.vectorized;
 
-import org.apache.comet.parquet.NativeColumnReader;
+import org.apache.iceberg.parquet.VectorizedReader;
+import org.apache.spark.sql.vectorized.ColumnVector;
 
-class CometNativeColumnReader extends BaseCometColumnReader<NativeColumnReader> {
+abstract class BaseCometColumnReader<T> implements VectorizedReader<ColumnVector> {
 
-  CometNativeColumnReader() {}
+  protected T delegate;
 
-  @Override
-  public void setBatchSize(int batchSize) {
-    // Batch size is set when NativeColumnReader is created
+  public T delegate() {
+    return delegate;
+  }
+
+  public void setDelegate(T delegate) {
+    this.delegate = delegate;
   }
 
   @Override
-  public void close() {
-    if (delegate != null) {
-      delegate.close();
-    }
+  public ColumnVector read(ColumnVector reuse, int numRowsToRead) {
+    throw new UnsupportedOperationException("Not supported");
   }
+
+  @Override
+  public abstract void close();
+
+  @Override
+  public abstract void setBatchSize(int batchSize);
 }
