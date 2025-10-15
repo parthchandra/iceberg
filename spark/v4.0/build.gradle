@@ -64,6 +64,7 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
     implementation("org.apache.datasketches:datasketches-java:${libs.versions.datasketches.get()}")
 
     compileOnly libs.errorprone.annotations
+    compileOnly libs.jetbrains.annotations
     compileOnly libs.avro.avro
     compileOnly("org.apache.spark:spark-hive_${scalaVersion}:${libs.versions.spark40.get()}") {
       exclude group: 'org.apache.avro', module: 'avro'
