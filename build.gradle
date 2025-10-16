@@ -189,7 +189,7 @@ subprojects {
 
   tasks.withType(JavaCompile.class).configureEach {
     options.encoding = "UTF-8"
-    options.release = 11
+    options.release = 17
   }
 
   javadoc {
@@ -242,9 +242,9 @@ subprojects {
     tasks.withType(ScalaCompile.class) {
       scalaCompileOptions.keepAliveMode.set(KeepAliveMode.DAEMON)
       // `options.release` doesn't seem to work for ScalaCompile :(
-      sourceCompatibility = "11"
-      targetCompatibility = "11"
-      scalaCompileOptions.additionalParameters.add("-release:11")
+      sourceCompatibility = "17"
+      targetCompatibility = "17"
+      scalaCompileOptions.additionalParameters.add("-release:17")
     }
   }
 }
