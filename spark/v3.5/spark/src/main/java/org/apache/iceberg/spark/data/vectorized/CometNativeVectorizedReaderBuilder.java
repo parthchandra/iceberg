@@ -107,7 +107,7 @@ class CometNativeVectorizedReaderBuilder extends TypeWithSchemaVisitor<Vectorize
   protected VectorizedReader<?> vectorizedReader(List<VectorizedReader<?>> reorderedFields) {
     VectorizedReader<?> reader = readerFactory.apply(reorderedFields);
     if (deleteFilter != null) {
-      ((CometColumnarBatchReader) reader).setDeleteFilter(deleteFilter);
+      ((CometNativeColumnarBatchReader) reader).setDeleteFilter(deleteFilter);
     }
     return reader;
   }

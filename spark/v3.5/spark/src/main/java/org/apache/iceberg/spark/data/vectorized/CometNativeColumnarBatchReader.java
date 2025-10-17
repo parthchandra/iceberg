@@ -19,16 +19,23 @@
 package org.apache.iceberg.spark.data.vectorized;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.comet.CometRuntimeException;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometNativeBatchReader;
+import org.apache.comet.parquet.NativeBatchReader;
 import org.apache.comet.parquet.NativeColumnReader;
 import org.apache.comet.vector.CometSelectionVector;
 import org.apache.comet.vector.CometVector;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
+import org.apache.iceberg.exceptions.RuntimeIOException;
+import org.apache.iceberg.hadoop.HadoopInputFile;
+import org.apache.iceberg.parquet.NativeReadConf;
+import org.apache.iceberg.parquet.NativeVectorizedReader;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
@@ -37,17 +44,18 @@ import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
+import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 /**
- * {@link VectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized
+ * {@link NativeVectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized
  * read path. The {@link ColumnarBatch} returned is created by passing in the Arrow vectors
  * populated via delegated read calls to {@link CometNativeColumnReader NativeColumnReader(s)}.
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
-class CometNativeColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
+class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarBatch> {
 
   private final BaseCometColumnReader<?>[] readers;
   private final boolean hasIsDeletedColumn;
@@ -61,9 +69,10 @@ class CometNativeColumnarBatchReader implements VectorizedReader<ColumnarBatch> 
   // calling NativeBatchReader.nextBatch, the isDeleted value is not yet available, so
   // DeleteColumnReader.readBatch must be called explicitly later, after the isDeleted value is
   // available.
-  private final IcebergCometNativeBatchReader delegate;
+  private IcebergCometNativeBatchReader delegate = null;
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
+  private NativeReadConf<?> conf = null;
 
   CometNativeColumnarBatchReader(List<VectorizedReader<?>> readers, Schema schema) {
     this.readers =
@@ -72,30 +81,84 @@ class CometNativeColumnarBatchReader implements VectorizedReader<ColumnarBatch> 
             .toArray(BaseCometColumnReader[]::new);
     this.hasIsDeletedColumn = false;
             readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
+  }
+
+  @Override
+  public void init(NativeReadConf<?> readConf, long start, long length) {
+    this.conf = readConf;
     this.delegate = new IcebergCometNativeBatchReader(SparkSchemaUtil.convert(schema));
+    // Initialize the native batch reader with parameters from NativeReadConf
+    try {
+      // Get Configuration from HadoopInputFile
+      Configuration hadoopConf;
+      if (readConf.file() instanceof HadoopInputFile) {
+        HadoopInputFile hadoopInputFile = (HadoopInputFile) readConf.file();
+        hadoopConf = hadoopInputFile.getConf();
+      } else {
+        throw new IllegalArgumentException(
+            "CometNativeColumnarBatchReader only supports HadoopInputFile, got: "
+                + readConf.file().getClass().getName());
+      }
+
+      // Get ParquetMetadata from the file reader (we need to open it to get metadata)
+      ParquetMetadata metadata;
+      try {
+        metadata = readConf.reader().getFooter();
+      } catch (IOException e) {
+        throw new RuntimeIOException(e, "Failed to get Parquet metadata");
+      }
+
+      // Create FileInfo from NativeReadConf
+      NativeBatchReader.FileInfo fileInfo =
+          new NativeBatchReader.FileInfo(
+              start,
+              length,
+              readConf.file().location(),
+              readConf.file().getLength());
+
+      // Convert ParquetMetadata to JSON
+      String metadataJson = ParquetMetadata.toJSON(metadata);
+
+      // Convert filter to native filter (null for now, needs implementation)
+      byte[] nativeFilter = null; // TODO: Convert Iceberg Expression to native filter
+
+      // Get Spark schema from the vectorized model
+      // The schema is already set in the delegate during construction
+      StructType sparkSchema = delegate.sparkSchema;
+
+      // Initialize the native reader
+      delegate.init(
+          hadoopConf,
+          fileInfo,
+          metadataJson,
+          nativeFilter,
+          readConf.batchSize(),
+          sparkSchema,
+          true, // caseSensitive - from ReadConf
+          true, // useFieldId - Iceberg uses field IDs
+          false, // ignoreMissingIds
+          false, // useLegacyDateTimestamp
+          null, // partitionSchema - no partitions for now
+          null, // partitionValues - no partitions for now
+          Collections.emptyMap()); // metrics
+
+    } catch (Throwable e) {
+      throw new RuntimeIOException(
+          new IOException("Failed to initialize IcebergCometNativeBatchReader", e));
+    }
+  }
+
+  @Override
+  public void reset() {
+    this.delegate = null;
+    this.conf = null;
+
   }
 
   @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData) {
-    // NativeColumnReader initialization happens via the delegate
-    // The native batch reader will handle the row group setup
-
-    NativeColumnReader[] delegateReaders = new NativeColumnReader[readers.length];
-    for (int i = 0; i < readers.length; i++) {
-      delegateReaders[i] = (NativeColumnReader) readers[i].delegate();
-    }
-
-    // Note: For native readers, initialization is handled differently
-    // The native batch reader will set up the row group internally
-
-    this.rowStartPosInBatch =
-        pageStore
-            .getRowIndexOffset()
-            .orElseThrow(
-                () ->
-                    new IllegalArgumentException(
-                        "PageReadStore does not contain row index offset"));
+    throw new UnsupportedOperationException("Comet native vectorized reader does not support setRowGroupInfo");
   }
 
   public void setDeleteFilter(DeleteFilter<InternalRow> deleteFilter) {
