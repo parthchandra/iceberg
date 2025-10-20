@@ -26,6 +26,7 @@ import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
 import org.apache.parquet.ParquetReadOptions;
+import org.apache.parquet.hadoop.ParquetFileReader;
 
 /**
  * Extended configuration for native Parquet readers that need additional parameters beyond what
@@ -101,5 +102,21 @@ public class NativeReadConf<T> extends ReadConf<T> {
   /** Returns the file AAD prefix for encryption, or null if not used. */
   public ByteBuffer fileAADPrefix() {
     return fileAADPrefix;
+  }
+
+
+  @Override
+  public ParquetFileReader reader() {
+    return super.reader();
+  }
+
+  @Override
+  public InputFile file() {
+    return super.file();
+  }
+
+  @Override
+  public Integer batchSize() {
+    return super.batchSize();
   }
 }

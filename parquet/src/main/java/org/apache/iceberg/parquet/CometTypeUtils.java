@@ -44,7 +44,7 @@ public class CometTypeUtils {
 
   private CometTypeUtils() {}
 
-  private static void initializeReflection() throws Exception {
+  private static void initializeReflection() throws ClassNotFoundException, NoSuchMethodException {
     if (parquetColumnSpecClass == null) {
       synchronized (CometTypeUtils.class) {
         if (parquetColumnSpecClass == null) {

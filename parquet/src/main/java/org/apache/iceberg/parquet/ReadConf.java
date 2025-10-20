@@ -185,14 +185,6 @@ class ReadConf<T> {
     return reuseContainers;
   }
 
-  InputFile getFile() {
-    return file;
-  }
-
-  VectorizedReader<T> getVectorizedModel() {
-    return vectorizedModel;
-  }
-
   List<BlockMetaData> getRowGroups() {
     return rowGroups;
   }

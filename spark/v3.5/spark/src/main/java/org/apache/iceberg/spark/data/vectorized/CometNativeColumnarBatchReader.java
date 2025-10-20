@@ -46,6 +46,7 @@ import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -73,8 +74,10 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
   private DeleteFilter<InternalRow> deletes = null;
   private long rowStartPosInBatch = 0;
   private NativeReadConf<?> conf = null;
+  private final Schema schema;
 
   CometNativeColumnarBatchReader(List<VectorizedReader<?>> readers, Schema schema) {
+    this.schema = schema;
     this.readers =
         readers.stream()
             .map(BaseCometColumnReader.class::cast)
@@ -102,11 +105,7 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
 
       // Get ParquetMetadata from the file reader (we need to open it to get metadata)
       ParquetMetadata metadata;
-      try {
-        metadata = readConf.reader().getFooter();
-      } catch (IOException e) {
-        throw new RuntimeIOException(e, "Failed to get Parquet metadata");
-      }
+      metadata = readConf.reader().getFooter();
 
       // Create FileInfo from NativeReadConf
       NativeBatchReader.FileInfo fileInfo =
@@ -119,12 +118,12 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       // Convert ParquetMetadata to JSON
       String metadataJson = ParquetMetadata.toJSON(metadata);
 
-      // Convert filter to native filter (null for now, needs implementation)
-      byte[] nativeFilter = null; // TODO: Convert Iceberg Expression to native filter
+      // Iceberg predicate are already applied in the NativeVectorizedParquetReade to prune out row groups that can be skipped
+      byte[] nativeFilter = null;
 
       // Get Spark schema from the vectorized model
       // The schema is already set in the delegate during construction
-      StructType sparkSchema = delegate.sparkSchema;
+      StructType sparkSchema = delegate.getSparkSchema();
 
       // Initialize the native reader
       delegate.init(
