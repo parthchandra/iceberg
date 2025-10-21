@@ -99,15 +99,15 @@ public abstract class IcebergSourceBenchmark {
       builder
           .config("parquet.dictionary.page.size", "1")
           .config("parquet.enable.dictionary", false)
-          .config("spark.plugins", "org.apache.spark.CometPlugin")
-          .config(
-              "spark.shuffle.manager",
-              "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
-          .config("spark.comet.explainFallback.enabled", "true")
-          .config("spark.sql.iceberg.parquet.reader-type", "COMET")
-          .config("spark.memory.offHeap.enabled", "true")
-          .config("spark.memory.offHeap.size", "10g")
-          .config("spark.comet.use.lazyMaterialization", "false")
+            .config("spark.plugins", "org.apache.spark.CometPlugin")
+            .config(
+                "spark.shuffle.manager",
+                "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
+            .config("spark.comet.explainFallback.enabled", "true")
+            .config("spark.sql.iceberg.parquet.reader-type", "COMET_NATIVE")
+            .config("spark.memory.offHeap.enabled", "true")
+            .config("spark.memory.offHeap.size", "10g")
+            .config("spark.comet.use.lazyMaterialization", "false")
           .config("spark.comet.schemaEvolution.enabled", "true")
           .config(TableProperties.PARQUET_DICT_SIZE_BYTES, "1");
     }
