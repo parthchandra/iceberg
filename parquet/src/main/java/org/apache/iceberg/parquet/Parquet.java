@@ -1365,6 +1365,11 @@ public class Parquet {
       return this;
     }
 
+    public ReadBuilder enableCometNative(boolean enableCometNative) {
+      this.isCometNative = enableCometNative;
+      return this;
+    }
+
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1430,7 +1435,7 @@ public class Parquet {
 
         if (batchedReaderFunc != null) {
           if (isCometNative) {
-            LOG.info("Comet native vectorized reader enabled");
+            LOG.info("COMET_NATIVE: Comet native vectorized reader enabled");
             return new CometNativeVectorizedParquetReader<>(
                 file,
                 schema,

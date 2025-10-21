@@ -36,6 +36,8 @@ import org.apache.iceberg.mapping.NameMapping;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.schema.MessageType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
     implements CloseableIterable<T> {
@@ -112,6 +114,8 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
   }
 
   private static class FileIterator<T> implements CloseableIterator<T> {
+    private static final Logger LOG = LoggerFactory.getLogger(FileIterator.class);
+
     NativeReadConf<T> readConf;
     private final NativeVectorizedReader<T> model;
     private final int batchSize;
@@ -180,6 +184,8 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
 
     @Override
     public T next() {
+      LOG.info("COMET_NATIVE: next() called - valuesRead: {}, totalValues: {}, nextRowGroupStart: {}, nextRowGroup: {}",
+          valuesRead, totalValues, nextRowGroupStart, nextRowGroup);
       if (!hasNext()) {
         throw new NoSuchElementException();
       }

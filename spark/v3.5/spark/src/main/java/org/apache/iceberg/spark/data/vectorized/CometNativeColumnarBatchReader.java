@@ -49,6 +49,8 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * {@link NativeVectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized
@@ -57,6 +59,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
 class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarBatch> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(CometNativeColumnarBatchReader.class);
 
   private final BaseCometColumnReader<?>[] readers;
   private final boolean hasIsDeletedColumn;
@@ -88,6 +92,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
 
   @Override
   public void init(NativeReadConf<?> readConf, long start, long length) {
+    LOG.info("COMET_NATIVE: Initializing CometNativeColumnarBatchReader for file: {}, start: {}, length: {}",
+        readConf.file().location(), start, length);
     this.conf = readConf;
     this.delegate = new IcebergCometNativeBatchReader(SparkSchemaUtil.convert(schema));
     // Initialize the native batch reader with parameters from NativeReadConf
@@ -141,9 +147,40 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
           null, // partitionValues - no partitions for now
           Collections.emptyMap()); // metrics
 
+      // Match up Iceberg readers with Comet delegate column readers
+      matchReadersWithDelegateColumnReaders();
+
     } catch (Throwable e) {
       throw new RuntimeIOException(
           new IOException("Failed to initialize IcebergCometNativeBatchReader", e));
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private void matchReadersWithDelegateColumnReaders() {
+    if (delegate == null) {
+      throw new IllegalStateException(
+          "Delegate must be initialized before matching readers");
+    }
+
+    AbstractColumnReader[] delegateColumnReaders = delegate.getColumnReaders();
+
+    if (delegateColumnReaders == null) {
+      throw new IllegalStateException("Delegate column readers are null");
+    }
+
+    if (readers.length != delegateColumnReaders.length) {
+      throw new IllegalStateException(
+          String.format(
+              "Mismatch between number of readers (%d) and delegate column readers (%d)",
+              readers.length, delegateColumnReaders.length));
+    }
+
+    // Match each reader with its corresponding delegate column reader
+    for (int i = 0; i < readers.length; i++) {
+      if (readers[i] != null && delegateColumnReaders[i] != null) {
+        ((BaseCometColumnReader) readers[i]).setDelegate(delegateColumnReaders[i]);
+      }
     }
   }
 
@@ -244,6 +281,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
     }
 
     ColumnVector[] readDataToColumnVectors() {
+      LOG.info("COMET_NATIVE: Reading data to column vectors, batch size: {}, num readers: {}",
+          batchSize, readers.length);
       ColumnVector[] columnVectors = new ColumnVector[readers.length];
       // Fetch rows for all readers in the delegate
       try {
