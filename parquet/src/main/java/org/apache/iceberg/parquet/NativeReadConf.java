@@ -104,7 +104,6 @@ public class NativeReadConf<T> extends ReadConf<T> {
     return fileAADPrefix;
   }
 
-
   @Override
   public ParquetFileReader reader() {
     return super.reader();

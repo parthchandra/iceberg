@@ -1,22 +1,20 @@
 /*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *  * Licensed to the Apache Software Foundation (ASF) under one
- *  * or more contributor license agreements.  See the NOTICE file
- *  * distributed with this work for additional information
- *  * regarding copyright ownership.  The ASF licenses this file
- *  * to you under the Apache License, Version 2.0 (the
- *  * "License"); you may not use this file except in compliance
- *  * with the License.  You may obtain a copy of the License at
- *  *
- *  *   http://www.apache.org/licenses/LICENSE-2.0
- *  *
- *  * Unless required by applicable law or agreed to in writing,
- *  * software distributed under the License is distributed on an
- *  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- *  * KIND, either express or implied.  See the License for the
- *  * specific language governing permissions and limitations
- *  * under the License.
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.iceberg.parquet;
 
@@ -56,8 +54,6 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
   private final Long length;
   private final ByteBuffer fileEncryptionKey;
   private final ByteBuffer fileAADPrefix;
-
-
 
   public CometNativeVectorizedParquetReader(
       InputFile input,
@@ -116,7 +112,7 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
   private static class FileIterator<T> implements CloseableIterator<T> {
     private static final Logger LOG = LoggerFactory.getLogger(FileIterator.class);
 
-    NativeReadConf<T> readConf;
+    private final NativeReadConf<T> readConf;
     private final NativeVectorizedReader<T> model;
     private final int batchSize;
     private T last = null;
@@ -168,12 +164,13 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
       this.rowGroups = readConf.getRowGroups();
 
       // Get the model from NativeReadConf
-      VectorizedReader<T> vectorizedModel =  readConf.vectorizedModel();
+      VectorizedReader<T> vectorizedModel = readConf.vectorizedModel();
       if (vectorizedModel instanceof NativeVectorizedReader) {
-       model =  (NativeVectorizedReader<T>) vectorizedModel;
-       model.setBatchSize(this.batchSize);
+        model = (NativeVectorizedReader<T>) vectorizedModel;
+        model.setBatchSize(this.batchSize);
       } else {
-        throw new UnsupportedOperationException("Unsupported model type: " + vectorizedModel.getClass());
+        throw new UnsupportedOperationException(
+            "Unsupported model type: " + vectorizedModel.getClass());
       }
     }
 
@@ -184,8 +181,12 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
 
     @Override
     public T next() {
-      LOG.info("COMET_NATIVE: next() called - valuesRead: {}, totalValues: {}, nextRowGroupStart: {}, nextRowGroup: {}",
-          valuesRead, totalValues, nextRowGroupStart, nextRowGroup);
+      LOG.info(
+          "COMET_NATIVE: next() called - valuesRead: {}, totalValues: {}, nextRowGroupStart: {}, nextRowGroup: {}",
+          valuesRead,
+          totalValues,
+          nextRowGroupStart,
+          nextRowGroup);
       if (!hasNext()) {
         throw new NoSuchElementException();
       }
@@ -194,7 +195,7 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
       }
 
       int numValuesToRead = (int) Math.min(nextRowGroupStart - valuesRead, batchSize);
-      this.last = model.read(null, batchSize);
+      this.last = model.read(null, numValuesToRead);
       valuesRead += numValuesToRead;
 
       return last;
@@ -211,7 +212,10 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
       }
       try {
         BlockMetaData rowGroup = rowGroups.get(nextRowGroup);
-        model.init(readConf, rowGroup.getStartingPos(), rowGroup.getCompressedSize()); // creates and initializes a new delegate
+        model.init(
+            readConf,
+            rowGroup.getStartingPos(),
+            rowGroup.getCompressedSize()); // creates and initializes a new delegate
         nextRowGroupStart += rowGroups.get(nextRowGroup).getRowCount();
       } catch (Exception e) {
         throw CometIOException.fromException("Failed to read row group", e);

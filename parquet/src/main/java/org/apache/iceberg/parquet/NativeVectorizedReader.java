@@ -21,23 +21,22 @@ package org.apache.iceberg.parquet;
 /**
  * Interface for native vectorized readers that need initialization with NativeReadConf.
  *
- * <p>This interface allows readers to be initialized with configuration after construction,
- * which is useful for native readers that need access to file metadata and other configuration
- * details including native-specific parameters like encryption keys.
+ * <p>This interface allows readers to be initialized with configuration after construction, which
+ * is useful for native readers that need access to file metadata and other configuration details
+ * including native-specific parameters like encryption keys.
  */
 public interface NativeVectorizedReader<T> extends VectorizedReader<T> {
 
   /**
    * Initialize the reader with native configuration.
    *
-   * @param conf the native read configuration containing file metadata, schema, and native-specific settings
+   * @param conf the native read configuration containing file metadata, schema, and native-specific
+   *     settings
    * @param start the start offset in this read conf to initialize the reader
-   * @param length  the length of the data to read from this read conf
+   * @param length the length of the data to read from this read conf
    */
   void init(NativeReadConf<?> conf, long start, long length);
 
-  /**
-   * Reset this vectorized reader. To reuse, the init method has to be called again.
-   */
+  /** Reset this vectorized reader. To reuse, the init method has to be called again. */
   void reset();
 }

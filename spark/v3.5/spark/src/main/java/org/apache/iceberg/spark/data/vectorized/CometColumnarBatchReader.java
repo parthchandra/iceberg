@@ -199,7 +199,8 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
     void readDeletedColumn(ColumnVector[] columnVectors, boolean[] isDeleted) {
       for (int i = 0; i < readers.length; i++) {
         if (readers[i] instanceof CometDeleteColumnReader) {
-          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader = new CometDeleteColumnReader<>(isDeleted);
+          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader =
+              new CometDeleteColumnReader<>(isDeleted);
           deleteColumnReader.setBatchSize(batchSize);
           DeleteColumnReader deleted = (DeleteColumnReader) deleteColumnReader.delegate();
           deleted.readBatch(batchSize);

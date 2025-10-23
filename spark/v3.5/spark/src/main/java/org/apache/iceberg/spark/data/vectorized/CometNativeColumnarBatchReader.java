@@ -53,9 +53,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link NativeVectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's vectorized
- * read path. The {@link ColumnarBatch} returned is created by passing in the Arrow vectors
- * populated via delegated read calls to {@link CometNativeColumnReader NativeColumnReader(s)}.
+ * {@link NativeVectorizedReader} that returns Spark's {@link ColumnarBatch} to support Spark's
+ * vectorized read path. The {@link ColumnarBatch} returned is created by passing in the Arrow
+ * vectors populated via delegated read calls to {@link CometNativeColumnReader
+ * NativeColumnReader(s)}.
  */
 @SuppressWarnings("checkstyle:VisibilityModifier")
 class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarBatch> {
@@ -65,7 +66,7 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
   private final BaseCometColumnReader<?>[] readers;
   private final boolean hasIsDeletedColumn;
 
-  // The delegated BatchReader on the Comet side does the real work of loading a batch of rows.
+  // The delegated BatchReader on the Comet side does the real work of loading a batch of rows
   // The Comet NativeBatchReader contains an array of NativeColumnReader. There is no need to
   // explicitly call
   // NativeColumnReader.readBatch; instead, NativeBatchReader.nextBatch will be called, which
@@ -87,19 +88,24 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
             .map(BaseCometColumnReader.class::cast)
             .toArray(BaseCometColumnReader[]::new);
     this.hasIsDeletedColumn = false;
-            readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
+    readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
   }
 
   @Override
   public void init(NativeReadConf<?> readConf, long start, long length) {
-    LOG.info("COMET_NATIVE: Initializing CometNativeColumnarBatchReader for file: {}, start: {}, length: {}",
-        readConf.file().location(), start, length);
+    LOG.info(
+        "COMET_NATIVE: Initializing CometNativeColumnarBatchReader for file: {}, start: {}, length: {}",
+        readConf.file().location(),
+        start,
+        length);
     this.conf = readConf;
     this.delegate = new IcebergCometNativeBatchReader(SparkSchemaUtil.convert(schema));
     // Initialize the native batch reader with parameters from NativeReadConf
     try {
       // Get Configuration from HadoopInputFile
       Configuration hadoopConf;
+
+      //      SparkSession spark = SparkSession.active();
       if (readConf.file() instanceof HadoopInputFile) {
         HadoopInputFile hadoopInputFile = (HadoopInputFile) readConf.file();
         hadoopConf = hadoopInputFile.getConf();
@@ -108,23 +114,26 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
             "CometNativeColumnarBatchReader only supports HadoopInputFile, got: "
                 + readConf.file().getClass().getName());
       }
+      //      hadoopConf = spark.sparkContext().hadoopConfiguration();
 
       // Get ParquetMetadata from the file reader (we need to open it to get metadata)
       ParquetMetadata metadata;
       metadata = readConf.reader().getFooter();
 
       // Create FileInfo from NativeReadConf
+      String fp = ((HadoopInputFile) readConf.file()).getPath().toString();
+      //      NativeBatchReader.FileInfo fileInfo =
+      //          new NativeBatchReader.FileInfo(
+      //              start, length, ((HadoopInputFile) readConf.file()).location(),
+      // readConf.file().getLength());
       NativeBatchReader.FileInfo fileInfo =
-          new NativeBatchReader.FileInfo(
-              start,
-              length,
-              readConf.file().location(),
-              readConf.file().getLength());
+          new NativeBatchReader.FileInfo(start, length, fp, readConf.file().getLength());
 
       // Convert ParquetMetadata to JSON
-      String metadataJson = ParquetMetadata.toJSON(metadata);
+      byte[] metadataBytes = new ParquetMetadataSerializer().serialize(metadata);
 
-      // Iceberg predicate are already applied in the NativeVectorizedParquetReade to prune out row groups that can be skipped
+      // Iceberg predicate are already applied in the NativeVectorizedParquetReade to prune out row
+      // groups that can be skipped
       byte[] nativeFilter = null;
 
       // Get Spark schema from the vectorized model
@@ -135,7 +144,7 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       delegate.init(
           hadoopConf,
           fileInfo,
-          metadataJson,
+          metadataBytes,
           nativeFilter,
           readConf.batchSize(),
           sparkSchema,
@@ -148,7 +157,7 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
           Collections.emptyMap()); // metrics
 
       // Match up Iceberg readers with Comet delegate column readers
-      matchReadersWithDelegateColumnReaders();
+      // matchReadersWithDelegateColumnReaders();
 
     } catch (Throwable e) {
       throw new RuntimeIOException(
@@ -159,8 +168,7 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
   @SuppressWarnings("unchecked")
   private void matchReadersWithDelegateColumnReaders() {
     if (delegate == null) {
-      throw new IllegalStateException(
-          "Delegate must be initialized before matching readers");
+      throw new IllegalStateException("Delegate must be initialized before matching readers");
     }
 
     AbstractColumnReader[] delegateColumnReaders = delegate.getColumnReaders();
@@ -188,13 +196,13 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
   public void reset() {
     this.delegate = null;
     this.conf = null;
-
   }
 
   @Override
   public void setRowGroupInfo(
       PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData) {
-    throw new UnsupportedOperationException("Comet native vectorized reader does not support setRowGroupInfo");
+    throw new UnsupportedOperationException(
+        "Comet native vectorized reader does not support setRowGroupInfo");
   }
 
   public void setDeleteFilter(DeleteFilter<InternalRow> deleteFilter) {
@@ -240,8 +248,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       int numLiveRows = batchSize;
 
       if (hasIsDeletedColumn) {
-                boolean[] isDeleted = buildIsDeleted(vectors);
-                readDeletedColumn(vectors, isDeleted);
+        boolean[] isDeleted = buildIsDeleted(vectors);
+        readDeletedColumn(vectors, isDeleted);
         throw new CometRuntimeException("Comet native reader does not support deleted columns");
       } else {
         Pair<int[], Integer> pair = buildRowIdMapping(vectors);
@@ -271,22 +279,26 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       return batch;
     }
 
-        private boolean[] buildIsDeleted(ColumnVector[] vectors) {
-          return ColumnarBatchUtil.buildIsDeleted(vectors, deletes, rowStartPosInBatch,
-     batchSize);
-        }
+    private boolean[] buildIsDeleted(ColumnVector[] vectors) {
+      return ColumnarBatchUtil.buildIsDeleted(vectors, deletes, rowStartPosInBatch, batchSize);
+    }
 
     private Pair<int[], Integer> buildRowIdMapping(ColumnVector[] vectors) {
       return ColumnarBatchUtil.buildRowIdMapping(vectors, deletes, rowStartPosInBatch, batchSize);
     }
 
     ColumnVector[] readDataToColumnVectors() {
-      LOG.info("COMET_NATIVE: Reading data to column vectors, batch size: {}, num readers: {}",
-          batchSize, readers.length);
+      LOG.info(
+          "COMET_NATIVE: Reading data to column vectors, batch size: {}, num readers: {}",
+          batchSize,
+          readers.length);
       ColumnVector[] columnVectors = new ColumnVector[readers.length];
       // Fetch rows for all readers in the delegate
       try {
         delegate.nextBatch();
+        // Comet's NativeBatchReader reinitializes the column readers after every batch is read so
+        // we need to do this matching for every batch.
+        matchReadersWithDelegateColumnReaders();
       } catch (IOException e) {
         throw new CometRuntimeException("Failed to get next batch from native read", e);
       }
@@ -296,6 +308,10 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
           NativeColumnReader nativeReader = (NativeColumnReader) delegateReader;
           nativeReader.readBatch(batchSize);
           columnVectors[i] = nativeReader.currentBatch();
+        } else {
+          AbstractColumnReader columnReader = (AbstractColumnReader) delegateReader;
+          columnReader.readBatch(batchSize);
+          columnVectors[i] = columnReader.currentBatch();
         }
       }
       return columnVectors;
@@ -304,7 +320,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
     void readDeletedColumn(ColumnVector[] columnVectors, boolean[] isDeleted) {
       for (int i = 0; i < readers.length; i++) {
         if (readers[i] instanceof CometDeleteColumnReader) {
-          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader = new CometDeleteColumnReader<>(isDeleted);
+          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader =
+              new CometDeleteColumnReader<>(isDeleted);
           deleteColumnReader.setBatchSize(batchSize);
           DeleteColumnReader deleted = (DeleteColumnReader) deleteColumnReader.delegate();
           deleted.readBatch(batchSize);
