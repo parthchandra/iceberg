@@ -52,15 +52,18 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.ServiceLoader;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.StreamSupport;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Files;
@@ -1143,6 +1146,9 @@ public class Parquet {
   }
 
   public static class ReadBuilder implements InternalData.ReadBuilder {
+    // Lazy-loaded list of custom vectorized reader factories
+    private static volatile List<VectorizedParquetReaderFactory> customFactories = null;
+
     private final InputFile file;
     private final Map<String, String> properties = Maps.newHashMap();
     private Long start = null;
@@ -1161,7 +1167,83 @@ public class Parquet {
     private NameMapping nameMapping = null;
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
-    private boolean isComet;
+    private Class<? extends StructLike> rootType = null;
+    private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
+
+    private static List<VectorizedParquetReaderFactory> getCustomFactories() {
+      if (customFactories == null) {
+        synchronized (ReadBuilder.class) {
+          if (customFactories == null) {
+            // Load factories via ServiceLoader and sort by priority (highest first)
+            customFactories =
+                StreamSupport.stream(
+                        ServiceLoader.load(VectorizedParquetReaderFactory.class).spliterator(),
+                        false)
+                    .sorted(
+                        Comparator.comparingInt(VectorizedParquetReaderFactory::priority)
+                            .reversed())
+                    .collect(Collectors.toList());
+            if (!customFactories.isEmpty()) {
+              LOG.info("Loaded {} custom vectorized reader factories", customFactories.size());
+            }
+          }
+        }
+      }
+      return customFactories;
+    }
+
+    public interface ReaderFunction {
+      Function<MessageType, ParquetValueReader<?>> apply();
+
+      default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
+        return this;
+      }
+
+      default ReaderFunction withCustomTypes(
+          Map<Integer, Class<? extends StructLike>> customTypes) {
+        return this;
+      }
+
+      default ReaderFunction withSchema(Schema schema) {
+        return this;
+      }
+    }
+
+    private static class UnaryReaderFunction implements ReaderFunction {
+      private final Function<MessageType, ParquetValueReader<?>> readerFunc;
+
+      UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
+        this.readerFunc = readerFunc;
+      }
+
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        return readerFunc;
+      }
+    }
+
+    private static class BinaryReaderFunction implements ReaderFunction {
+      private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
+      private Schema schema;
+
+      BinaryReaderFunction(
+          BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
+        this.readerFuncWithSchema = readerFuncWithSchema;
+      }
+
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        Preconditions.checkArgument(
+            schema != null, "Schema must be set for 2-argument reader function");
+        return messageType -> readerFuncWithSchema.apply(schema, messageType);
+      }
+
+      @Override
+      public ReaderFunction withSchema(Schema expectedSchema) {
+        this.schema = expectedSchema;
+        return this;
+      }
+    }
 
     private ReadBuilder(InputFile file) {
       this.file = file;
@@ -1290,11 +1372,6 @@ public class Parquet {
       throw new UnsupportedOperationException("Custom types are not yet supported");
     }
 
-    public ReadBuilder enableComet(boolean enableComet) {
-      this.isComet = enableComet;
-      return this;
-    }
-
     public ReadBuilder withFileEncryptionKey(ByteBuffer encryptionKey) {
       this.fileEncryptionKey = encryptionKey;
       return this;
@@ -1358,35 +1435,42 @@ public class Parquet {
         }
 
         if (batchedReaderFunc != null) {
-          if (isComet) {
-            LOG.info("Comet vectorized reader enabled");
-            return new CometVectorizedParquetReader<>(
-                file,
-                schema,
-                options,
-                batchedReaderFunc,
-                mapping,
-                filter,
-                reuseContainers,
-                caseSensitive,
-                maxRecordsPerBatch,
-                properties,
-                start,
-                length,
-                fileEncryptionKey,
-                fileAADPrefix);
-          } else {
-            return new VectorizedParquetReader<>(
-                file,
-                schema,
-                options,
-                batchedReaderFunc,
-                mapping,
-                filter,
-                reuseContainers,
-                caseSensitive,
-                maxRecordsPerBatch);
+          // Try custom factories first (e.g., Comet)
+          for (VectorizedParquetReaderFactory factory : getCustomFactories()) {
+            if (factory.canHandle(properties)) {
+              CloseableIterable<D> reader =
+                  factory.createReader(
+                      file,
+                      schema,
+                      options,
+                      batchedReaderFunc,
+                      mapping,
+                      filter,
+                      reuseContainers,
+                      caseSensitive,
+                      maxRecordsPerBatch,
+                      properties,
+                      start,
+                      length,
+                      fileEncryptionKey,
+                      fileAADPrefix);
+              if (reader != null) {
+                return reader;
+              }
+            }
           }
+
+          // Fallback to default vectorized reader
+          return new VectorizedParquetReader<>(
+              file,
+              schema,
+              options,
+              batchedReaderFunc,
+              mapping,
+              filter,
+              reuseContainers,
+              caseSensitive,
+              maxRecordsPerBatch);
         } else {
           Function<MessageType, ParquetValueReader<?>> readBuilder =
               readerFuncWithSchema != null

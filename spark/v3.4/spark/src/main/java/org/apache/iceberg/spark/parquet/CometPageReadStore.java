@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.parquet;
+package org.apache.iceberg.spark.parquet;
 
 import java.lang.reflect.Method;
 import java.util.Optional;

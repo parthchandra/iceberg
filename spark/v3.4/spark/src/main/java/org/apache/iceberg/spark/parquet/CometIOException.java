@@ -16,9 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.parquet;
-
-import java.io.IOException;
+package org.apache.iceberg.spark.parquet;
 
 /**
  * Exception class for handling both IOException and general Exception cases when working with Comet
@@ -27,26 +25,8 @@ import java.io.IOException;
  */
 public class CometIOException extends RuntimeException {
 
-  public CometIOException(String message) {
-    super(message);
-  }
-
   public CometIOException(String message, Throwable cause) {
     super(message, cause);
-  }
-
-  public CometIOException(Throwable cause) {
-    super(cause);
-  }
-
-  /** Creates a CometIOException from an IOException. */
-  public static CometIOException fromIOException(IOException cause) {
-    return new CometIOException("Comet IO operation failed", cause);
-  }
-
-  /** Creates a CometIOException from a general Exception. */
-  public static CometIOException fromException(Exception cause) {
-    return new CometIOException("Comet operation failed", cause);
   }
 
   /** Creates a CometIOException with a custom message and cause. */

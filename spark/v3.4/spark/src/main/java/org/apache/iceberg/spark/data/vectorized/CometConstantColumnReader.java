@@ -22,7 +22,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import org.apache.comet.parquet.ConstantColumnReader;
 import org.apache.comet.parquet.ParquetColumnSpec;
-import org.apache.iceberg.parquet.CometTypeUtils;
+import org.apache.iceberg.spark.parquet.CometTypeUtils;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;

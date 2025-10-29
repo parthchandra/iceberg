@@ -21,7 +21,7 @@ package org.apache.iceberg.spark.data.vectorized;
 import org.apache.comet.parquet.MetadataColumnReader;
 import org.apache.comet.parquet.Native;
 import org.apache.comet.parquet.ParquetColumnSpec;
-import org.apache.iceberg.parquet.CometTypeUtils;
+import org.apache.iceberg.spark.parquet.CometTypeUtils;
 import org.apache.iceberg.types.Types;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.spark.sql.types.DataTypes;
