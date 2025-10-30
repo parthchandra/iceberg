@@ -33,7 +33,6 @@ import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.iceberg.spark.parquet.CometPageReadStore;
 import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -160,8 +159,8 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
         if (pair != null) {
           int[] rowIdMapping = pair.first();
           if (pair.second() != null) {
-          numLiveRows = pair.second();
-          for (int i = 0; i < vectors.length; i++) {
+            numLiveRows = pair.second();
+            for (int i = 0; i < vectors.length; i++) {
               if (vectors[i] instanceof CometVector) {
                 vectors[i] =
                     new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);

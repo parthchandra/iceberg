@@ -153,8 +153,8 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
         if (pair != null) {
           int[] rowIdMapping = pair.first();
           if (pair.second() != null) {
-          numLiveRows = pair.second();
-          for (int i = 0; i < vectors.length; i++) {
+            numLiveRows = pair.second();
+            for (int i = 0; i < vectors.length; i++) {
               if (vectors[i] instanceof CometVector) {
                 vectors[i] =
                     new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);
