@@ -25,6 +25,7 @@ import java.util.Map;
 import org.apache.comet.CometRuntimeException;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometBatchReader;
+import org.apache.comet.parquet.RowGroupReader;
 import org.apache.comet.vector.CometSelectionVector;
 import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.Schema;
@@ -86,7 +87,7 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
             && !(readers[i] instanceof CometPositionColumnReader)
             && !(readers[i] instanceof CometDeleteColumnReader)) {
           readers[i].reset();
-          readers[i].setPageReader(((CometPageReadStore) pageStore).getCometRowGroupReader());
+          readers[i].setPageReader(((RowGroupReader) pageStore));
         }
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to setRowGroupInfo for Comet vectorization", e);
@@ -159,8 +160,8 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
         if (pair != null) {
           int[] rowIdMapping = pair.first();
           if (pair.second() != null) {
-            numLiveRows = pair.second();
-            for (int i = 0; i < vectors.length; i++) {
+          numLiveRows = pair.second();
+          for (int i = 0; i < vectors.length; i++) {
               if (vectors[i] instanceof CometVector) {
                 vectors[i] =
                     new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);

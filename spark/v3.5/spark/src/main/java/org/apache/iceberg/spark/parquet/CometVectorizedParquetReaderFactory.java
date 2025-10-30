@@ -42,6 +42,15 @@ public class CometVectorizedParquetReaderFactory implements VectorizedParquetRea
       LoggerFactory.getLogger(CometVectorizedParquetReaderFactory.class);
   private static final String COMET_ENABLED_PROPERTY = "spark.comet.enabled";
 
+  private static boolean isCometAvailable() {
+    try {
+      Class.forName("org.apache.comet.parquet.FileReader");
+      return true;
+    } catch (ClassNotFoundException e) {
+      return false;
+    }
+  }
+
   /**
    * Creates a Comet vectorized reader if Comet is available and enabled.
    *
@@ -65,7 +74,7 @@ public class CometVectorizedParquetReaderFactory implements VectorizedParquetRea
       ByteBuffer fileAADPrefix) {
 
     // Only create reader if Comet is available
-    if (!CometBridge.isCometAvailable()) {
+    if (!isCometAvailable()) {
       LOG.debug("Comet is not available in the classpath");
       return null;
     }

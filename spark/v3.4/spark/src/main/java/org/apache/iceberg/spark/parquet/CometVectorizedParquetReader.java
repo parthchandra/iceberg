@@ -24,6 +24,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
+import org.apache.comet.parquet.FileReader;
+import org.apache.comet.parquet.ParquetColumnSpec;
+import org.apache.comet.parquet.ReadOptions;
+import org.apache.comet.parquet.RowGroupReader;
+import org.apache.comet.parquet.WrappedInputFile;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.expressions.Expression;
@@ -40,6 +45,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.util.ByteBuffers;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.schema.MessageType;
@@ -134,7 +140,7 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
     private long nextRowGroupStart = 0;
     private long valuesRead = 0;
     private T last = null;
-    private final CometBridge.FileReaderWrapper cometReader;
+    private final FileReader cometReader;
 
     FileIterator(
         ReadConf conf,
@@ -143,7 +149,7 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
         Long length,
         ByteBuffer fileEncryptionKey,
         ByteBuffer fileAADPrefix) {
-      if (!CometBridge.isCometAvailable()) {
+      if (!isCometAvailable()) {
         throw new IllegalStateException(
             "Comet is not available in the classpath. "
                 + "Please ensure the comet-spark jar is in the classpath.");
@@ -167,7 +173,16 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
               fileAADPrefix);
     }
 
-    private CometBridge.FileReaderWrapper newCometReader(
+    private static boolean isCometAvailable() {
+      try {
+        Class.forName("org.apache.comet.parquet.FileReader");
+        return true;
+      } catch (ClassNotFoundException e) {
+        return false;
+      }
+    }
+
+    private FileReader newCometReader(
         InputFile file,
         MessageType projection,
         Map<String, String> properties,
@@ -175,7 +190,7 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
         Long length,
         ByteBuffer fileEncryptionKey,
         ByteBuffer fileAADPrefix) {
-      CometBridge.FileReaderWrapper fileReader = null;
+      FileReader fileReader = null;
       try {
         Configuration conf;
         if (file instanceof HadoopInputFile) {
@@ -183,11 +198,11 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
         } else {
           conf = new Configuration();
         }
-        Object cometOptions = CometBridge.createReadOptions(conf);
+        ReadOptions cometOptions = new ReadOptions.Builder(conf).build();
 
         fileReader =
-            CometBridge.FileReaderWrapper.create(
-                file,
+            new FileReader(
+                new WrappedInputFile(file),
                 cometOptions,
                 properties,
                 start,
@@ -197,10 +212,10 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
 
         List<ColumnDescriptor> columnDescriptors = projection.getColumns();
 
-        List<Object> specs = Lists.newArrayList();
+        List<ParquetColumnSpec> specs = Lists.newArrayList();
 
         for (ColumnDescriptor descriptor : columnDescriptors) {
-          Object spec = CometBridge.createParquetColumnSpec(descriptor);
+          ParquetColumnSpec spec = CometTypeUtils.descriptorToParquetColumnSpec(descriptor);
           specs.add(spec);
         }
 
@@ -255,21 +270,21 @@ public class CometVectorizedParquetReader<T> extends CloseableGroup
           throw CometIOException.fromException("Failed to skip row group", e);
         }
       }
-      CometBridge.RowGroupReaderWrapper pages;
+      RowGroupReader rowGroupReader;
       try {
-        pages = cometReader.readNextRowGroup();
+        rowGroupReader = cometReader.readNextRowGroup();
       } catch (Exception e) {
         throw CometIOException.fromException("Failed to read row group", e);
       }
 
       try {
-        CometPageReadStore pageReadStore = new CometPageReadStore(pages.getRowGroupReader());
+        PageReadStore pageReadStore = rowGroupReader;
         model.setRowGroupInfo(pageReadStore, columnChunkMetadata.get(nextRowGroup));
       } catch (Exception e) {
         throw CometIOException.fromException("Failed to read row group info", e);
       }
       try {
-        nextRowGroupStart += pages.getRowCount();
+        nextRowGroupStart += rowGroupReader.getRowCount();
       } catch (Exception e) {
         throw CometIOException.fromException("Failed to get row count", e);
       }
