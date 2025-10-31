@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import org.apache.comet.CometRuntimeException;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometBatchReader;
 import org.apache.comet.parquet.RowGroupReader;
@@ -32,7 +33,6 @@ import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.iceberg.spark.parquet.CometPageReadStore;
 import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -70,12 +70,6 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
         readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
 
     this.delegate = new IcebergCometBatchReader(readers.size(), SparkSchemaUtil.convert(schema));
-  }
-
-  @Override
-  public void setRowGroupInfo(
-      PageReadStore pageStore, Map<ColumnPath, ColumnChunkMetaData> metaData, long rowPosition) {
-    setRowGroupInfo(pageStore, metaData);
   }
 
   @Override

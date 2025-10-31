@@ -26,6 +26,8 @@ import org.apache.comet.CometRuntimeException;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometBatchReader;
 import org.apache.comet.parquet.RowGroupReader;
+import org.apache.comet.vector.CometSelectionVector;
+import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.parquet.VectorizedReader;
