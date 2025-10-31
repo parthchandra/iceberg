@@ -89,6 +89,7 @@ public abstract class TestBase extends SparkTestHelperBase {
             .config("spark.memory.offHeap.size", "10g")
             .config("spark.comet.use.lazyMaterialization", "false")
             .config("spark.comet.schemaEvolution.enabled", "true")
+            .config("spark.comet.exec.broadcastExchange.enabled", "false")
             .enableHiveSupport()
             .getOrCreate();
 
