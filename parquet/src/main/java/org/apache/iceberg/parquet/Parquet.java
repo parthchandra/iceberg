@@ -127,6 +127,7 @@ import org.slf4j.LoggerFactory;
 
 public class Parquet {
   private static final Logger LOG = LoggerFactory.getLogger(Parquet.class);
+  private static final String VECTORIZED_READER_FACTORY = "read.parquet.vectorized-reader.factory";
 
   private Parquet() {}
 
@@ -1291,15 +1292,13 @@ public class Parquet {
     }
 
     /**
-     * @deprecated Use {@link #set(String, String)} with "read.parquet.vectorized-reader.factory" =
-     *     "comet" instead
+     * Convenience method to enable comet
      */
-    @Deprecated
     public ReadBuilder enableComet(boolean enableComet) {
       if (enableComet) {
-        this.properties.put("read.parquet.vectorized-reader.factory", "comet");
+        this.properties.put(VECTORIZED_READER_FACTORY, "comet");
       } else {
-        this.properties.remove("read.parquet.vectorized-reader.factory");
+        this.properties.remove(VECTORIZED_READER_FACTORY);
       }
       return this;
     }
@@ -1368,7 +1367,7 @@ public class Parquet {
 
         if (batchedReaderFunc != null) {
           // Try to load custom vectorized reader factory from properties
-          String readerName = properties.get("read.parquet.vectorized-reader.factory");
+          String readerName = properties.get(VECTORIZED_READER_FACTORY);
 
           if (readerName != null) {
             LOG.info("Loading custom vectorized reader factory: {}", readerName);
