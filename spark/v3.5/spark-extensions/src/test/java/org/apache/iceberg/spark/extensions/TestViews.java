@@ -74,6 +74,9 @@ public class TestViews extends ExtensionsTestBase {
   @Override
   public void before() {
     super.before();
+    assumeThat(isCometNativeEnabled())
+        .as("TestViews is not yet compatible with COMET_NATIVE reader")
+        .isFalse();
     spark.conf().set("spark.sql.defaultCatalog", catalogName);
     sql("USE %s", catalogName);
     sql("CREATE NAMESPACE IF NOT EXISTS %s", NAMESPACE);
