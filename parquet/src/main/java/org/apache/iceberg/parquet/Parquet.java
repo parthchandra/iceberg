@@ -56,7 +56,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.ServiceLoader;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -1167,58 +1166,58 @@ public class Parquet {
     //    private Class<? extends StructLike> rootType = null;
     //    private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
-        public interface ReaderFunction {
-          Function<MessageType, ParquetValueReader<?>> apply();
+    public interface ReaderFunction {
+      Function<MessageType, ParquetValueReader<?>> apply();
 
-          default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
-            return this;
-          }
+      default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
+        return this;
+      }
 
-          default ReaderFunction withCustomTypes(
-              Map<Integer, Class<? extends StructLike>> customTypes) {
-            return this;
-          }
+      default ReaderFunction withCustomTypes(
+          Map<Integer, Class<? extends StructLike>> customTypes) {
+        return this;
+      }
 
-          default ReaderFunction withSchema(Schema schema) {
-            return this;
-          }
-        }
+      default ReaderFunction withSchema(Schema schema) {
+        return this;
+      }
+    }
 
-            private static class UnaryReaderFunction implements ReaderFunction {
-              private final Function<MessageType, ParquetValueReader<?>> readerFunc;
+    private static class UnaryReaderFunction implements ReaderFunction {
+      private final Function<MessageType, ParquetValueReader<?>> readerFunc;
 
-              UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
-                this.readerFunc = readerFunc;
-              }
+      UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
+        this.readerFunc = readerFunc;
+      }
 
-              @Override
-              public Function<MessageType, ParquetValueReader<?>> apply() {
-                return readerFunc;
-              }
-            }
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        return readerFunc;
+      }
+    }
 
-            private static class BinaryReaderFunction implements ReaderFunction {
-              private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
-              private Schema schema;
+    private static class BinaryReaderFunction implements ReaderFunction {
+      private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
+      private Schema schema;
 
-              BinaryReaderFunction(
-                  BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
-                this.readerFuncWithSchema = readerFuncWithSchema;
-              }
+      BinaryReaderFunction(
+          BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
+        this.readerFuncWithSchema = readerFuncWithSchema;
+      }
 
-              @Override
-              public Function<MessageType, ParquetValueReader<?>> apply() {
-                Preconditions.checkArgument(
-                    schema != null, "Schema must be set for 2-argument reader function");
-                return messageType -> readerFuncWithSchema.apply(schema, messageType);
-              }
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        Preconditions.checkArgument(
+            schema != null, "Schema must be set for 2-argument reader function");
+        return messageType -> readerFuncWithSchema.apply(schema, messageType);
+      }
 
-              @Override
-              public ReaderFunction withSchema(Schema expectedSchema) {
-                this.schema = expectedSchema;
-                return this;
-              }
-            }
+      @Override
+      public ReaderFunction withSchema(Schema expectedSchema) {
+        this.schema = expectedSchema;
+        return this;
+      }
+    }
 
         */
     private ReadBuilder(InputFile file) {
@@ -1355,18 +1354,27 @@ public class Parquet {
     @Deprecated
     public ReadBuilder enableComet(boolean enableComet) {
       if (enableComet) {
-        this.properties.put("read.parquet.vectorized-reader.factory", "comet");
+        this.properties.put(
+            VECTORIZED_READER_FACTORY,
+            "org.apache.iceberg.spark.parquet.CometVectorizedParquetReaderFactory");
       } else {
-        this.properties.remove("read.parquet.vectorized-reader.factory");
+        this.properties.remove(VECTORIZED_READER_FACTORY);
       }
       return this;
     }
 
-    public ReadBuilder enableCometNative(boolean enableCometNative) {
-      if (enableCometNative) {
-        this.properties.put("read.parquet.vectorized-reader.factory", "comet-native");
+    /**
+     * Sets the vectorized reader factory class to use for reading Parquet files.
+     *
+     * @param factoryClassName fully qualified class name of the VectorizedParquetReaderFactory
+     *     implementation, or null to use the default reader
+     * @return this builder for method chaining
+     */
+    public ReadBuilder vectorizedReaderFactory(String factoryClassName) {
+      if (factoryClassName != null) {
+        this.properties.put(VECTORIZED_READER_FACTORY, factoryClassName);
       } else {
-        this.properties.remove("read.parquet.vectorized-reader.factory");
+        this.properties.remove(VECTORIZED_READER_FACTORY);
       }
       return this;
     }
@@ -1551,18 +1559,25 @@ public class Parquet {
     }
   }
 
-  private static VectorizedParquetReaderFactory loadReaderFactory(String name) {
-    ServiceLoader<VectorizedParquetReaderFactory> loader =
-        ServiceLoader.load(VectorizedParquetReaderFactory.class);
-
-    for (VectorizedParquetReaderFactory factory : loader) {
-      if (factory.name().equalsIgnoreCase(name)) {
-        return factory;
+  private static VectorizedParquetReaderFactory loadReaderFactory(String className) {
+    try {
+      Class<?> factoryClass = Class.forName(className);
+      if (!VectorizedParquetReaderFactory.class.isAssignableFrom(factoryClass)) {
+        LOG.warn("Class {} does not implement VectorizedParquetReaderFactory interface", className);
+        return null;
       }
+      return (VectorizedParquetReaderFactory) factoryClass.getDeclaredConstructor().newInstance();
+    } catch (ClassNotFoundException e) {
+      LOG.warn("Could not find vectorized reader factory class: {}", className, e);
+      return null;
+    } catch (NoSuchMethodException e) {
+      LOG.warn(
+          "Vectorized reader factory class {} does not have a no-arg constructor", className, e);
+      return null;
+    } catch (Exception e) {
+      LOG.warn("Failed to instantiate vectorized reader factory: {}", className, e);
+      return null;
     }
-
-    LOG.warn("Could not find vectorized reader factory: {}", name);
-    return null;
   }
 
   private static class ParquetReadBuilder<T> extends ParquetReader.Builder<T> {
