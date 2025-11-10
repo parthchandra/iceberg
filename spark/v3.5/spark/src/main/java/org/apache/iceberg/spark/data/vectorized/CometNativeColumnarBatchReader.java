@@ -19,6 +19,10 @@
 package org.apache.iceberg.spark.data.vectorized;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -87,8 +91,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
         readers.stream()
             .map(BaseCometColumnReader.class::cast)
             .toArray(BaseCometColumnReader[]::new);
-    this.hasIsDeletedColumn = false;
-    readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
+    this.hasIsDeletedColumn =
+        readers.stream().anyMatch(reader -> reader instanceof CometDeleteColumnReader);
   }
 
   @Override
@@ -109,9 +113,8 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
         HadoopInputFile hadoopInputFile = (HadoopInputFile) readConf.file();
         hadoopConf = hadoopInputFile.getConf();
       } else {
-        throw new IllegalArgumentException(
-            "CometNativeColumnarBatchReader only supports HadoopInputFile, got: "
-                + readConf.file().getClass().getName());
+        // Use default Hadoop configuration if file is not a HadoopInputFile
+        hadoopConf = new Configuration();
       }
 
       // Get ParquetMetadata from the file reader (we need to open it to get metadata)
@@ -119,13 +122,9 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       metadata = readConf.reader().getFooter();
 
       // Create FileInfo from NativeReadConf
-      String fp = ((HadoopInputFile) readConf.file()).getPath().toString();
-      //      NativeBatchReader.FileInfo fileInfo =
-      //          new NativeBatchReader.FileInfo(
-      //              start, length, ((HadoopInputFile) readConf.file()).location(),
-      // readConf.file().getLength());
       NativeBatchReader.FileInfo fileInfo =
-          new NativeBatchReader.FileInfo(start, length, fp, readConf.file().getLength());
+          new NativeBatchReader.FileInfo(
+              start, length, readConf.file().location(), readConf.file().getLength());
 
       // Convert ParquetMetadata to JSON
       byte[] metadataBytes = new ParquetMetadataSerializer().serialize(metadata);
@@ -249,6 +248,104 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
         reader.close();
       }
     }
+  }
+
+  /**
+   * Encode a file path for use in a URI while preserving the URI structure (scheme, authority,
+   * path). This method properly encodes special characters like spaces, colons, plus signs, etc. in
+   * the path component while keeping the URI scheme and authority intact.
+   *
+   * @param filePath The file path to encode (may include URI scheme like file://, s3://, etc.)
+   * @return The encoded file path
+   */
+  private static String encodeFilePath(String filePath) {
+    try {
+      // Try to parse as URI to extract components
+      URI uri = new URI(filePath);
+
+      // If no scheme, it's a plain file path - return as is since FileInfo will add file://
+      if (uri.getScheme() == null) {
+        return filePath;
+      }
+
+      // Has a scheme - encode only the path component
+      String scheme = uri.getScheme();
+      String authority = uri.getAuthority();
+      String path = uri.getPath();
+      String query = uri.getQuery();
+      String fragment = uri.getFragment();
+
+      // Encode the path by splitting into segments and encoding each one
+      String encodedPath = path != null ? encodePathSegments(path) : "";
+
+      // Reconstruct the URI
+      StringBuilder result = new StringBuilder();
+      result.append(scheme).append("://");
+      if (authority != null) {
+        result.append(authority);
+      }
+      result.append(encodedPath);
+      if (query != null) {
+        result.append("?").append(query);
+      }
+      if (fragment != null) {
+        result.append("#").append(fragment);
+      }
+
+      return result.toString();
+    } catch (URISyntaxException e) {
+      // If parsing fails, try manual parsing
+      int schemeIndex = filePath.indexOf("://");
+      if (schemeIndex > 0) {
+        String scheme = filePath.substring(0, schemeIndex);
+        String rest = filePath.substring(schemeIndex + 3);
+
+        // Split into authority and path
+        int pathStart = rest.indexOf('/');
+        if (pathStart >= 0) {
+          String authority = rest.substring(0, pathStart);
+          String path = rest.substring(pathStart);
+          String encodedPath = encodePathSegments(path);
+          return scheme + "://" + authority + encodedPath;
+        } else {
+          // No path, just authority
+          return filePath;
+        }
+      }
+      // No scheme at all - return as is
+      return filePath;
+    }
+  }
+
+  /**
+   * Encode individual path segments in a URI path, preserving the '/' separators. This encodes
+   * special characters like spaces (as %20), plus signs, colons, equals signs, etc.
+   *
+   * @param path The path to encode (should start with /)
+   * @return The encoded path with '/' separators preserved
+   */
+  private static String encodePathSegments(String path) {
+    if (path == null || path.isEmpty()) {
+      return path;
+    }
+
+    // Split by / to preserve path structure
+    String[] segments = path.split("/", -1);
+    StringBuilder encoded = new StringBuilder();
+
+    for (int i = 0; i < segments.length; i++) {
+      if (i > 0) {
+        encoded.append('/');
+      }
+      String segment = segments[i];
+      if (!segment.isEmpty()) {
+        // URLEncoder encodes space as +, but URIs use %20
+        // It also encodes / which we don't want since we're encoding segments
+        encoded.append(URLEncoder.encode(segment, StandardCharsets.UTF_8).replace("+", "%20"));
+      }
+    }
+
+    return encoded.toString();
   }
 
   private class ColumnBatchLoader {

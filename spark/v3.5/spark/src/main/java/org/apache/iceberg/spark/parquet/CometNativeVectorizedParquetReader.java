@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.iceberg.parquet;
+package org.apache.iceberg.spark.parquet;
 
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -31,6 +31,9 @@ import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
+import org.apache.iceberg.parquet.NativeReadConf;
+import org.apache.iceberg.parquet.NativeVectorizedReader;
+import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.schema.MessageType;
@@ -207,7 +210,7 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
         try {
           model.reset(); // sets the delegate to null
         } catch (Exception e) {
-          throw CometIOException.fromException("Failed to skip row group", e);
+          throw new RuntimeException("Failed to skip row group", e);
         }
       }
       try {
@@ -218,7 +221,7 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
             rowGroup.getCompressedSize()); // creates and initializes a new delegate
         nextRowGroupStart += rowGroups.get(nextRowGroup).getRowCount();
       } catch (Exception e) {
-        throw CometIOException.fromException("Failed to read row group", e);
+        throw new RuntimeException("Failed to read row group", e);
       }
       nextRowGroup += 1;
     }

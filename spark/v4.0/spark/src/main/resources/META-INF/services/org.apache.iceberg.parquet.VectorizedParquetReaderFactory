@@ -1,0 +1,2 @@
+org.apache.iceberg.spark.parquet.CometVectorizedParquetReaderFactory
+org.apache.iceberg.spark.parquet.CometNativeVectorizedParquetReaderFactory

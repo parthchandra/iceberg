@@ -356,6 +356,6 @@ abstract class SparkScan implements Scan, SupportsReportStatistics, SupportsCome
   @Override
   public boolean isCometEnabled() {
     SparkBatch batch = (SparkBatch) this.toBatch();
-    return batch.useCometBatchReads();
+    return batch.useCometBatchReads() || batch.useCometNativeBatchReads();
   }
 }
