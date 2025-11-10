@@ -37,6 +37,10 @@ public abstract class ExtensionsTestBase extends CatalogTestBase {
 
   private static final Random RANDOM = ThreadLocalRandom.current();
 
+  protected boolean isCometNativeEnabled() {
+    return "COMET_NATIVE".equals(spark.conf().get("spark.sql.iceberg.parquet.reader-type", ""));
+  }
+
   @BeforeAll
   public static void startMetastoreAndSpark() {
     TestBase.metastore = new TestHiveMetastore();
@@ -65,6 +69,7 @@ public abstract class ExtensionsTestBase extends CatalogTestBase {
             .config("spark.memory.offHeap.size", "10g")
             .config("spark.comet.use.lazyMaterialization", "false")
             .config("spark.comet.schemaEvolution.enabled", "true")
+            .config("spark.comet.exec.broadcastExchange.enabled", "false")
             .config(
                 SQLConf.ADAPTIVE_EXECUTION_ENABLED().key(), String.valueOf(RANDOM.nextBoolean()))
             .enableHiveSupport()
