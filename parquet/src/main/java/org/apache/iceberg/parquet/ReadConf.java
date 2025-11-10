@@ -185,7 +185,7 @@ public class ReadConf<T> {
     return reuseContainers;
   }
 
-  List<BlockMetaData> getRowGroups() {
+  public List<BlockMetaData> getRowGroups() {
     return rowGroups;
   }
 
@@ -193,7 +193,7 @@ public class ReadConf<T> {
     return reader;
   }
 
-  Integer batchSize() {
+  public Integer batchSize() {
     return batchSize;
   }
 

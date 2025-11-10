@@ -1162,64 +1162,65 @@ public class Parquet {
     private NameMapping nameMapping = null;
     private ByteBuffer fileEncryptionKey = null;
     private ByteBuffer fileAADPrefix = null;
-    private boolean isComet;
-    private boolean isCometNative;
-    private Class<? extends StructLike> rootType = null;
-    private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
-    public interface ReaderFunction {
-      Function<MessageType, ParquetValueReader<?>> apply();
+    /*
+    //    private Class<? extends StructLike> rootType = null;
+    //    private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
-      default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
-        return this;
-      }
+        public interface ReaderFunction {
+          Function<MessageType, ParquetValueReader<?>> apply();
 
-      default ReaderFunction withCustomTypes(
-          Map<Integer, Class<? extends StructLike>> customTypes) {
-        return this;
-      }
+          default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
+            return this;
+          }
 
-      default ReaderFunction withSchema(Schema schema) {
-        return this;
-      }
-    }
+          default ReaderFunction withCustomTypes(
+              Map<Integer, Class<? extends StructLike>> customTypes) {
+            return this;
+          }
 
-    private static class UnaryReaderFunction implements ReaderFunction {
-      private final Function<MessageType, ParquetValueReader<?>> readerFunc;
+          default ReaderFunction withSchema(Schema schema) {
+            return this;
+          }
+        }
 
-      UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
-        this.readerFunc = readerFunc;
-      }
+            private static class UnaryReaderFunction implements ReaderFunction {
+              private final Function<MessageType, ParquetValueReader<?>> readerFunc;
 
-      @Override
-      public Function<MessageType, ParquetValueReader<?>> apply() {
-        return readerFunc;
-      }
-    }
+              UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
+                this.readerFunc = readerFunc;
+              }
 
-    private static class BinaryReaderFunction implements ReaderFunction {
-      private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
-      private Schema schema;
+              @Override
+              public Function<MessageType, ParquetValueReader<?>> apply() {
+                return readerFunc;
+              }
+            }
 
-      BinaryReaderFunction(
-          BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
-        this.readerFuncWithSchema = readerFuncWithSchema;
-      }
+            private static class BinaryReaderFunction implements ReaderFunction {
+              private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
+              private Schema schema;
 
-      @Override
-      public Function<MessageType, ParquetValueReader<?>> apply() {
-        Preconditions.checkArgument(
-            schema != null, "Schema must be set for 2-argument reader function");
-        return messageType -> readerFuncWithSchema.apply(schema, messageType);
-      }
+              BinaryReaderFunction(
+                  BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
+                this.readerFuncWithSchema = readerFuncWithSchema;
+              }
 
-      @Override
-      public ReaderFunction withSchema(Schema expectedSchema) {
-        this.schema = expectedSchema;
-        return this;
-      }
-    }
+              @Override
+              public Function<MessageType, ParquetValueReader<?>> apply() {
+                Preconditions.checkArgument(
+                    schema != null, "Schema must be set for 2-argument reader function");
+                return messageType -> readerFuncWithSchema.apply(schema, messageType);
+              }
 
+              @Override
+              public ReaderFunction withSchema(Schema expectedSchema) {
+                this.schema = expectedSchema;
+                return this;
+              }
+            }
+
+        */
     private ReadBuilder(InputFile file) {
       this.file = file;
     }
@@ -1362,7 +1363,11 @@ public class Parquet {
     }
 
     public ReadBuilder enableCometNative(boolean enableCometNative) {
-      this.isCometNative = enableCometNative;
+      if (enableCometNative) {
+        this.properties.put("read.parquet.vectorized-reader.factory", "comet-native");
+      } else {
+        this.properties.remove("read.parquet.vectorized-reader.factory");
+      }
       return this;
     }
 
@@ -1429,54 +1434,41 @@ public class Parquet {
         }
 
         if (batchedReaderFunc != null) {
-          if (isCometNative) {
-            LOG.info("COMET_NATIVE: Comet native vectorized reader enabled");
-            return new CometNativeVectorizedParquetReader<>(
-                file,
-                schema,
-                options,
-                batchedReaderFunc,
-                mapping,
-                filter,
-                reuseContainers,
-                caseSensitive,
-                maxRecordsPerBatch,
-                properties,
-                start,
-                length,
-                fileEncryptionKey,
-                fileAADPrefix);
-          } else if (isComet) {
-            LOG.info("Comet vectorized reader enabled");
-            return new CometVectorizedParquetReader<>(
-                file,
-                schema,
-                options,
-                batchedReaderFunc,
-                mapping,
-                filter,
-                reuseContainers,
-                caseSensitive,
-                maxRecordsPerBatch,
-                properties,
-                start,
-                length,
-                fileEncryptionKey,
-                fileAADPrefix);
+          // Try to load custom vectorized reader factory from properties
+          String readerName = properties.get("read.parquet.vectorized-reader.factory");
+
+          if (readerName != null) {
+            LOG.info("Loading custom vectorized reader factory: {}", readerName);
+            VectorizedParquetReaderFactory factory = loadReaderFactory(readerName);
+            if (factory != null) {
+              return factory.createReader(
+                  file,
+                  schema,
+                  options,
+                  batchedReaderFunc,
+                  mapping,
+                  filter,
+                  reuseContainers,
+                  caseSensitive,
+                  maxRecordsPerBatch,
+                  properties,
+                  start,
+                  length,
+                  fileEncryptionKey,
+                  fileAADPrefix);
             }
           }
-
           // Fall back to default VectorizedParquetReader
-            return new VectorizedParquetReader<>(
-                file,
-                schema,
-                options,
-                batchedReaderFunc,
-                mapping,
-                filter,
-                reuseContainers,
-                caseSensitive,
-                maxRecordsPerBatch);
+          return new VectorizedParquetReader<>(
+              file,
+              schema,
+              options,
+              batchedReaderFunc,
+              mapping,
+              filter,
+              reuseContainers,
+              caseSensitive,
+              maxRecordsPerBatch);
         } else {
           Function<MessageType, ParquetValueReader<?>> readBuilder =
               readerFuncWithSchema != null
