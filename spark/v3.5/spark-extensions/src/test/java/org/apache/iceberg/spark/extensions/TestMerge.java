@@ -88,6 +88,14 @@ public abstract class TestMerge extends SparkRowLevelOperationsTestBase {
   @BeforeAll
   public static void setupSparkConf() {
     spark.conf().set("spark.sql.shuffle.partitions", "4");
+    // spark.conf().set("spark.sql.iceberg.parquet.reader-type", "COMET_NATIVE");
+    spark.conf().set("spark.sql.iceberg.parquet.reader-type", "COMET");
+    spark
+        .conf()
+        .set(
+            "spark.sql.iceberg.parquet.vectorized-reader.factory",
+            "org.apache.iceberg.spark.parquet.CometVectorizedParquetReaderFactory");
+    spark.conf().set("spark.sql.iceberg.parquet.reader-type", "COMET");
   }
 
   @AfterEach
