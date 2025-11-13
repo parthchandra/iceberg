@@ -126,6 +126,7 @@ import org.slf4j.LoggerFactory;
 
 public class Parquet {
   private static final Logger LOG = LoggerFactory.getLogger(Parquet.class);
+  private static final String VECTORIZED_READER_FACTORY = "read.parquet.vectorized-reader.factory";
 
   private Parquet() {}
 

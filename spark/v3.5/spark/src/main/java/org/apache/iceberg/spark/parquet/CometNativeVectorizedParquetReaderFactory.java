@@ -18,18 +18,8 @@
  */
 package org.apache.iceberg.spark.parquet;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
-import java.util.function.Function;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.io.CloseableIterable;
-import org.apache.iceberg.io.InputFile;
-import org.apache.iceberg.mapping.NameMapping;
 import org.apache.iceberg.parquet.VectorizedParquetReaderFactory;
-import org.apache.iceberg.parquet.VectorizedReader;
-import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.schema.MessageType;
 
 public class CometNativeVectorizedParquetReaderFactory implements VectorizedParquetReaderFactory {
   @Override
@@ -38,36 +28,21 @@ public class CometNativeVectorizedParquetReaderFactory implements VectorizedParq
   }
 
   @Override
-  public <T> CloseableIterable<T> createReader(
-      InputFile file,
-      Schema schema,
-      ParquetReadOptions options,
-      Function<MessageType, VectorizedReader<?>> batchedReaderFunc,
-      NameMapping mapping,
-      Expression filter,
-      boolean reuseContainers,
-      boolean caseSensitive,
-      int maxRecordsPerBatch,
-      Map<String, String> properties,
-      Long start,
-      Long length,
-      ByteBuffer fileEncryptionKey,
-      ByteBuffer fileAADPrefix) {
-
+  public <T> CloseableIterable<T> createReader(ReaderParams params) {
     return new CometNativeVectorizedParquetReader<>(
-        file,
-        schema,
-        options,
-        batchedReaderFunc,
-        mapping,
-        filter,
-        reuseContainers,
-        caseSensitive,
-        maxRecordsPerBatch,
-        properties,
-        start,
-        length,
-        fileEncryptionKey,
-        fileAADPrefix);
+        params.file(),
+        params.schema(),
+        params.options(),
+        params.batchedReaderFunc(),
+        params.mapping(),
+        params.filter(),
+        params.reuseContainers(),
+        params.caseSensitive(),
+        params.maxRecordsPerBatch(),
+        params.properties(),
+        params.start(),
+        params.length(),
+        params.fileEncryptionKey(),
+        params.fileAADPrefix());
   }
 }
