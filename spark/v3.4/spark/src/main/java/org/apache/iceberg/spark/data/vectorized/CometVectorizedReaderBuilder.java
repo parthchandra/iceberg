@@ -81,8 +81,14 @@ class CometVectorizedReaderBuilder extends TypeWithSchemaVisitor<VectorizedReade
       int id = field.fieldId();
       VectorizedReader<?> reader = readersById.get(id);
       if (idToConstant.containsKey(id)) {
-        CometConstantColumnReader constantReader =
-            new CometConstantColumnReader<>(idToConstant.get(id), field);
+        VectorizedReader<?> constantReader;
+        if (field.type().isStructType()) {
+          // Use CometConstantStructColumnReader for struct types since CometConstantColumnReader
+          // only handles primitives
+          constantReader = new CometConstantStructColumnReader(idToConstant.get(id), field);
+        } else {
+          constantReader = new CometConstantColumnReader<>(idToConstant.get(id), field);
+        }
         reorderedFields.add(constantReader);
       } else if (id == MetadataColumns.ROW_POSITION.fieldId()) {
         reorderedFields.add(new CometPositionColumnReader(field));

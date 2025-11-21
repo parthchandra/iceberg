@@ -417,15 +417,22 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
         throw new CometRuntimeException("Failed to get next batch from native read", e);
       }
       for (int i = 0; i < readers.length; i++) {
-        Object delegateReader = readers[i].delegate();
-        if (delegateReader instanceof NativeColumnReader) {
-          NativeColumnReader nativeReader = (NativeColumnReader) delegateReader;
-          nativeReader.readBatch(batchSize);
-          columnVectors[i] = nativeReader.currentBatch();
+        if (readers[i] instanceof CometConstantStructColumnReader) {
+          // Special handling for struct constant column readers since they don't use native readers
+          CometConstantStructColumnReader structReader =
+              (CometConstantStructColumnReader) readers[i];
+          columnVectors[i] = structReader.getConstantVector(batchSize);
         } else {
-          AbstractColumnReader columnReader = (AbstractColumnReader) delegateReader;
-          columnReader.readBatch(batchSize);
-          columnVectors[i] = columnReader.currentBatch();
+          Object delegateReader = readers[i].delegate();
+          if (delegateReader instanceof NativeColumnReader) {
+            NativeColumnReader nativeReader = (NativeColumnReader) delegateReader;
+            nativeReader.readBatch(batchSize);
+            columnVectors[i] = nativeReader.currentBatch();
+          } else {
+            AbstractColumnReader columnReader = (AbstractColumnReader) delegateReader;
+            columnReader.readBatch(batchSize);
+            columnVectors[i] = columnReader.currentBatch();
+          }
         }
       }
       return columnVectors;
