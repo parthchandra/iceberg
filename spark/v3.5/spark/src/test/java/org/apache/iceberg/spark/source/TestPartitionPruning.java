@@ -122,6 +122,9 @@ public class TestPartitionPruning {
                 "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
             .config("spark.comet.explainFallback.enabled", "true")
             .config("spark.sql.iceberg.parquet.reader-type", "COMET_NATIVE")
+            .config(
+                "spark.sql.iceberg.parquet.vectorized-reader.factory",
+                "org.apache.iceberg.spark.parquet.CometNativeVectorizedParquetReaderFactory")
             .config("spark.memory.offHeap.enabled", "true")
             .config("spark.memory.offHeap.size", "10g")
             .config("spark.comet.use.lazyMaterialization", "false")
