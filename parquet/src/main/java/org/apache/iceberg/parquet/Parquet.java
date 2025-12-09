@@ -1190,58 +1190,58 @@ public class Parquet {
     private Class<? extends StructLike> rootType = null;
     private Map<Integer, Class<? extends StructLike>> customTypes = Maps.newHashMap();
 
-        public interface ReaderFunction {
-          Function<MessageType, ParquetValueReader<?>> apply();
+    public interface ReaderFunction {
+      Function<MessageType, ParquetValueReader<?>> apply();
 
-          default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
-            return this;
-          }
+      default ReaderFunction withRootType(Class<? extends StructLike> rootType) {
+        return this;
+      }
 
-          default ReaderFunction withCustomTypes(
-              Map<Integer, Class<? extends StructLike>> customTypes) {
-            return this;
-          }
+      default ReaderFunction withCustomTypes(
+          Map<Integer, Class<? extends StructLike>> customTypes) {
+        return this;
+      }
 
-          default ReaderFunction withSchema(Schema schema) {
-            return this;
-          }
-        }
+      default ReaderFunction withSchema(Schema schema) {
+        return this;
+      }
+    }
 
-            private static class UnaryReaderFunction implements ReaderFunction {
-              private final Function<MessageType, ParquetValueReader<?>> readerFunc;
+    private static class UnaryReaderFunction implements ReaderFunction {
+      private final Function<MessageType, ParquetValueReader<?>> readerFunc;
 
-              UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
-                this.readerFunc = readerFunc;
-              }
+      UnaryReaderFunction(Function<MessageType, ParquetValueReader<?>> readerFunc) {
+        this.readerFunc = readerFunc;
+      }
 
-              @Override
-              public Function<MessageType, ParquetValueReader<?>> apply() {
-                return readerFunc;
-              }
-            }
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        return readerFunc;
+      }
+    }
 
-            private static class BinaryReaderFunction implements ReaderFunction {
-              private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
-              private Schema schema;
+    private static class BinaryReaderFunction implements ReaderFunction {
+      private final BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema;
+      private Schema schema;
 
-              BinaryReaderFunction(
-                  BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
-                this.readerFuncWithSchema = readerFuncWithSchema;
-              }
+      BinaryReaderFunction(
+          BiFunction<Schema, MessageType, ParquetValueReader<?>> readerFuncWithSchema) {
+        this.readerFuncWithSchema = readerFuncWithSchema;
+      }
 
-              @Override
-              public Function<MessageType, ParquetValueReader<?>> apply() {
-                Preconditions.checkArgument(
-                    schema != null, "Schema must be set for 2-argument reader function");
-                return messageType -> readerFuncWithSchema.apply(schema, messageType);
-              }
+      @Override
+      public Function<MessageType, ParquetValueReader<?>> apply() {
+        Preconditions.checkArgument(
+            schema != null, "Schema must be set for 2-argument reader function");
+        return messageType -> readerFuncWithSchema.apply(schema, messageType);
+      }
 
-              @Override
-              public ReaderFunction withSchema(Schema expectedSchema) {
-                this.schema = expectedSchema;
-                return this;
-              }
-            }
+      @Override
+      public ReaderFunction withSchema(Schema expectedSchema) {
+        this.schema = expectedSchema;
+        return this;
+      }
+    }
 
     private ReadBuilder(InputFile file) {
       this.file = file;
