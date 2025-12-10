@@ -1467,32 +1467,29 @@ public class Parquet {
         } else {
           mapping = NameMapping.empty();
         }
-
         if (batchedReaderFunc != null) {
           // Try to load custom vectorized reader factory from properties
-          String readerName = properties.get("read.parquet.vectorized-reader.factory");
+          String factoryName = properties.get(VECTORIZED_READER_FACTORY);
 
-          if (readerName != null) {
-            LOG.info("Loading custom vectorized reader factory: {}", readerName);
-            VectorizedParquetReaderFactory factory = loadReaderFactory(readerName);
+          if (factoryName != null) {
+            LOG.info("Loading custom vectorized reader factory: {}", factoryName);
+            VectorizedParquetReaderFactory factory = loadReaderFactory(factoryName);
             if (factory != null) {
               return factory.createReader(
-                  file,
-                  schema,
-                  options,
-                  batchedReaderFunc,
-                  mapping,
-                  filter,
-                  reuseContainers,
-                  caseSensitive,
-                  maxRecordsPerBatch,
-                  properties,
-                  start,
-                  length,
-                  fileEncryptionKey,
-                  fileAADPrefix);
+                  VectorizedParquetReaderFactory.ReaderParams.builder(
+                          file, schema, options, batchedReaderFunc)
+                      .nameMapping(mapping)
+                      .filter(filter)
+                      .reuseContainers(reuseContainers)
+                      .caseSensitive(caseSensitive)
+                      .maxRecordsPerBatch(maxRecordsPerBatch)
+                      .properties(properties)
+                      .split(start, length)
+                      .encryption(fileEncryptionKey, fileAADPrefix)
+                      .build());
             }
           }
+
           // Fall back to default VectorizedParquetReader
           return new VectorizedParquetReader<>(
               file,
