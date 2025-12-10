@@ -31,8 +31,6 @@ import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometNativeBatchReader;
 import org.apache.comet.parquet.NativeBatchReader;
 import org.apache.comet.parquet.NativeColumnReader;
-import org.apache.comet.vector.CometSelectionVector;
-import org.apache.comet.vector.CometVector;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.DeleteFilter;
@@ -43,7 +41,6 @@ import org.apache.iceberg.parquet.NativeVectorizedReader;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.iceberg.spark.data.vectorized.CometDeleteColumnReader.DeleteColumnReader;
 import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -361,33 +358,6 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
       ColumnVector[] vectors = readDataToColumnVectors();
       int numLiveRows = batchSize;
 
-      if (hasIsDeletedColumn) {
-        boolean[] isDeleted = buildIsDeleted(vectors);
-        readDeletedColumn(vectors, isDeleted);
-        throw new CometRuntimeException("Comet native reader does not support deleted columns");
-      } else {
-        Pair<int[], Integer> pair = buildRowIdMapping(vectors);
-        if (pair != null) {
-          int[] rowIdMapping = pair.first();
-          if (pair.second() != null) {
-            numLiveRows = pair.second();
-            for (int i = 0; i < vectors.length; i++) {
-              if (vectors[i] instanceof CometVector) {
-                vectors[i] =
-                    new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);
-              } else {
-                throw new CometRuntimeException(
-                    "Unsupported column vector type: " + vectors[i].getClass());
-              }
-            }
-          }
-        }
-      }
-
-      if (deletes != null && deletes.hasEqDeletes()) {
-        vectors = ColumnarBatchUtil.removeExtraColumns(deletes, vectors);
-      }
-
       ColumnarBatch batch = new ColumnarBatch(vectors);
       batch.setNumRows(numLiveRows);
       return batch;
@@ -436,19 +406,6 @@ class CometNativeColumnarBatchReader implements NativeVectorizedReader<ColumnarB
         }
       }
       return columnVectors;
-    }
-
-    void readDeletedColumn(ColumnVector[] columnVectors, boolean[] isDeleted) {
-      for (int i = 0; i < readers.length; i++) {
-        if (readers[i] instanceof CometDeleteColumnReader) {
-          CometDeleteColumnReader<AbstractColumnReader> deleteColumnReader =
-              new CometDeleteColumnReader<>(isDeleted);
-          deleteColumnReader.setBatchSize(batchSize);
-          DeleteColumnReader deleted = (DeleteColumnReader) deleteColumnReader.delegate();
-          deleted.readBatch(batchSize);
-          columnVectors[i] = deleted.currentBatch();
-        }
-      }
     }
   }
 }

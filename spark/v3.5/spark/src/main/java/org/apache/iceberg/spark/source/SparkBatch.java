@@ -140,7 +140,7 @@ class SparkBatch implements Batch {
 
     ImmutableParquetBatchReadConf.Builder builder =
         ImmutableParquetBatchReadConf.builder()
-        .batchSize(readConf.parquetBatchSize())
+            .batchSize(readConf.parquetBatchSize())
             .readerType(readerType);
 
     if (factoryClassName != null) {
@@ -182,7 +182,7 @@ class SparkBatch implements Batch {
     return field.type().isPrimitiveType() || MetadataColumns.isMetadataColumn(field.fieldId());
   }
 
-  private boolean useCometBatchReads() {
+  public boolean useCometBatchReads() {
     return readConf.parquetVectorizationEnabled()
         && taskGroups.stream().allMatch(this::supportsParquetBatchReads)
         && readConf.parquetReaderType() == ParquetReaderType.COMET

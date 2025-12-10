@@ -58,7 +58,7 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
   private final ByteBuffer fileEncryptionKey;
   private final ByteBuffer fileAADPrefix;
 
-  public CometNativeVectorizedParquetReader(
+  private CometNativeVectorizedParquetReader(
       InputFile input,
       Schema expectedSchema,
       ParquetReadOptions options,
@@ -88,6 +88,103 @@ public class CometNativeVectorizedParquetReader<T> extends CloseableGroup
     this.length = length;
     this.fileEncryptionKey = fileEncryptionKey;
     this.fileAADPrefix = fileAADPrefix;
+  }
+
+  public static CometNativeVectorizedParquetReader.Builder builder(
+      InputFile file,
+      Schema schema,
+      ParquetReadOptions options,
+      Function<MessageType, VectorizedReader<?>> batchedReaderFunc) {
+    return new CometNativeVectorizedParquetReader.Builder(file, schema, options, batchedReaderFunc);
+  }
+
+  public static class Builder {
+    private final InputFile file;
+    private final Schema schema;
+    private final ParquetReadOptions options;
+    private final Function<MessageType, VectorizedReader<?>> batchedReaderFunc;
+    private NameMapping nameMapping = null;
+    private Expression filter = null;
+    private boolean reuseContainers = false;
+    private boolean caseSensitive = true;
+    private int maxRecordsPerBatch = 10000;
+    private Map<String, String> properties = null;
+    private Long start = null;
+    private Long length = null;
+    private ByteBuffer fileEncryptionKey = null;
+    private ByteBuffer fileAADPrefix = null;
+
+    private Builder(
+        InputFile file,
+        Schema schema,
+        ParquetReadOptions options,
+        Function<MessageType, VectorizedReader<?>> batchedReaderFunc) {
+      this.file = file;
+      this.schema = schema;
+      this.options = options;
+      this.batchedReaderFunc = batchedReaderFunc;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder nameMapping(NameMapping mapping) {
+      this.nameMapping = mapping;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder filter(Expression filterExpr) {
+      this.filter = filterExpr;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder reuseContainers(boolean reuse) {
+      this.reuseContainers = reuse;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder caseSensitive(boolean sensitive) {
+      this.caseSensitive = sensitive;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder maxRecordsPerBatch(int maxRecords) {
+      this.maxRecordsPerBatch = maxRecords;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder properties(Map<String, String> props) {
+      this.properties = props;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder split(Long splitStart, Long splitLength) {
+      this.start = splitStart;
+      this.length = splitLength;
+      return this;
+    }
+
+    public CometNativeVectorizedParquetReader.Builder encryption(
+        ByteBuffer encryptionKey, ByteBuffer aadPrefix) {
+      this.fileEncryptionKey = encryptionKey;
+      this.fileAADPrefix = aadPrefix;
+      return this;
+    }
+
+    public <T> CometNativeVectorizedParquetReader<T> build() {
+      return new CometNativeVectorizedParquetReader<>(
+          file,
+          schema,
+          options,
+          batchedReaderFunc,
+          nameMapping,
+          filter,
+          reuseContainers,
+          caseSensitive,
+          maxRecordsPerBatch,
+          properties,
+          start,
+          length,
+          fileEncryptionKey,
+          fileAADPrefix);
+    }
   }
 
   @Override

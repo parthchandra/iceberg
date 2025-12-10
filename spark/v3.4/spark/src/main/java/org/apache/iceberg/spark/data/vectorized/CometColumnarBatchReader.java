@@ -25,13 +25,10 @@ import java.util.Map;
 import org.apache.comet.parquet.AbstractColumnReader;
 import org.apache.comet.parquet.IcebergCometBatchReader;
 import org.apache.comet.parquet.RowGroupReader;
-import org.apache.comet.vector.CometSelectionVector;
-import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.parquet.VectorizedReader;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.iceberg.util.Pair;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
@@ -71,7 +68,6 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
     for (int i = 0; i < readers.length; i++) {
       try {
         if (!(readers[i] instanceof CometConstantColumnReader)
-            && !(readers[i] instanceof CometConstantStructColumnReader)
             && !(readers[i] instanceof CometPositionColumnReader)
             && !(readers[i] instanceof CometDeleteColumnReader)) {
           readers[i].reset();
@@ -84,12 +80,7 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
 
     AbstractColumnReader[] delegateReaders = new AbstractColumnReader[readers.length];
     for (int i = 0; i < readers.length; i++) {
-      // CometConstantStructColumnReader doesn't have an AbstractColumnReader delegate
-      if (readers[i] instanceof CometConstantStructColumnReader) {
-        delegateReaders[i] = null;
-      } else {
-        delegateReaders[i] = readers[i].delegate();
-      }
+      delegateReaders[i] = readers[i].delegate();
     }
     delegate.init(delegateReaders);
   }
@@ -139,14 +130,7 @@ class CometColumnarBatchReader implements VectorizedReader<ColumnarBatch> {
       // Fetch rows for all readers in the delegate
       delegate.nextBatch(batchSize);
       for (int i = 0; i < readers.length; i++) {
-        if (readers[i] instanceof CometConstantStructColumnReader) {
-          // Special handling for struct constant column readers since they don't use native readers
-          CometConstantStructColumnReader structReader =
-              (CometConstantStructColumnReader) readers[i];
-          columnVectors[i] = structReader.getConstantVector(batchSize);
-        } else {
-          columnVectors[i] = readers[i].delegate().currentBatch();
-        }
+        columnVectors[i] = readers[i].delegate().currentBatch();
       }
 
       return columnVectors;

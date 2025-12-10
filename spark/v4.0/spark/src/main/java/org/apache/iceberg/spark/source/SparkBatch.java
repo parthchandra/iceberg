@@ -124,13 +124,12 @@ class SparkBatch implements Batch {
   public PartitionReaderFactory createReaderFactory() {
     if (useCometBatchReads()) {
       return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.COMET));
-
+    } else if (useCometNativeBatchReads()) {
+      return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.COMET_NATIVE));
     } else if (useParquetBatchReads()) {
       return new SparkColumnarReaderFactory(parquetBatchReadConf(ParquetReaderType.ICEBERG));
-
     } else if (useOrcBatchReads()) {
       return new SparkColumnarReaderFactory(orcBatchReadConf());
-
     } else {
       return new SparkRowReaderFactory();
     }
@@ -183,8 +182,9 @@ class SparkBatch implements Batch {
     return field.type().isPrimitiveType() || MetadataColumns.isMetadataColumn(field.fieldId());
   }
 
-  private boolean useCometBatchReads() {
+  public boolean useCometBatchReads() {
     return readConf.parquetVectorizationEnabled()
+        && taskGroups.stream().allMatch(this::supportsParquetBatchReads)
         && readConf.parquetReaderType() == ParquetReaderType.COMET
         && expectedSchema.columns().stream().allMatch(this::supportsCometBatchReads)
         && taskGroups.stream().allMatch(this::supportsParquetBatchReads);
@@ -193,6 +193,19 @@ class SparkBatch implements Batch {
   private boolean supportsCometBatchReads(Types.NestedField field) {
     return field.type().isPrimitiveType()
         && !field.type().typeId().equals(Type.TypeID.UUID)
+        && field.fieldId() != MetadataColumns.ROW_ID.fieldId()
+        && field.fieldId() != MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.fieldId();
+  }
+
+  protected boolean useCometNativeBatchReads() {
+    return readConf.parquetVectorizationEnabled()
+        && taskGroups.stream().allMatch(this::supportsParquetBatchReads)
+        && readConf.parquetReaderType() == ParquetReaderType.COMET_NATIVE
+        && expectedSchema.columns().stream().allMatch(this::supportsCometNativeBatchReads);
+  }
+
+  private boolean supportsCometNativeBatchReads(Types.NestedField field) {
+    return !field.type().typeId().equals(Type.TypeID.UUID)
         && field.fieldId() != MetadataColumns.ROW_ID.fieldId()
         && field.fieldId() != MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.fieldId();
   }

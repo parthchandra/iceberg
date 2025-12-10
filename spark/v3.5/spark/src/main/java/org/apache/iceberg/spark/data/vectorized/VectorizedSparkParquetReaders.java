@@ -89,10 +89,7 @@ public class VectorizedSparkParquetReaders {
   }
 
   public static CometNativeColumnarBatchReader buildCometNativeReader(
-      Schema expectedSchema,
-      MessageType fileSchema,
-      Map<Integer, ?> idToConstant,
-      DeleteFilter<InternalRow> deleteFilter) {
+      Schema expectedSchema, MessageType fileSchema, Map<Integer, ?> idToConstant) {
     return (CometNativeColumnarBatchReader)
         TypeWithSchemaVisitor.visit(
             expectedSchema.asStruct(),
@@ -101,8 +98,7 @@ public class VectorizedSparkParquetReaders {
                 expectedSchema,
                 fileSchema,
                 idToConstant,
-                readers -> new CometNativeColumnarBatchReader(readers, expectedSchema),
-                deleteFilter));
+                readers -> new CometNativeColumnarBatchReader(readers, expectedSchema)));
   }
 
   // enables unsafe memory access to avoid costly checks to see if index is within bounds
