@@ -21,6 +21,8 @@ package org.apache.iceberg.spark.source;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nonnull;
+import org.apache.comet.vector.CometSelectionVector;
+import org.apache.comet.vector.CometVector;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.ScanTask;
@@ -52,6 +54,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBatch, T> {
   private final ParquetBatchReadConf parquetConf;
   private final OrcBatchReadConf orcConf;
+  private FileFormat fileFormat;
 
   BaseBatchReader(
       Table table,
@@ -91,7 +94,20 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
             "Format: " + format + " not supported for batched reads");
     }
 
-    return CloseableIterable.transform(iterable, new BatchDeleteFilter(deleteFilter)::filterBatch);
+    return CloseableIterable.transform(
+        iterable, new BatchDeleteFilter(deleteFilter, format != FileFormat.ORC)::filterBatch);
+  }
+
+  private String getVectorizedReaderFactory() {
+    switch (parquetConf.readerType()) {
+      case COMET:
+        return "org.apache.iceberg.spark.parquet.CometVectorizedParquetReaderFactory";
+      case COMET_NATIVE:
+        return "org.apache.iceberg.spark.parquet.CometNativeVectorizedParquetReaderFactory";
+      case ICEBERG:
+      default:
+        return null;
+    }
   }
 
   private CloseableIterable<ColumnarBatch> newParquetIterable(
@@ -125,7 +141,8 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
         // read performance as every batch read doesn't have to pay the cost of allocating memory.
         .reuseContainers()
         .withNameMapping(nameMapping())
-        .vectorizedReaderFactory(parquetConf.factoryClassName().orElse(null))
+        .vectorizedReaderFactory(
+            parquetConf.factoryClassName().orElse(getVectorizedReaderFactory()))
         .build();
   }
 
@@ -158,11 +175,13 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
   @VisibleForTesting
   static class BatchDeleteFilter {
     private final DeleteFilter<InternalRow> deletes;
+    private final boolean alwaysRemoveExtraColumns;
     private boolean hasIsDeletedColumn;
     private int rowPositionColumnIndex = -1;
 
-    BatchDeleteFilter(DeleteFilter<InternalRow> deletes) {
+    BatchDeleteFilter(DeleteFilter<InternalRow> deletes, boolean alwaysRemoveExtraColumns) {
       this.deletes = deletes;
+      this.alwaysRemoveExtraColumns = alwaysRemoveExtraColumns;
 
       Schema schema = deletes.requiredSchema();
       for (int i = 0; i < schema.columns().size(); i++) {
@@ -199,22 +218,34 @@ abstract class BaseBatchReader<T extends ScanTask> extends BaseReader<ColumnarBa
       } else {
         Pair<int[], Integer> pair =
             ColumnarBatchUtil.buildRowIdMapping(vectors, deletes, rowStartPosInBatch, numLiveRows);
-        if (pair != null) {
-          int[] rowIdMapping = pair.first();
-          numLiveRows = pair.second();
-          for (int i = 0; i < vectors.length; i++) {
-            vectors[i] = new ColumnVectorWithFilter(vectors[i], rowIdMapping);
-          }
-        }
+        numLiveRows = applyVectorWithFilter(vectors, pair, numLiveRows);
       }
 
-      if (deletes != null && deletes.hasEqDeletes()) {
+      if (alwaysRemoveExtraColumns || (deletes != null && deletes.hasEqDeletes())) {
         vectors = ColumnarBatchUtil.removeExtraColumns(deletes, vectors);
       }
 
       ColumnarBatch output = new ColumnarBatch(vectors);
       output.setNumRows(numLiveRows);
       return output;
+    }
+
+    private int applyVectorWithFilter(
+        ColumnVector[] vectors, Pair<int[], Integer> rowIdMappingAndCount, int liveRows) {
+      int numLiveRows = liveRows;
+      if (rowIdMappingAndCount != null && rowIdMappingAndCount.second() != null) {
+        int[] rowIdMapping = rowIdMappingAndCount.first();
+        numLiveRows = rowIdMappingAndCount.second();
+        for (int i = 0; i < vectors.length; i++) {
+          if (vectors[i] instanceof CometVector) {
+            vectors[i] =
+                new CometSelectionVector((CometVector) vectors[i], rowIdMapping, numLiveRows);
+          } else {
+            vectors[i] = new ColumnVectorWithFilter(vectors[i], rowIdMapping);
+          }
+        }
+      }
+      return numLiveRows;
     }
 
     private boolean needDeletes() {

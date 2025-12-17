@@ -27,8 +27,11 @@ public class BatchReaderUtil {
   private BatchReaderUtil() {}
 
   public static CloseableIterable<ColumnarBatch> applyDeleteFilter(
-      CloseableIterable<ColumnarBatch> batches, DeleteFilter<InternalRow> filter) {
+      CloseableIterable<ColumnarBatch> batches,
+      DeleteFilter<InternalRow> filter,
+      boolean alwaysRemoveExtraColumns) {
     return CloseableIterable.transform(
-        batches, new BaseBatchReader.BatchDeleteFilter(filter)::filterBatch);
+        batches,
+        new BaseBatchReader.BatchDeleteFilter(filter, alwaysRemoveExtraColumns)::filterBatch);
   }
 }

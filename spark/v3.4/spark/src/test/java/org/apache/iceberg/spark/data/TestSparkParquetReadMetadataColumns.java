@@ -337,7 +337,7 @@ public class TestSparkParquetReadMetadataColumns {
     if (!vectorized) {
       return builder.build();
     } else {
-      return batchesToRows(BatchReaderUtil.applyDeleteFilter(builder.build(), filter));
+      return batchesToRows(BatchReaderUtil.applyDeleteFilter(builder.build(), filter, false));
     }
   }
 
