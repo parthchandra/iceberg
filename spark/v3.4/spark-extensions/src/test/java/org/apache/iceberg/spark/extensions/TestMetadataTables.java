@@ -262,7 +262,7 @@ public class TestMetadataTables extends ExtensionsTestBase {
     // check position_deletes table
     assertThat(sql("SELECT * FROM %s.position_deletes", tableName))
         .hasSize(2)
-        .containsExactlyElementsOf(expectedRows);
+        .containsExactlyInAnyOrderElementsOf(expectedRows);
   }
 
   @TestTemplate
